@@ -12,6 +12,7 @@ const ROLE_TYPES = [
   "Professional",
   "Brand Partner",
   "Community Builder",
+  "Sponsor",
   "Student",
   "Other",
 ];

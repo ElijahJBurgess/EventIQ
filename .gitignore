@@ -20,6 +20,10 @@ dist-ssr
 # Claude Code local tooling state (contains a locally-cached API key, machine-specific)
 .claude/settings.local.json
 
+# Supabase CLI local project state (machine-specific link cache, not source)
+supabase/.temp
+supabase/.branches
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

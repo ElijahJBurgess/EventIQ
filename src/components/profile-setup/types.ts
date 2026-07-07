@@ -47,3 +47,9 @@ export interface ProfileSetupPageProps {
   onNext: () => void;
   onBack: () => void;
 }
+
+export interface Page4Props extends ProfileSetupPageProps {
+  onSubmit: () => void;
+  isSubmitting: boolean;
+  submitError: string;
+}

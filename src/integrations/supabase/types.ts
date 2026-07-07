@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       admin_actions: {
@@ -684,6 +709,7 @@ export type Database = {
       profiles: {
         Row: {
           activities: string[] | null
+          areas_of_expertise: string[] | null
           avatar_url: string | null
           bio: string | null
           candidate_level: string | null
@@ -692,6 +718,7 @@ export type Database = {
           company: string | null
           company_stage: string | null
           created_at: string | null
+          desired_outcomes: string[] | null
           email: string
           favorite_cities: string[] | null
           favorite_conferences: string[] | null
@@ -708,10 +735,12 @@ export type Database = {
           linkedin_url: string | null
           location: string | null
           looking_for_investors: boolean | null
+          matching_goal: string | null
           music_interests: string[] | null
           open_roles: string[] | null
           profile_completed: boolean | null
           profile_completion_score: number | null
+          role_details: Json | null
           role_type: string | null
           sports: string[] | null
           title: string | null
@@ -720,9 +749,11 @@ export type Database = {
           twitter_url: string | null
           updated_at: string | null
           website_url: string | null
+          who_to_meet: string[] | null
         }
         Insert: {
           activities?: string[] | null
+          areas_of_expertise?: string[] | null
           avatar_url?: string | null
           bio?: string | null
           candidate_level?: string | null
@@ -731,6 +762,7 @@ export type Database = {
           company?: string | null
           company_stage?: string | null
           created_at?: string | null
+          desired_outcomes?: string[] | null
           email: string
           favorite_cities?: string[] | null
           favorite_conferences?: string[] | null
@@ -747,10 +779,12 @@ export type Database = {
           linkedin_url?: string | null
           location?: string | null
           looking_for_investors?: boolean | null
+          matching_goal?: string | null
           music_interests?: string[] | null
           open_roles?: string[] | null
           profile_completed?: boolean | null
           profile_completion_score?: number | null
+          role_details?: Json | null
           role_type?: string | null
           sports?: string[] | null
           title?: string | null
@@ -759,9 +793,11 @@ export type Database = {
           twitter_url?: string | null
           updated_at?: string | null
           website_url?: string | null
+          who_to_meet?: string[] | null
         }
         Update: {
           activities?: string[] | null
+          areas_of_expertise?: string[] | null
           avatar_url?: string | null
           bio?: string | null
           candidate_level?: string | null
@@ -770,6 +806,7 @@ export type Database = {
           company?: string | null
           company_stage?: string | null
           created_at?: string | null
+          desired_outcomes?: string[] | null
           email?: string
           favorite_cities?: string[] | null
           favorite_conferences?: string[] | null
@@ -786,10 +823,12 @@ export type Database = {
           linkedin_url?: string | null
           location?: string | null
           looking_for_investors?: boolean | null
+          matching_goal?: string | null
           music_interests?: string[] | null
           open_roles?: string[] | null
           profile_completed?: boolean | null
           profile_completion_score?: number | null
+          role_details?: Json | null
           role_type?: string | null
           sports?: string[] | null
           title?: string | null
@@ -798,6 +837,7 @@ export type Database = {
           twitter_url?: string | null
           updated_at?: string | null
           website_url?: string | null
+          who_to_meet?: string[] | null
         }
         Relationships: []
       }
@@ -1088,6 +1128,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },
