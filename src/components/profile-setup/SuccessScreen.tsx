@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-const STEPS = ["Profile saved", "Preferences locked in", "Match engine warming up"];
+const STEPS = ["Profile saved", "Preferences locked in", "Finding your matches..."];
 const STEP_DELAY_MS = 400;
 
 export default function SuccessScreen() {

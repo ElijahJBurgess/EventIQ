@@ -82,6 +82,17 @@ export default function ProfileSetup() {
       return;
     }
 
+    // Fire-and-forget: the profile save is what matters here, matching can
+    // always be re-run manually from the dashboard if this fails silently.
+    supabase.functions
+      .invoke("match-engine", {
+        body: { profileId: user.id, eventId: "0bdca68e-a936-4f10-9a32-bee99961ffa1" },
+      })
+      .then(({ error: matchError }) => {
+        if (matchError) console.error("match-engine invoke failed:", matchError);
+      })
+      .catch((err) => console.error("match-engine invoke failed:", err));
+
     setIsComplete(true);
   };
 

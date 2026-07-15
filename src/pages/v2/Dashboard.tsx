@@ -4,6 +4,7 @@ import { useAuth } from "@/v2/AuthProvider";
 import { useRememberVersion, setLastVersion } from "@/v2/useVersionMemory";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import MatchesTab from "@/components/matches/MatchesTab";
 
 type Tab = "profile" | "events" | "matches" | "concierge";
 
@@ -216,84 +217,6 @@ function EventsTab({ userId }: { userId: string }) {
             ) : (
               <button onClick={() => join(ev.id)} className="font-label text-xs bg-primary text-primary-foreground px-3 py-2 shadow-card">Join</button>
             )}
-          </div>
-        ))}
-      </div>
-    </Section>
-  );
-}
-
-interface MatchRow { id: string; match_score: number | null; match_reason: string | null; shared_interests: string[] | null; user_a_id: string; user_b_id: string; conversation_starters: string[] | null; }
-
-function MatchesTab({ userId }: { userId: string }) {
-  const [matches, setMatches] = useState<MatchRow[]>([]);
-  const [generating, setGenerating] = useState(false);
-
-  const load = useCallback(async () => {
-    const { data } = await supabase.from("matches").select("*").or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`).order("match_score", { ascending: false });
-    setMatches((data as MatchRow[]) ?? []);
-  }, [userId]);
-
-  useEffect(() => { load(); }, [load]);
-
-  const generate = async () => {
-    setGenerating(true);
-    // Find an event and other profiles to match against
-    const { data: ev } = await supabase.from("events").select("id").eq("is_published", true).limit(1).maybeSingle();
-    const { data: others } = await supabase.from("profiles").select("id,full_name,company,interests").neq("id", userId).limit(5);
-    if (!others || others.length === 0) {
-      setGenerating(false);
-      return toast.error("No other members yet to match with. Invite a colleague to sign up!");
-    }
-    const rows = others.map((o: { id: string; full_name: string | null; interests: string[] | null }) => ({
-      event_id: ev?.id ?? null,
-      user_a_id: userId,
-      user_b_id: o.id,
-      match_score: 70 + Math.floor(Math.random() * 30),
-      shared_interests: (o.interests ?? []).slice(0, 3),
-      match_reason: `Strong overlap with ${o.full_name ?? "a member"} on goals and interests.`,
-      conversation_starters: ["What brought you to the summit?", "Who are you hoping to meet here?"],
-      recommended_next_step: "Request a 15-min intro",
-    }));
-    const { error } = await supabase.from("matches").upsert(rows, { onConflict: "event_id,user_a_id,user_b_id" });
-    setGenerating(false);
-    if (error) return toast.error(error.message);
-    toast.success(`Generated ${rows.length} matches`);
-    load();
-  };
-
-  const requestMeeting = async (m: MatchRow) => {
-    const recipient = m.user_a_id === userId ? m.user_b_id : m.user_a_id;
-    const { error } = await supabase.from("meetings").insert({
-      match_id: m.id,
-      requester_id: userId,
-      recipient_id: recipient,
-      proposed_time: new Date(Date.now() + 3600_000).toISOString(),
-      duration_minutes: 15,
-      status: "requested",
-    });
-    if (error) return toast.error(error.message);
-    await supabase.from("match_actions").insert({ match_id: m.id, user_id: userId, action_type: "meeting_requested" });
-    toast.success("Meeting requested");
-  };
-
-  return (
-    <Section title="Your matches" action={<button onClick={generate} disabled={generating} className="font-label text-xs px-3 py-2 ooo-border bg-citron disabled:opacity-50">{generating ? "…" : "Run matching"}</button>}>
-      {matches.length === 0 && <p className="text-sm text-muted-foreground normal-case font-sans">No matches yet. Run matching to find people worth meeting.</p>}
-      <div className="grid sm:grid-cols-2 gap-3">
-        {matches.map((m) => (
-          <div key={m.id} className="ooo-border bg-warm p-4">
-            <div className="flex items-center justify-between">
-              <span className="font-display text-2xl">{m.match_score}</span>
-              <span className="font-label text-[10px] bg-aqua px-2 py-1 ooo-border">match</span>
-            </div>
-            <p className="text-sm mt-2 normal-case font-sans">{m.match_reason}</p>
-            {m.shared_interests && m.shared_interests.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-2">
-                {m.shared_interests.map((s, i) => <span key={i} className="text-[10px] font-label bg-citron px-2 py-0.5 ooo-border">{s}</span>)}
-              </div>
-            )}
-            <button onClick={() => requestMeeting(m)} className="mt-3 w-full font-label text-xs bg-primary text-primary-foreground py-2 shadow-card">Request intro</button>
           </div>
         ))}
       </div>
