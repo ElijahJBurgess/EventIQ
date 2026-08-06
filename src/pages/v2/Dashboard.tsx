@@ -1,12 +1,12 @@
 import { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/v2/AuthProvider";
-import { useRememberVersion, setLastVersion } from "@/v2/useVersionMemory";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import MatchesTab from "@/components/matches/MatchesTab";
+import MessagesTab from "@/components/messages/MessagesTab";
 
-type Tab = "profile" | "events" | "matches" | "concierge";
+type Tab = "profile" | "events" | "matches" | "messages";
 
 interface Profile {
   id: string;
@@ -30,7 +30,7 @@ export default function DashboardV2() {
   const [tab, setTab] = useState<Tab>("profile");
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  useRememberVersion("v2");
+  const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
 
   const loadProfile = useCallback(async () => {
     if (!user) return;
@@ -41,6 +41,19 @@ export default function DashboardV2() {
 
   useEffect(() => { loadProfile(); }, [loadProfile]);
 
+  useEffect(() => {
+    if (!user) return;
+    // read_at can't be set from the client (no UPDATE policy on messages),
+    // so this only ever reflects messages that have never been opened.
+    supabase
+      .from("messages")
+      .select("id")
+      .eq("recipient_id", user.id)
+      .is("read_at", null)
+      .limit(1)
+      .then(({ data }) => setHasUnreadMessages((data?.length ?? 0) > 0));
+  }, [user]);
+
   if (loading) {
     return <div className="min-h-screen bg-aqua flex items-center justify-center font-label text-xl">Loading…</div>;
   }
@@ -49,32 +62,32 @@ export default function DashboardV2() {
     <div className="min-h-screen bg-aqua">
       <header className="bg-card/95 border-b-2 border-primary sticky top-0 z-20 backdrop-blur">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <span className="font-display text-lg">OOO</span>
-            <span className="font-label text-[10px] bg-vermillion text-vermillion-foreground px-1.5 py-0.5 ooo-border">v2 · Live</span>
-          </div>
+          <span className="font-display text-lg">OOO</span>
           <nav className="hidden sm:flex items-center gap-1">
-            {(["profile", "events", "matches", "concierge"] as Tab[]).map((t) => (
+            {(["profile", "events", "matches", "messages"] as Tab[]).map((t) => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
-                className={`font-label text-xs px-3 py-2 ooo-border ${tab === t ? "bg-aqua" : "bg-card"}`}
+                className={`relative font-label text-xs px-3 py-2 ooo-border ${tab === t ? "bg-aqua" : "bg-card"}`}
               >
                 {t}
+                {t === "messages" && hasUnreadMessages && (
+                  <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-vermillion border border-primary" aria-label="Unread messages" />
+                )}
               </button>
             ))}
           </nav>
-          <button onClick={() => { setLastVersion("v1"); navigate("/v1"); }} className="font-label text-xs px-3 py-2 ooo-border bg-card">
-            ← v1
-          </button>
           <button onClick={async () => { await signOut(); navigate("/v2/auth"); }} className="font-label text-xs px-3 py-2 ooo-border bg-card">
             Sign out
           </button>
         </div>
         <div className="sm:hidden flex border-t-2 border-primary">
-          {(["profile", "events", "matches", "concierge"] as Tab[]).map((t) => (
-            <button key={t} onClick={() => setTab(t)} className={`flex-1 font-label text-[11px] py-2 ${tab === t ? "bg-aqua" : "bg-card"}`}>
+          {(["profile", "events", "matches", "messages"] as Tab[]).map((t) => (
+            <button key={t} onClick={() => setTab(t)} className={`relative flex-1 font-label text-[11px] py-2 ${tab === t ? "bg-aqua" : "bg-card"}`}>
               {t}
+              {t === "messages" && hasUnreadMessages && (
+                <span className="absolute top-1 right-2 h-2 w-2 rounded-full bg-vermillion border border-primary" aria-label="Unread messages" />
+              )}
             </button>
           ))}
         </div>
@@ -84,7 +97,7 @@ export default function DashboardV2() {
         {tab === "profile" && <ProfileTab profile={profile} userId={user!.id} email={user!.email!} onSaved={loadProfile} />}
         {tab === "events" && <EventsTab userId={user!.id} />}
         {tab === "matches" && <MatchesTab userId={user!.id} />}
-        {tab === "concierge" && <ConciergeTab profile={profile} />}
+        {tab === "messages" && <MessagesTab userId={user!.id} />}
       </main>
     </div>
   );
@@ -169,26 +182,6 @@ function EventsTab({ userId }: { userId: string }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const seedDemo = async () => {
-    const { error } = await supabase.from("events").insert({
-      name: "OOO Connect Summit",
-      event_type: "Conference",
-      location: "New York, NY",
-      venue: "Pier 57",
-      date: new Date().toISOString().slice(0, 10),
-      description: "750+ founders, investors and operators. Sponsored by Google & LinkedIn.",
-      event_goals: ["Hiring", "Fundraising", "Partnerships"],
-      organizer_id: userId,
-      organizer_company: "OOO Intelligence",
-      max_capacity: 800,
-      is_published: true,
-      is_demo: true,
-    });
-    if (error) return toast.error(error.message);
-    toast.success("Demo event created");
-    load();
-  };
-
   const join = async (eventId: string) => {
     const { error } = await supabase.from("event_registrations").insert({
       event_id: eventId,
@@ -203,8 +196,8 @@ function EventsTab({ userId }: { userId: string }) {
   };
 
   return (
-    <Section title="Events" action={<button onClick={seedDemo} className="font-label text-xs px-3 py-2 ooo-border bg-citron">+ Demo event</button>}>
-      {events.length === 0 && <p className="text-sm text-muted-foreground normal-case font-sans">No published events yet. Create the demo event to get started.</p>}
+    <Section title="Events">
+      {events.length === 0 && <p className="text-sm text-muted-foreground normal-case font-sans">No published events yet. Check back soon.</p>}
       <div className="space-y-3">
         {events.map((ev) => (
           <div key={ev.id} className="ooo-border bg-warm p-4 flex items-center justify-between gap-3">
@@ -217,38 +210,6 @@ function EventsTab({ userId }: { userId: string }) {
             ) : (
               <button onClick={() => join(ev.id)} className="font-label text-xs bg-primary text-primary-foreground px-3 py-2 shadow-card">Join</button>
             )}
-          </div>
-        ))}
-      </div>
-    </Section>
-  );
-}
-
-function ConciergeTab({ profile }: { profile: Profile | null }) {
-  const prompts = [
-    "Who should I meet to fill our senior engineering roles?",
-    "Find investors aligned with our seed round",
-    "Summarize my best matches and next steps",
-  ];
-  const [log, setLog] = useState<{ q: string; a: string }[]>([]);
-
-  const ask = (q: string) => {
-    const a = `Based on your ${profile?.role_type ?? "profile"}, I'd prioritize members with overlapping goals. Head to Matches and run matching, then request intros with your top 3 scores.`;
-    setLog((l) => [...l, { q, a }]);
-  };
-
-  return (
-    <Section title="AI Concierge">
-      <div className="space-y-2 mb-4">
-        {prompts.map((p) => (
-          <button key={p} onClick={() => ask(p)} className="w-full text-left ooo-border bg-warm px-4 py-3 normal-case font-sans text-sm hover-lift">{p}</button>
-        ))}
-      </div>
-      <div className="space-y-3">
-        {log.map((l, i) => (
-          <div key={i} className="space-y-1">
-            <p className="font-label text-xs bg-aqua px-3 py-2 ooo-border inline-block">{l.q}</p>
-            <p className="text-sm normal-case font-sans ooo-border bg-card px-4 py-3">{l.a}</p>
           </div>
         ))}
       </div>

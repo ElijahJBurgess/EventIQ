@@ -203,20 +203,28 @@ function MatchCard({ match }: { match: EnrichedMatch }) {
       return;
     }
 
-    const { error } = await supabase.from("match_actions").insert({
+    const { error: messageError } = await supabase.from("messages").insert({
       match_id: match.id,
-      action_type: "connection_requested",
-      user_id: actingUser.id,
+      sender_id: actingUser.id,
+      recipient_id: other.id,
+      content: "Hi! Looking forward to connecting at Render ATL.",
     });
 
-    if (error) {
+    if (messageError) {
       setStatus("idle");
-      toast.error("Couldn't send the request — try again.");
+      toast.error("Couldn't send the message — try again.");
       return;
     }
 
+    const { error: actionError } = await supabase.from("match_actions").insert({
+      match_id: match.id,
+      action_type: "message_sent",
+      user_id: actingUser.id,
+    });
+    if (actionError) console.error("match_actions insert failed:", actionError);
+
     setStatus("sent");
-    toast.success(`Connection request sent to ${other.full_name ?? "this member"}`);
+    toast.success(`Message sent to ${other.full_name ?? "this member"}`);
   };
 
   return (
@@ -270,7 +278,7 @@ function MatchCard({ match }: { match: EnrichedMatch }) {
       <Button className="w-full" disabled={status !== "idle"} onClick={handleConnect}>
         {status === "loading" && <Loader2 className="h-4 w-4 animate-spin" />}
         {status === "sent" && <Check className="h-4 w-4" />}
-        {status === "sent" ? "Request Sent" : status === "loading" ? "Sending…" : "Request to Connect"}
+        {status === "sent" ? "Message Sent" : status === "loading" ? "Sending…" : "Request to Connect"}
       </Button>
     </div>
   );

@@ -1,13 +1,16 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/v2/AuthProvider";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 export default function AuthV2() {
   const navigate = useNavigate();
-  const { signIn, signUp, signInWithGoogle } = useAuth();
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+  const { signIn, signUp } = useAuth();
+  const [searchParams] = useSearchParams();
+  const [mode, setMode] = useState<"signin" | "signup">(
+    searchParams.get("mode") === "signup" ? "signup" : "signin",
+  );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
@@ -51,15 +54,6 @@ export default function AuthV2() {
     }
   };
 
-  const handleGoogle = async () => {
-    setBusy(true);
-    const { error } = await signInWithGoogle();
-    if (error) {
-      toast.error(error);
-      setBusy(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-aqua flex items-center justify-center p-4">
       <div className="ooo-card w-full max-w-md p-8 bg-card">
@@ -71,20 +65,6 @@ export default function AuthV2() {
           <p className="text-sm text-muted-foreground mt-2 normal-case">
             The new relational platform — profiles, matches, meetings & ROI.
           </p>
-        </div>
-
-        <button
-          onClick={handleGoogle}
-          disabled={busy}
-          className="w-full ooo-border bg-card py-3 mb-4 shadow-card hover-lift disabled:opacity-50 font-label"
-        >
-          Continue with Google
-        </button>
-
-        <div className="flex items-center gap-3 my-4">
-          <div className="h-px flex-1 bg-border" />
-          <span className="text-xs text-muted-foreground font-label">or</span>
-          <div className="h-px flex-1 bg-border" />
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-3">
@@ -128,13 +108,6 @@ export default function AuthV2() {
           className="w-full text-center text-sm mt-4 text-muted-foreground normal-case font-sans hover:text-foreground"
         >
           {mode === "signin" ? "Need an account? Sign up" : "Already have an account? Sign in"}
-        </button>
-
-        <button
-          onClick={() => navigate("/v1")}
-          className="w-full text-center text-xs mt-4 text-muted-foreground normal-case font-sans hover:text-foreground"
-        >
-          ← Back to v1
         </button>
       </div>
     </div>

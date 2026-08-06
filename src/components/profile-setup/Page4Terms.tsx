@@ -1,7 +1,7 @@
 import type { Page4Props } from "./types";
 
 const cardClass = "ooo-card bg-card p-6";
-const comingSoonLinkClass = "mt-3 inline-block text-xs normal-case font-sans underline text-muted-foreground cursor-not-allowed";
+const comingSoonTextClass = "mt-3 block text-xs normal-case font-sans text-muted-foreground";
 
 export default function Page4Terms({ formData, setFormData, onBack, onSubmit, isSubmitting, submitError }: Page4Props) {
   const toggleAgree = () => setFormData((prev) => ({ ...prev, agreedToTerms: !prev.agreedToTerms }));
@@ -22,7 +22,7 @@ export default function Page4Terms({ formData, setFormData, onBack, onSubmit, is
             Please review our terms of service before continuing.
           </p>
           {/* TODO: Replace with real terms URL when available */}
-          <span className={comingSoonLinkClass}>Terms of Service — Coming Soon</span>
+          <span className={comingSoonTextClass}>Terms of Service — Coming Soon</span>
         </div>
 
         <div className={cardClass}>
@@ -32,7 +32,7 @@ export default function Page4Terms({ formData, setFormData, onBack, onSubmit, is
             starters, and event insights.
           </p>
           {/* TODO: Replace with real terms URL when available */}
-          <span className={comingSoonLinkClass}>Learn more about how we use AI — Coming Soon</span>
+          <span className={comingSoonTextClass}>Learn more about how we use AI — Coming Soon</span>
         </div>
 
         <label className="flex items-start gap-3 ooo-card bg-warm p-5 cursor-pointer">
