@@ -63,7 +63,7 @@ export default function AuthV2() {
           </span>
           <h1 className="text-3xl mt-4">{mode === "signin" ? "Sign in" : "Create account"}</h1>
           <p className="text-sm text-muted-foreground mt-2 normal-case">
-            The new relational platform — profiles, matches, meetings & ROI.
+            OOO helps you find the right people, conversations and opportunities at every event.
           </p>
         </div>
 

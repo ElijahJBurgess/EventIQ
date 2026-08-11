@@ -38,11 +38,10 @@ export default function Landing() {
       <section className="px-4 py-16 sm:px-6 sm:py-24">
         <div className="mx-auto max-w-3xl text-center">
           <h1 className="text-4xl leading-[0.95] sm:text-6xl lg:text-7xl">
-            Meet the right people at Render ATL
+            Meet the room before you work the room.
           </h1>
           <p className="mx-auto mt-6 max-w-xl text-base normal-case font-sans leading-7 text-charcoal sm:text-lg">
-            OOO Intelligence uses AI to match you with the people at the event who are worth
-            meeting, based on your goals, not just your title.
+            OOO helps you find the right people, conversations and opportunities at every event.
           </p>
           <div className="mt-10">
             <Button asChild variant="hero" size="lg" className="h-14 px-10 text-base sm:text-lg">
