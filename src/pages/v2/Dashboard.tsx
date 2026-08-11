@@ -130,14 +130,13 @@ function ProfileTab({ profile, userId, email, onSaved }: { profile: Profile | nu
   const save = async () => {
     setSaving(true);
     const interests = form.interests.split(",").map((s) => s.trim()).filter(Boolean);
-    const filled = [form.full_name, form.company, form.title, form.location, form.bio].filter(Boolean).length;
-    const score = Math.round(((filled + (interests.length ? 1 : 0)) / 6) * 100);
+    // profile_completion_score (and profile_completed) are set once by the
+    // setup wizard, which is the one true source of what "complete" means
+    // for this app -- saving here must not recalculate or overwrite them.
     const { error } = await supabase.from("profiles").update({
       ...form,
       interests,
       email,
-      profile_completed: score >= 80,
-      profile_completion_score: score,
     }).eq("id", userId);
     setSaving(false);
     if (error) return toast.error(error.message);

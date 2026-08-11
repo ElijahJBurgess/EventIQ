@@ -11,6 +11,11 @@ import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/v2/AuthProvider";
 
+// Page 3 (Page3RoleQuestions.tsx) only has real questions for these role
+// types -- everyone else sees a static "you're all set" message with no
+// fields at all, so role_details can never gain a key for them.
+const ROLE_TYPES_WITH_PAGE3_QUESTIONS = new Set(["Founder", "Investor", "Recruiter", "Hiring Manager", "Creator"]);
+
 function calculateCompletionScore(formData: ProfileSetupFormData): number {
   let score = 0;
 
@@ -30,7 +35,12 @@ function calculateCompletionScore(formData: ProfileSetupFormData): number {
     formData.linkedinUrl.trim().length > 0;
   if (optionalPage1Filled) score += 20;
 
-  if (Object.keys(formData.roleDetails).length > 0) score += 20;
+  // Role types with no Page 3 questions have nothing to fill in, so they
+  // get these 20 points automatically instead of it being permanently
+  // unreachable for them.
+  const hasPage3Questions = ROLE_TYPES_WITH_PAGE3_QUESTIONS.has(formData.roleType);
+  const roleDetailsFilled = Object.keys(formData.roleDetails).length > 0;
+  if (!hasPage3Questions || roleDetailsFilled) score += 20;
 
   if (formData.areasOfExpertise.length >= 1) score += 10;
 
