@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { MapPin, Loader2, RefreshCw, Check } from "lucide-react";
+import { MapPin, Loader2, RefreshCw, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,8 @@ import { Separator } from "@/components/ui/separator";
 
 // Week 3: Render ATL is the only live event, so the engine call is scoped to it directly.
 const RENDER_ATL_EVENT_ID = "0bdca68e-a936-4f10-9a32-bee99961ffa1";
+
+const DEFAULT_CONNECT_MESSAGE = "Hi! Looking forward to connecting at Render ATL.";
 
 interface OtherProfile {
   id: string;
@@ -31,6 +33,7 @@ interface EnrichedMatch {
   sharedIndustries: string[];
   sharedInterests: string[];
   other: OtherProfile;
+  alreadyConnected: boolean;
 }
 
 const AVATAR_PALETTE = [
@@ -92,6 +95,17 @@ export default function MatchesTab({ userId }: { userId: string }) {
       for (const p of profiles ?? []) profileMap.set(p.id, p as OtherProfile);
     }
 
+    // Which matches already have a connect message from this user -- so a
+    // page refresh shows the real "already sent" state instead of resetting
+    // the button to idle. Scoped to message_type "connect_request" only, so
+    // it never reflects normal follow-up messages sent from MessageThread.
+    const { data: sentConnectMessages } = await supabase
+      .from("messages")
+      .select("match_id")
+      .eq("sender_id", userId)
+      .eq("message_type", "connect_request");
+    const connectedMatchIds = new Set((sentConnectMessages ?? []).map((row) => row.match_id));
+
     const enriched: EnrichedMatch[] = rows
       .map((m) => {
         const otherId = m.user_a_id === userId ? m.user_b_id : m.user_a_id;
@@ -104,6 +118,7 @@ export default function MatchesTab({ userId }: { userId: string }) {
           sharedIndustries: m.shared_industries ?? [],
           sharedInterests: m.shared_interests ?? [],
           other,
+          alreadyConnected: connectedMatchIds.has(m.id),
         };
       })
       .filter((m): m is EnrichedMatch => m !== null);
@@ -187,18 +202,23 @@ export default function MatchesTab({ userId }: { userId: string }) {
 }
 
 function MatchCard({ match }: { match: EnrichedMatch }) {
-  const [status, setStatus] = useState<"idle" | "loading" | "sent">("idle");
+  const [status, setStatus] = useState<"idle" | "composing" | "sending" | "sent">(
+    match.alreadyConnected ? "sent" : "idle",
+  );
   const label = getMatchLabel(match.score);
   const { other } = match;
   const subtitle = [other.title, other.company].filter(Boolean).join(" · ");
 
-  const handleConnect = async () => {
-    setStatus("loading");
+  const sendConnectMessage = async (rawContent: string) => {
+    const content = rawContent.trim();
+    if (!content) return;
+
+    setStatus("sending");
 
     const [{ data: authData }] = await Promise.all([supabase.auth.getUser(), new Promise((r) => setTimeout(r, 1000))]);
     const actingUser = authData?.user;
     if (!actingUser) {
-      setStatus("idle");
+      setStatus("composing");
       toast.error("You must be signed in to connect.");
       return;
     }
@@ -207,11 +227,19 @@ function MatchCard({ match }: { match: EnrichedMatch }) {
       match_id: match.id,
       sender_id: actingUser.id,
       recipient_id: other.id,
-      content: "Hi! Looking forward to connecting at Render ATL.",
+      content,
+      message_type: "connect_request",
     });
 
     if (messageError) {
-      setStatus("idle");
+      // A unique constraint violation here means a connect message for this
+      // match already exists (e.g. sent from another tab/device) -- treat
+      // it as already sent rather than a failure.
+      if (messageError.code === "23505") {
+        setStatus("sent");
+        return;
+      }
+      setStatus("composing");
       toast.error("Couldn't send the message — try again.");
       return;
     }
@@ -275,10 +303,61 @@ function MatchCard({ match }: { match: EnrichedMatch }) {
         </div>
       )}
 
-      <Button className="w-full" disabled={status !== "idle"} onClick={handleConnect}>
-        {status === "loading" && <Loader2 className="h-4 w-4 animate-spin" />}
-        {status === "sent" && <Check className="h-4 w-4" />}
-        {status === "sent" ? "Message Sent" : status === "loading" ? "Sending…" : "Request to Connect"}
+      {status === "composing" || status === "sending" ? (
+        <ConnectComposer
+          defaultMessage={DEFAULT_CONNECT_MESSAGE}
+          sending={status === "sending"}
+          onSend={sendConnectMessage}
+          onCancel={() => setStatus("idle")}
+        />
+      ) : (
+        <Button className="w-full" disabled={status === "sent"} onClick={() => setStatus("composing")}>
+          {status === "sent" && <Check className="h-4 w-4" />}
+          {status === "sent" ? "Message Sent" : "Request to Connect"}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function ConnectComposer({
+  defaultMessage,
+  sending,
+  onSend,
+  onCancel,
+}: {
+  defaultMessage: string;
+  sending: boolean;
+  onSend: (message: string) => void;
+  onCancel: () => void;
+}) {
+  const [text, setText] = useState(defaultMessage);
+
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-muted-foreground normal-case font-sans">This one's just a starting point</span>
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={sending}
+          aria-label="Cancel"
+          className="text-muted-foreground hover:text-foreground disabled:opacity-50 shrink-0"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <textarea
+        className="w-full ooo-border bg-card px-3 py-2 text-sm normal-case font-sans resize-none"
+        rows={3}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        disabled={sending}
+        autoFocus
+      />
+      <Button className="w-full" disabled={sending || !text.trim()} onClick={() => onSend(text)}>
+        {sending && <Loader2 className="h-4 w-4 animate-spin" />}
+        {sending ? "Sending…" : "Send"}
       </Button>
     </div>
   );
