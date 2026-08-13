@@ -95,7 +95,7 @@ export default function DashboardV2() {
 
       <main className="max-w-5xl mx-auto px-4 py-8">
         {tab === "profile" && <ProfileTab profile={profile} userId={user!.id} email={user!.email!} onSaved={loadProfile} />}
-        {tab === "events" && <EventsTab userId={user!.id} />}
+        {tab === "events" && <EventsTab userId={user!.id} onViewMatches={() => setTab("matches")} />}
         {tab === "matches" && <MatchesTab userId={user!.id} />}
         {tab === "messages" && <MessagesTab userId={user!.id} />}
       </main>
@@ -166,14 +166,15 @@ function ProfileTab({ profile, userId, email, onSaved }: { profile: Profile | nu
   );
 }
 
-interface EventRow { id: string; name: string; venue: string | null; location: string | null; date: string | null; is_demo: boolean | null; }
+interface EventRow { id: string; name: string; venue: string | null; location: string | null; date: string | null; end_date: string | null; is_demo: boolean | null; }
 
-function EventsTab({ userId }: { userId: string }) {
+function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: () => void }) {
   const [events, setEvents] = useState<EventRow[]>([]);
   const [joined, setJoined] = useState<Set<string>>(new Set());
+  const [joiningEventId, setJoiningEventId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const { data } = await supabase.from("events").select("id,name,venue,location,date,is_demo").eq("is_published", true).order("date");
+    const { data } = await supabase.from("events").select("id,name,venue,location,date,end_date,is_demo").eq("is_published", true).order("date");
     setEvents((data as EventRow[]) ?? []);
     const { data: regs } = await supabase.from("event_registrations").select("event_id").eq("profile_id", userId);
     setJoined(new Set((regs ?? []).map((r: { event_id: string | null }) => r.event_id).filter(Boolean) as string[]));
@@ -181,37 +182,114 @@ function EventsTab({ userId }: { userId: string }) {
 
   useEffect(() => { load(); }, [load]);
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const eventStartTime = (event: EventRow) => event.date ? new Date(`${event.date}T00:00:00`).getTime() : Number.POSITIVE_INFINITY;
+  const eventEndTime = (event: EventRow) => {
+    const finalDate = event.end_date ?? event.date;
+    return finalDate ? new Date(`${finalDate}T00:00:00`).getTime() : Number.POSITIVE_INFINITY;
+  };
+  const upcomingEvents = events
+    .filter((event) => eventEndTime(event) >= today.getTime())
+    .sort((a, b) => eventStartTime(a) - eventStartTime(b));
+  const pastEvents = events
+    .filter((event) => eventEndTime(event) < today.getTime())
+    .sort((a, b) => eventEndTime(b) - eventEndTime(a));
+
   const join = async (eventId: string) => {
+    if (joined.has(eventId) || joiningEventId !== null) return;
+    setJoiningEventId(eventId);
+
+    const { data: existingRegistration, error: existingError } = await supabase
+      .from("event_registrations")
+      .select("id")
+      .eq("event_id", eventId)
+      .eq("profile_id", userId)
+      .limit(1)
+      .maybeSingle();
+
+    if (existingError) {
+      setJoiningEventId(null);
+      toast.error("Couldn't join this event — try again.");
+      return;
+    }
+
+    if (existingRegistration) {
+      setJoined((current) => new Set(current).add(eventId));
+      setJoiningEventId(null);
+      toast.success("You're already joined");
+      return;
+    }
+
     const { error } = await supabase.from("event_registrations").insert({
       event_id: eventId,
       profile_id: userId,
       registration_type: "attendee",
       status: "registered",
     });
-    if (error) return toast.error(error.message);
-    await supabase.from("check_ins").upsert({ event_id: eventId, user_id: userId, status: "checked_in", checked_in_at: new Date().toISOString() }, { onConflict: "event_id,user_id" });
-    toast.success("You're in — checked in");
-    load();
+
+    if (error) {
+      setJoiningEventId(null);
+      toast.error("Couldn't join this event — try again.");
+      return;
+    }
+
+    setJoined((current) => new Set(current).add(eventId));
+
+    try {
+      const { error: matchingError } = await supabase.functions.invoke("match-engine", {
+        body: { profileId: userId, eventId },
+      });
+      if (matchingError) console.error("match-engine invoke failed after event registration:", matchingError);
+    } catch (matchingError) {
+      console.error("match-engine invoke failed after event registration:", matchingError);
+    }
+
+    setJoiningEventId(null);
+    toast.success("Event joined — your matches are ready");
+    await load();
   };
+
+  const renderEvent = (ev: EventRow) => (
+    <div key={ev.id} className="ooo-border bg-warm p-4 flex items-center justify-between gap-3">
+      <div>
+        <p className="font-display text-base">{ev.name}</p>
+        <p className="text-xs text-muted-foreground normal-case font-sans">{ev.venue} · {ev.location} · {ev.date}</p>
+      </div>
+      {joined.has(ev.id) ? (
+        <div className="flex items-center gap-2">
+          <span className="font-label text-xs bg-aqua px-3 py-2 ooo-border">Joined</span>
+          <button onClick={onViewMatches} className="font-label text-xs bg-primary text-primary-foreground px-3 py-2 shadow-card">
+            View Matches
+          </button>
+        </div>
+      ) : (
+        <button
+          onClick={() => join(ev.id)}
+          disabled={joiningEventId !== null}
+          className="font-label text-xs bg-primary text-primary-foreground px-3 py-2 shadow-card disabled:opacity-50"
+        >
+          {joiningEventId === ev.id ? "Joining…" : "Join"}
+        </button>
+      )}
+    </div>
+  );
 
   return (
     <Section title="Events">
       {events.length === 0 && <p className="text-sm text-muted-foreground normal-case font-sans">No published events yet. Check back soon.</p>}
-      <div className="space-y-3">
-        {events.map((ev) => (
-          <div key={ev.id} className="ooo-border bg-warm p-4 flex items-center justify-between gap-3">
-            <div>
-              <p className="font-display text-base">{ev.name}</p>
-              <p className="text-xs text-muted-foreground normal-case font-sans">{ev.venue} · {ev.location} · {ev.date}</p>
-            </div>
-            {joined.has(ev.id) ? (
-              <span className="font-label text-xs bg-aqua px-3 py-2 ooo-border">Joined</span>
-            ) : (
-              <button onClick={() => join(ev.id)} className="font-label text-xs bg-primary text-primary-foreground px-3 py-2 shadow-card">Join</button>
-            )}
-          </div>
-        ))}
-      </div>
+      {upcomingEvents.length > 0 && (
+        <div>
+          <h3 className="font-label text-sm mb-3">Upcoming</h3>
+          <div className="space-y-3">{upcomingEvents.map(renderEvent)}</div>
+        </div>
+      )}
+      {pastEvents.length > 0 && (
+        <div className={upcomingEvents.length > 0 ? "mt-8" : ""}>
+          <h3 className="font-label text-sm mb-3">Past</h3>
+          <div className="space-y-3">{pastEvents.map(renderEvent)}</div>
+        </div>
+      )}
     </Section>
   );
 }

@@ -5,6 +5,7 @@ import Page1BasicInfo from "@/components/profile-setup/Page1BasicInfo";
 import Page2MatchingPrefs from "@/components/profile-setup/Page2MatchingPrefs";
 import Page3RoleQuestions from "@/components/profile-setup/Page3RoleQuestions";
 import Page4Terms from "@/components/profile-setup/Page4Terms";
+import Page5EventSelection from "@/components/profile-setup/Page5EventSelection";
 import SuccessScreen from "@/components/profile-setup/SuccessScreen";
 import { initialProfileSetupFormData, type ProfileSetupFormData } from "@/components/profile-setup/types";
 import { supabase } from "@/integrations/supabase/client";
@@ -92,30 +93,19 @@ export default function ProfileSetup() {
       return;
     }
 
-    // Fire-and-forget: the profile save is what matters here, matching can
-    // always be re-run manually from the dashboard if this fails silently.
-    supabase.functions
-      .invoke("match-engine", {
-        body: { profileId: user.id, eventId: "0bdca68e-a936-4f10-9a32-bee99961ffa1" },
-      })
-      .then(({ error: matchError }) => {
-        if (matchError) console.error("match-engine invoke failed:", matchError);
-      })
-      .catch((err) => console.error("match-engine invoke failed:", err));
-
-    setIsComplete(true);
+    setCurrentPage(5);
   };
 
   useEffect(() => {
     if (!isComplete) return;
-    const timer = setTimeout(() => navigate("/v2"), 3000);
+    const timer = setTimeout(() => navigate("/v2"), 750);
     return () => clearTimeout(timer);
   }, [isComplete, navigate]);
 
   return (
     <div className="min-h-screen bg-aqua flex items-start justify-center px-4 py-10 sm:py-16">
       <div className="w-full max-w-xl">
-        {!isComplete && <ProgressIndicator currentPage={currentPage} />}
+        {!isComplete && <ProgressIndicator currentPage={currentPage} totalPages={5} />}
         {isComplete ? (
           <SuccessScreen />
         ) : (
@@ -139,6 +129,9 @@ export default function ProfileSetup() {
                 isSubmitting={isSubmitting}
                 submitError={submitError}
               />
+            )}
+            {currentPage === 5 && (
+              <Page5EventSelection profileId={user!.id} onContinue={() => setIsComplete(true)} />
             )}
           </div>
         )}

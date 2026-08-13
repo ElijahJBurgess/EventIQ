@@ -14,6 +14,7 @@ interface OtherProfile {
 interface Conversation {
   matchId: string;
   eventId: string | null;
+  eventName: string | null;
   other: OtherProfile;
   lastContent: string;
   lastCreatedAt: string;
@@ -57,7 +58,7 @@ export default function MessagesTab({ userId }: { userId: string }) {
   const loadConversations = useCallback(async () => {
     const { data: messageRows, error } = await supabase
       .from("messages")
-      .select("id, match_id, sender_id, recipient_id, content, created_at")
+      .select("id, match_id, event_id, sender_id, recipient_id, content, created_at")
       .or(`sender_id.eq.${userId},recipient_id.eq.${userId}`)
       .order("created_at", { ascending: false });
 
@@ -68,7 +69,7 @@ export default function MessagesTab({ userId }: { userId: string }) {
     }
 
     const rows = messageRows ?? [];
-    type Group = { otherId: string; lastContent: string; lastCreatedAt: string };
+    type Group = { otherId: string; eventId: string | null; lastContent: string; lastCreatedAt: string };
     const groups = new Map<string, Group>();
 
     for (const m of rows) {
@@ -79,6 +80,7 @@ export default function MessagesTab({ userId }: { userId: string }) {
       // match_id is that conversation's most recent message.
       groups.set(m.match_id, {
         otherId,
+        eventId: m.event_id,
         lastContent: m.content,
         lastCreatedAt: m.created_at ?? "",
       });
@@ -86,20 +88,23 @@ export default function MessagesTab({ userId }: { userId: string }) {
 
     const matchIds = Array.from(groups.keys());
     const otherIds = Array.from(new Set(Array.from(groups.values()).map((g) => g.otherId)));
+    const eventIds = Array.from(
+      new Set(Array.from(groups.values()).map((g) => g.eventId).filter((id): id is string => Boolean(id))),
+    );
 
-    const [{ data: profiles }, { data: matches }] = await Promise.all([
+    const [{ data: profiles }, { data: events }] = await Promise.all([
       otherIds.length > 0
         ? supabase.from("profiles").select("id, full_name, avatar_url").in("id", otherIds)
         : Promise.resolve({ data: [] as OtherProfile[] }),
-      matchIds.length > 0
-        ? supabase.from("matches").select("id, event_id").in("id", matchIds)
-        : Promise.resolve({ data: [] as { id: string; event_id: string | null }[] }),
+      eventIds.length > 0
+        ? supabase.from("events").select("id, name").in("id", eventIds)
+        : Promise.resolve({ data: [] as { id: string; name: string }[] }),
     ]);
 
     const profileMap = new Map<string, OtherProfile>();
     for (const p of profiles ?? []) profileMap.set(p.id, p as OtherProfile);
-    const eventMap = new Map<string, string | null>();
-    for (const m of matches ?? []) eventMap.set(m.id, m.event_id);
+    const eventMap = new Map<string, string>();
+    for (const event of events ?? []) eventMap.set(event.id, event.name);
 
     const list: Conversation[] = matchIds
       .map((matchId) => {
@@ -108,7 +113,8 @@ export default function MessagesTab({ userId }: { userId: string }) {
         if (!other) return null;
         return {
           matchId,
-          eventId: eventMap.get(matchId) ?? null,
+          eventId: group.eventId,
+          eventName: group.eventId ? (eventMap.get(group.eventId) ?? null) : null,
           other,
           lastContent: group.lastContent,
           lastCreatedAt: group.lastCreatedAt,
@@ -131,6 +137,7 @@ export default function MessagesTab({ userId }: { userId: string }) {
         userId={userId}
         matchId={openConversation.matchId}
         eventId={openConversation.eventId}
+        eventName={openConversation.eventName}
         other={openConversation.other}
         onBack={() => {
           setOpenConversation(null);
@@ -145,7 +152,7 @@ export default function MessagesTab({ userId }: { userId: string }) {
       <div className="ooo-card bg-card p-6 mb-6">
         <h2 className="text-2xl">Messages</h2>
         <p className="text-sm text-muted-foreground normal-case font-sans mt-1">
-          Conversations with your connections at Render ATL 2026
+          Conversations with your event connections
         </p>
       </div>
 
@@ -182,7 +189,12 @@ export default function MessagesTab({ userId }: { userId: string }) {
                 </AvatarFallback>
               </Avatar>
               <div className="min-w-0 flex-1">
-                <p className="font-bold normal-case font-sans truncate">{c.other.full_name ?? "Member"}</p>
+                <div className="flex items-center gap-2 min-w-0">
+                  <p className="font-bold normal-case font-sans truncate">{c.other.full_name ?? "Member"}</p>
+                  <span className="ooo-border bg-card px-2 py-0.5 text-[10px] font-label shrink-0">
+                    {c.eventName ?? "General"}
+                  </span>
+                </div>
                 <p className="text-xs text-muted-foreground normal-case font-sans truncate mt-0.5">{c.lastContent}</p>
               </div>
               <span className="text-[11px] text-muted-foreground normal-case font-sans shrink-0">

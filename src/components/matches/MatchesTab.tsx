@@ -7,10 +7,11 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 
-// Week 3: Render ATL is the only live event, so the engine call is scoped to it directly.
-const RENDER_ATL_EVENT_ID = "0bdca68e-a936-4f10-9a32-bee99961ffa1";
-
-const DEFAULT_CONNECT_MESSAGE = "Hi! Looking forward to connecting at Render ATL.";
+interface JoinedEvent {
+  id: string;
+  name: string;
+  date: string | null;
+}
 
 interface OtherProfile {
   id: string;
@@ -28,6 +29,7 @@ interface OtherProfile {
 
 interface EnrichedMatch {
   id: string;
+  eventId: string;
   score: number;
   reason: string | null;
   sharedIndustries: string[];
@@ -67,12 +69,72 @@ export default function MatchesTab({ userId }: { userId: string }) {
   const [matches, setMatches] = useState<EnrichedMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [joinedEvents, setJoinedEvents] = useState<JoinedEvent[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadJoinedEvents = async () => {
+      const { data: registrations, error: registrationsError } = await supabase
+        .from("event_registrations")
+        .select("event_id")
+        .eq("profile_id", userId)
+        .eq("status", "registered");
+
+      if (cancelled) return;
+      if (registrationsError) {
+        toast.error("Couldn't load your events — try refreshing.");
+        setLoading(false);
+        return;
+      }
+
+      const eventIds = Array.from(
+        new Set((registrations ?? []).map((registration) => registration.event_id).filter((id): id is string => Boolean(id))),
+      );
+
+      if (eventIds.length === 0) {
+        setJoinedEvents([]);
+        setSelectedEventId("");
+        setMatches([]);
+        setLoading(false);
+        return;
+      }
+
+      const { data: events, error: eventsError } = await supabase
+        .from("events")
+        .select("id, name, date")
+        .in("id", eventIds)
+        .order("date", { ascending: true });
+
+      if (cancelled) return;
+      if (eventsError) {
+        toast.error("Couldn't load your events — try refreshing.");
+        setLoading(false);
+        return;
+      }
+
+      const nextEvents = (events as JoinedEvent[] | null) ?? [];
+      setJoinedEvents(nextEvents);
+      setSelectedEventId((current) =>
+        current && nextEvents.some((event) => event.id === current) ? current : (nextEvents[0]?.id ?? ""),
+      );
+    };
+
+    loadJoinedEvents();
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   const loadMatches = useCallback(async () => {
+    if (!selectedEventId) return;
+
     const { data: matchRows, error } = await supabase
       .from("matches")
-      .select("id, user_a_id, user_b_id, match_score, match_reason, shared_industries, shared_interests")
+      .select("id, event_id, user_a_id, user_b_id, match_score, match_reason, shared_industries, shared_interests")
       .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
+      .eq("event_id", selectedEventId)
       .order("match_score", { ascending: false });
 
     if (error) {
@@ -113,6 +175,7 @@ export default function MatchesTab({ userId }: { userId: string }) {
         if (!other) return null;
         return {
           id: m.id,
+          eventId: m.event_id ?? selectedEventId,
           score: m.match_score ?? 0,
           reason: m.match_reason,
           sharedIndustries: m.shared_industries ?? [],
@@ -125,16 +188,19 @@ export default function MatchesTab({ userId }: { userId: string }) {
 
     setMatches(enriched);
     setLoading(false);
-  }, [userId]);
+  }, [selectedEventId, userId]);
 
   useEffect(() => {
+    if (!selectedEventId) return;
+    setLoading(true);
     loadMatches();
-  }, [loadMatches]);
+  }, [loadMatches, selectedEventId]);
 
   const runMatching = async () => {
+    if (!selectedEventId) return;
     setRunning(true);
     const { data, error } = await supabase.functions.invoke("match-engine", {
-      body: { profileId: userId, eventId: RENDER_ATL_EVENT_ID },
+      body: { profileId: userId, eventId: selectedEventId },
     });
     setRunning(false);
 
@@ -148,6 +214,8 @@ export default function MatchesTab({ userId }: { userId: string }) {
     await loadMatches();
   };
 
+  const selectedEvent = joinedEvents.find((event) => event.id === selectedEventId) ?? null;
+
   return (
     <div>
       <div className="ooo-card bg-card p-6 mb-6">
@@ -155,17 +223,35 @@ export default function MatchesTab({ userId }: { userId: string }) {
           <div>
             <h2 className="text-2xl">Your Matches</h2>
             <p className="text-sm text-muted-foreground normal-case font-sans mt-1">
-              People you should meet at Render ATL 2026
+              {selectedEvent ? `People you should meet at ${selectedEvent.name}` : "Join an event to discover people you should meet"}
             </p>
           </div>
-          <Button onClick={runMatching} disabled={running} variant="secondary" size="sm">
-            {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            {running ? "Running…" : "Run Matching"}
-          </Button>
+          {selectedEvent && (
+            <Button onClick={runMatching} disabled={running} variant="secondary" size="sm">
+              {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              {running ? "Running…" : "Run Matching"}
+            </Button>
+          )}
         </div>
-        <p className="text-xs text-muted-foreground normal-case font-sans mt-3">
-          {matches.length} {matches.length === 1 ? "person" : "people"} matched
-        </p>
+        {joinedEvents.length > 1 && (
+          <label className="mt-4 block text-xs font-label">
+            Event
+            <select
+              value={selectedEventId}
+              onChange={(event) => setSelectedEventId(event.target.value)}
+              className="mt-2 w-full sm:max-w-xs ooo-border bg-card px-3 py-2 normal-case font-sans"
+            >
+              {joinedEvents.map((event) => (
+                <option key={event.id} value={event.id}>{event.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        {selectedEvent && (
+          <p className="text-xs text-muted-foreground normal-case font-sans mt-3">
+            {matches.length} {matches.length === 1 ? "person" : "people"} matched
+          </p>
+        )}
       </div>
 
       {loading ? (
@@ -187,13 +273,15 @@ export default function MatchesTab({ userId }: { userId: string }) {
       ) : matches.length === 0 ? (
         <div className="ooo-border bg-warm p-8 text-center">
           <p className="text-sm text-muted-foreground normal-case font-sans">
-            No matches yet. Your matches will appear here once the engine runs.
+            {selectedEvent
+              ? "No matches yet. Your matches will appear here once matching runs."
+              : "You haven't joined any events yet. Join an event to start finding matches."}
           </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {matches.map((m) => (
-            <MatchCard key={m.id} match={m} />
+            <MatchCard key={m.id} match={m} eventName={selectedEvent?.name ?? "this event"} />
           ))}
         </div>
       )}
@@ -201,7 +289,7 @@ export default function MatchesTab({ userId }: { userId: string }) {
   );
 }
 
-function MatchCard({ match }: { match: EnrichedMatch }) {
+function MatchCard({ match, eventName }: { match: EnrichedMatch; eventName: string }) {
   const [status, setStatus] = useState<"idle" | "composing" | "sending" | "sent">(
     match.alreadyConnected ? "sent" : "idle",
   );
@@ -225,6 +313,7 @@ function MatchCard({ match }: { match: EnrichedMatch }) {
 
     const { error: messageError } = await supabase.from("messages").insert({
       match_id: match.id,
+      event_id: match.eventId,
       sender_id: actingUser.id,
       recipient_id: other.id,
       content,
@@ -305,7 +394,7 @@ function MatchCard({ match }: { match: EnrichedMatch }) {
 
       {status === "composing" || status === "sending" ? (
         <ConnectComposer
-          defaultMessage={DEFAULT_CONNECT_MESSAGE}
+          defaultMessage={`Hi! Looking forward to connecting at ${eventName}.`}
           sending={status === "sending"}
           onSend={sendConnectMessage}
           onCancel={() => setStatus("idle")}

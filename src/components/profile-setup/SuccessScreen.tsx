@@ -1,18 +1,6 @@
-import { useEffect, useState } from "react";
-
-const STEPS = ["Profile saved", "Preferences locked in", "Finding your matches..."];
-const STEP_DELAY_MS = 400;
+const STEPS = ["Profile saved", "Preferences saved", "Ready to explore events"];
 
 export default function SuccessScreen() {
-  const [visibleCount, setVisibleCount] = useState(0);
-
-  useEffect(() => {
-    const timers = STEPS.map((_, index) =>
-      setTimeout(() => setVisibleCount((count) => Math.max(count, index + 1)), STEP_DELAY_MS * (index + 1)),
-    );
-    return () => timers.forEach(clearTimeout);
-  }, []);
-
   return (
     <div className="ooo-card bg-card p-8 sm:p-10 text-center">
       <div className="flex justify-center gap-2 mb-8">
@@ -24,19 +12,16 @@ export default function SuccessScreen() {
           />
         ))}
       </div>
-      <h1 className="text-3xl sm:text-4xl font-black">Building your matches...</h1>
+      <h1 className="text-3xl sm:text-4xl font-black">Your profile is ready</h1>
       <p className="text-sm text-muted-foreground normal-case font-sans mt-3 mb-8">
-        We're setting up your personalized match recommendations. This only takes a moment.
+        You're ready to discover events and meet the right people.
       </p>
-      <ul className="space-y-3 text-left max-w-xs mx-auto min-h-[84px]">
-        {STEPS.map(
-          (step, index) =>
-            index < visibleCount && (
-              <li key={step} className="animate-fade-in text-sm font-bold normal-case font-sans">
-                ✓ {step}
-              </li>
-            ),
-        )}
+      <ul className="space-y-3 text-left max-w-xs mx-auto">
+        {STEPS.map((step) => (
+          <li key={step} className="text-sm font-bold normal-case font-sans">
+            ✓ {step}
+          </li>
+        ))}
       </ul>
     </div>
   );

@@ -48,11 +48,12 @@ interface MessageThreadProps {
   userId: string;
   matchId: string;
   eventId: string | null;
+  eventName: string | null;
   other: OtherProfile;
   onBack: () => void;
 }
 
-export default function MessageThread({ userId, matchId, eventId, other, onBack }: MessageThreadProps) {
+export default function MessageThread({ userId, matchId, eventId, eventName, other, onBack }: MessageThreadProps) {
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState("");
@@ -117,7 +118,12 @@ export default function MessageThread({ userId, matchId, eventId, other, onBack 
             {initials(other.full_name)}
           </AvatarFallback>
         </Avatar>
-        <p className="font-bold normal-case font-sans truncate">{other.full_name ?? "Member"}</p>
+        <div className="min-w-0">
+          <p className="font-bold normal-case font-sans truncate">{other.full_name ?? "Member"}</p>
+          <p className="text-[11px] text-muted-foreground normal-case font-sans truncate">
+            {eventName ?? "General"}
+          </p>
+        </div>
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 max-w-2xl w-full mx-auto">
