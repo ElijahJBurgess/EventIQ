@@ -171,13 +171,21 @@ interface EventRow { id: string; name: string; venue: string | null; location: s
 function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: () => void }) {
   const [events, setEvents] = useState<EventRow[]>([]);
   const [joined, setJoined] = useState<Set<string>>(new Set());
+  const [checkedIn, setCheckedIn] = useState<Set<string>>(new Set());
   const [joiningEventId, setJoiningEventId] = useState<string | null>(null);
+  const [checkingInEventId, setCheckingInEventId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const { data } = await supabase.from("events").select("id,name,venue,location,date,end_date,is_demo").eq("is_published", true).order("date");
     setEvents((data as EventRow[]) ?? []);
-    const { data: regs } = await supabase.from("event_registrations").select("event_id").eq("profile_id", userId);
+    const { data: regs } = await supabase.from("event_registrations").select("event_id,is_checked_in").eq("profile_id", userId);
     setJoined(new Set((regs ?? []).map((r: { event_id: string | null }) => r.event_id).filter(Boolean) as string[]));
+    setCheckedIn(new Set(
+      (regs ?? [])
+        .filter((r: { event_id: string | null; is_checked_in: boolean }) => r.is_checked_in)
+        .map((r: { event_id: string | null }) => r.event_id)
+        .filter(Boolean) as string[],
+    ));
   }, [userId]);
 
   useEffect(() => { load(); }, [load]);
@@ -189,6 +197,9 @@ function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (
     const finalDate = event.end_date ?? event.date;
     return finalDate ? new Date(`${finalDate}T00:00:00`).getTime() : Number.POSITIVE_INFINITY;
   };
+  const isEventHappeningToday = (event: EventRow) => (
+    eventStartTime(event) <= today.getTime() && eventEndTime(event) >= today.getTime()
+  );
   const upcomingEvents = events
     .filter((event) => eventEndTime(event) >= today.getTime())
     .sort((a, b) => eventStartTime(a) - eventStartTime(b));
@@ -250,6 +261,27 @@ function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (
     await load();
   };
 
+  const checkIn = async (eventId: string) => {
+    if (checkedIn.has(eventId) || checkingInEventId !== null) return;
+    setCheckingInEventId(eventId);
+
+    const { error } = await supabase
+      .from("event_registrations")
+      .update({ is_checked_in: true, checked_in_at: new Date().toISOString() })
+      .eq("event_id", eventId)
+      .eq("profile_id", userId)
+      .eq("is_checked_in", false);
+
+    setCheckingInEventId(null);
+    if (error) {
+      toast.error("Couldn't check in — try again.");
+      return;
+    }
+
+    setCheckedIn((current) => new Set(current).add(eventId));
+    toast.success("You're checked in");
+  };
+
   const renderEvent = (ev: EventRow) => (
     <div key={ev.id} className="ooo-border bg-warm p-4 flex items-center justify-between gap-3">
       <div>
@@ -257,8 +289,21 @@ function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (
         <p className="text-xs text-muted-foreground normal-case font-sans">{ev.venue} · {ev.location} · {ev.date}</p>
       </div>
       {joined.has(ev.id) ? (
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <span className="font-label text-xs bg-aqua px-3 py-2 ooo-border">Joined</span>
+          {isEventHappeningToday(ev) && (
+            checkedIn.has(ev.id) ? (
+              <span className="font-label text-xs bg-citron px-3 py-2 ooo-border">✓ Checked In</span>
+            ) : (
+              <button
+                onClick={() => checkIn(ev.id)}
+                disabled={checkingInEventId !== null}
+                className="font-label text-xs bg-citron px-3 py-2 ooo-border disabled:opacity-50"
+              >
+                {checkingInEventId === ev.id ? "Checking In…" : "Check In"}
+              </button>
+            )
+          )}
           <button onClick={onViewMatches} className="font-label text-xs bg-primary text-primary-foreground px-3 py-2 shadow-card">
             View Matches
           </button>

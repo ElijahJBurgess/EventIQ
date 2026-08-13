@@ -186,6 +186,7 @@ export type Database = {
       event_registrations: {
         Row: {
           career_stage: string | null
+          checked_in_at: string | null
           city: string | null
           company: string | null
           created_at: string
@@ -195,6 +196,7 @@ export type Database = {
           full_name: string | null
           goals: string[]
           id: string
+          is_checked_in: boolean
           job_title: string | null
           linkedin_url: string | null
           looking_for: string | null
@@ -212,6 +214,7 @@ export type Database = {
         }
         Insert: {
           career_stage?: string | null
+          checked_in_at?: string | null
           city?: string | null
           company?: string | null
           created_at?: string
@@ -221,6 +224,7 @@ export type Database = {
           full_name?: string | null
           goals?: string[]
           id?: string
+          is_checked_in?: boolean
           job_title?: string | null
           linkedin_url?: string | null
           looking_for?: string | null
@@ -238,6 +242,7 @@ export type Database = {
         }
         Update: {
           career_stage?: string | null
+          checked_in_at?: string | null
           city?: string | null
           company?: string | null
           created_at?: string
@@ -247,6 +252,7 @@ export type Database = {
           full_name?: string | null
           goals?: string[]
           id?: string
+          is_checked_in?: boolean
           job_title?: string | null
           linkedin_url?: string | null
           looking_for?: string | null
