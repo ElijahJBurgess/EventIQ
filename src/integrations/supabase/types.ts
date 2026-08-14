@@ -531,50 +531,59 @@ export type Database = {
       meetings: {
         Row: {
           calendar_export_token: string | null
-          confirmed_time: string | null
+          completed_at: string | null
           created_at: string | null
           duration_minutes: number | null
-          event_id: string | null
+          event_id: string
           id: string
           location_note: string | null
-          match_id: string | null
+          match_id: string
           meeting_notes: string | null
           proposed_time: string | null
-          recipient_id: string | null
-          requester_id: string | null
-          status: string | null
+          recipient_id: string
+          requested_at: string
+          requester_id: string
+          responded_at: string | null
+          scheduled_at: string | null
+          status: string
           updated_at: string | null
         }
         Insert: {
           calendar_export_token?: string | null
-          confirmed_time?: string | null
+          completed_at?: string | null
           created_at?: string | null
           duration_minutes?: number | null
-          event_id?: string | null
+          event_id: string
           id?: string
           location_note?: string | null
-          match_id?: string | null
+          match_id: string
           meeting_notes?: string | null
           proposed_time?: string | null
-          recipient_id?: string | null
-          requester_id?: string | null
-          status?: string | null
+          recipient_id: string
+          requested_at?: string
+          requester_id: string
+          responded_at?: string | null
+          scheduled_at?: string | null
+          status?: string
           updated_at?: string | null
         }
         Update: {
           calendar_export_token?: string | null
-          confirmed_time?: string | null
+          completed_at?: string | null
           created_at?: string | null
           duration_minutes?: number | null
-          event_id?: string | null
+          event_id?: string
           id?: string
           location_note?: string | null
-          match_id?: string | null
+          match_id?: string
           meeting_notes?: string | null
           proposed_time?: string | null
-          recipient_id?: string | null
-          requester_id?: string | null
-          status?: string | null
+          recipient_id?: string
+          requested_at?: string
+          requester_id?: string
+          responded_at?: string | null
+          scheduled_at?: string | null
+          status?: string
           updated_at?: string | null
         }
         Relationships: [

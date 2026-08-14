@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowLeft, Loader2, Send } from "lucide-react";
+import { ArrowLeft, CalendarPlus, CheckCircle, Download, Loader2, Send } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -16,6 +16,47 @@ interface MessageRow {
   sender_id: string | null;
   content: string;
   created_at: string | null;
+}
+
+interface MeetingRow {
+  id: string;
+  status: string;
+  requester_id: string;
+  recipient_id: string;
+  requested_at: string;
+  scheduled_at: string | null;
+  location_note: string | null;
+  duration_minutes: number | null;
+  completed_at: string | null;
+}
+
+interface EventDateRange {
+  date: string;
+  end_date: string | null;
+}
+
+const ACTIVE_MEETING_STATUSES = ["requested", "accepted", "scheduled"];
+const MEETING_TIME_OPTIONS = Array.from({ length: 48 }, (_, index) => {
+  const hours = Math.floor(index / 2);
+  const minutes = index % 2 === 0 ? "00" : "30";
+  const value = `${String(hours).padStart(2, "0")}:${minutes}`;
+  const label = new Date(`2000-01-01T${value}:00`).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  return { value, label };
+});
+
+function meetingStatusLabel(status: string, isRequester: boolean) {
+  const labels: Record<string, string> = {
+    requested: isRequester ? "Meeting requested — waiting on response" : "Meeting requested",
+    accepted: "Meeting accepted — Ready to schedule",
+    declined: "Meeting declined",
+    scheduled: "Meeting scheduled",
+    completed: "Meeting completed",
+    cancelled: "Meeting cancelled",
+  };
+  return labels[status] ?? "Meeting updated";
 }
 
 const AVATAR_PALETTE = [
@@ -44,6 +85,33 @@ function formatTime(iso: string | null) {
   return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
+function localDateValue(date = new Date()) {
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function formatScheduledDateTime(iso: string) {
+  return new Date(iso).toLocaleString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatIcsDate(date: Date) {
+  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+
+function escapeIcsText(value: string) {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/\n/g, "\\n")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,");
+}
+
 interface MessageThreadProps {
   userId: string;
   matchId: string;
@@ -58,6 +126,16 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [meeting, setMeeting] = useState<MeetingRow | null>(null);
+  const [declinedRequesterIds, setDeclinedRequesterIds] = useState<string[]>([]);
+  const [requestingMeeting, setRequestingMeeting] = useState(false);
+  const [respondingToMeeting, setRespondingToMeeting] = useState<"accepted" | "declined" | null>(null);
+  const [eventDateRange, setEventDateRange] = useState<EventDateRange | null>(null);
+  const [scheduleDate, setScheduleDate] = useState("");
+  const [scheduleTime, setScheduleTime] = useState("");
+  const [scheduleLocation, setScheduleLocation] = useState("");
+  const [schedulingMeeting, setSchedulingMeeting] = useState(false);
+  const [completingMeeting, setCompletingMeeting] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const loadMessages = useCallback(async () => {
@@ -76,9 +154,55 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
     setLoading(false);
   }, [matchId]);
 
+  const loadMeeting = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("meetings")
+      .select("id, status, requester_id, recipient_id, requested_at, scheduled_at, location_note, duration_minutes, completed_at")
+      .eq("match_id", matchId)
+      .order("requested_at", { ascending: false });
+
+    if (error) {
+      toast.error("Couldn't load meeting status — try refreshing.");
+      return;
+    }
+    const history = (data as MeetingRow[] | null) ?? [];
+    setMeeting(history[0] ?? null);
+    setDeclinedRequesterIds([
+      ...new Set(history.filter((attempt) => attempt.status === "declined").map((attempt) => attempt.requester_id)),
+    ]);
+  }, [matchId]);
+
+  const loadEventDateRange = useCallback(async () => {
+    if (!eventId) {
+      setEventDateRange(null);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("events")
+      .select("date, end_date")
+      .eq("id", eventId)
+      .maybeSingle();
+
+    if (error) {
+      toast.error("Couldn't load this event's dates — try refreshing.");
+      return;
+    }
+    setEventDateRange((data as EventDateRange | null) ?? null);
+  }, [eventId]);
+
   useEffect(() => {
     loadMessages();
-  }, [loadMessages]);
+    loadMeeting();
+    loadEventDateRange();
+  }, [loadEventDateRange, loadMeeting, loadMessages]);
+
+  useEffect(() => {
+    if (meeting?.status !== "accepted" || !eventDateRange || scheduleDate) return;
+    const today = localDateValue();
+    const lastDate = eventDateRange.end_date ?? eventDateRange.date;
+    setScheduleDate(today >= eventDateRange.date && today <= lastDate ? today : eventDateRange.date);
+  }, [eventDateRange, meeting?.status, scheduleDate]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
@@ -106,6 +230,199 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
     await loadMessages();
   };
 
+  const hasBackAndForth = messages.some((message) => message.sender_id === userId)
+    && messages.some((message) => message.sender_id === other.id);
+  const hasActiveMeeting = meeting ? ACTIVE_MEETING_STATUSES.includes(meeting.status) : false;
+  const currentUserWasDeclined = declinedRequesterIds.includes(userId);
+  const meetingRequestsClosed = declinedRequesterIds.includes(userId) && declinedRequesterIds.includes(other.id);
+  const canRequestMeeting = (!meeting || ["declined", "cancelled"].includes(meeting.status))
+    && !currentUserWasDeclined
+    && !meetingRequestsClosed;
+
+  const requestMeeting = async () => {
+    if (!eventId || !hasBackAndForth || requestingMeeting) return;
+    setRequestingMeeting(true);
+
+    const { data: meetingHistory, error: existingError } = await supabase
+      .from("meetings")
+      .select("id, status, requester_id, recipient_id, requested_at, scheduled_at, location_note, duration_minutes, completed_at")
+      .eq("match_id", matchId)
+      .order("requested_at", { ascending: false });
+
+    if (existingError) {
+      setRequestingMeeting(false);
+      toast.error("Couldn't request a meeting — try again.");
+      return;
+    }
+    const existingMeeting = (meetingHistory as MeetingRow[] | null)?.find((attempt) => ACTIVE_MEETING_STATUSES.includes(attempt.status));
+    if (existingMeeting) {
+      setMeeting(existingMeeting as MeetingRow);
+      setRequestingMeeting(false);
+      toast.info("A meeting is already active for this conversation.");
+      return;
+    }
+    if ((meetingHistory as MeetingRow[] | null)?.some((attempt) => attempt.status === "declined" && attempt.requester_id === userId)) {
+      setRequestingMeeting(false);
+      toast.info("You can't send another meeting request for this match.");
+      await loadMeeting();
+      return;
+    }
+
+    const requestedAt = new Date().toISOString();
+    const { data, error } = await supabase
+      .from("meetings")
+      .insert({
+        match_id: matchId,
+        event_id: eventId,
+        requester_id: userId,
+        recipient_id: other.id,
+        status: "requested",
+        requested_at: requestedAt,
+      })
+      .select("id, status, requester_id, recipient_id, requested_at, scheduled_at, location_note, duration_minutes, completed_at")
+      .single();
+
+    setRequestingMeeting(false);
+    if (error) {
+      toast.error("Couldn't request a meeting — try again.");
+      return;
+    }
+
+    setMeeting(data as MeetingRow);
+    toast.success(`Meeting request sent to ${other.full_name ?? "this member"}`);
+  };
+
+  const respondToMeeting = async (status: "accepted" | "declined") => {
+    if (!meeting || meeting.status !== "requested" || meeting.recipient_id !== userId || respondingToMeeting) return;
+    setRespondingToMeeting(status);
+
+    const { data, error } = await supabase
+      .from("meetings")
+      .update({ status, responded_at: new Date().toISOString() })
+      .eq("id", meeting.id)
+      .eq("status", "requested")
+      .eq("recipient_id", userId)
+      .select("id, status, requester_id, recipient_id, requested_at, scheduled_at, location_note, duration_minutes, completed_at")
+      .single();
+
+    setRespondingToMeeting(null);
+    if (error) {
+      toast.error("Couldn't respond to this meeting — try again.");
+      await loadMeeting();
+      return;
+    }
+
+    setMeeting(data as MeetingRow);
+    if (status === "declined") {
+      setDeclinedRequesterIds((current) => [...new Set([...current, meeting.requester_id])]);
+    }
+    toast.success(status === "accepted" ? "Meeting accepted — ready to schedule" : "Meeting declined");
+  };
+
+  const scheduleMeeting = async () => {
+    const location = scheduleLocation.trim();
+    if (!meeting || meeting.status !== "accepted" || !scheduleDate || !scheduleTime || !location || schedulingMeeting) return;
+
+    if (eventDateRange) {
+      const lastDate = eventDateRange.end_date ?? eventDateRange.date;
+      if (scheduleDate < eventDateRange.date || scheduleDate > lastDate) {
+        toast.error("Choose a date during the event.");
+        return;
+      }
+    }
+
+    const selectedDateTime = new Date(`${scheduleDate}T${scheduleTime}:00`);
+    if (Number.isNaN(selectedDateTime.getTime())) {
+      toast.error("Choose a valid date and time.");
+      return;
+    }
+
+    setSchedulingMeeting(true);
+    const { data, error } = await supabase
+      .from("meetings")
+      .update({
+        status: "scheduled",
+        scheduled_at: selectedDateTime.toISOString(),
+        location_note: location,
+      })
+      .eq("id", meeting.id)
+      .eq("status", "accepted")
+      .select("id, status, requester_id, recipient_id, requested_at, scheduled_at, location_note, duration_minutes, completed_at")
+      .single();
+
+    setSchedulingMeeting(false);
+    if (error) {
+      toast.error("Couldn't schedule this meeting — it may already have been updated.");
+      await loadMeeting();
+      return;
+    }
+
+    setMeeting(data as MeetingRow);
+    toast.success("Meeting scheduled");
+  };
+
+  const addToCalendar = () => {
+    if (!meeting?.scheduled_at) return;
+
+    const startsAt = new Date(meeting.scheduled_at);
+    const durationMinutes = meeting.duration_minutes ?? 30;
+    const endsAt = new Date(startsAt.getTime() + durationMinutes * 60_000);
+    const title = `Meeting with ${other.full_name ?? "OOO connection"} at ${eventName ?? "an event"}`;
+    const description = "A meeting with an OOO Intelligence connection.";
+    const calendar = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//OOO Intelligence//Meeting Calendar Export//EN",
+      "CALSCALE:GREGORIAN",
+      "METHOD:PUBLISH",
+      "BEGIN:VEVENT",
+      `UID:${meeting.id}@ooo-intelligence`,
+      `DTSTAMP:${formatIcsDate(new Date())}`,
+      `DTSTART:${formatIcsDate(startsAt)}`,
+      `DTEND:${formatIcsDate(endsAt)}`,
+      `SUMMARY:${escapeIcsText(title)}`,
+      `DESCRIPTION:${escapeIcsText(description)}`,
+      `LOCATION:${escapeIcsText(meeting.location_note ?? "")}`,
+      "END:VEVENT",
+      "END:VCALENDAR",
+      "",
+    ].join("\r\n");
+
+    const blob = new Blob([calendar], { type: "text/calendar;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    const safeEventName = (eventName ?? "event").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
+    link.href = url;
+    link.download = `ooo-meeting-${safeEventName || "event"}.ics`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+  };
+
+  const completeMeeting = async () => {
+    if (!meeting || meeting.status !== "scheduled" || completingMeeting) return;
+    setCompletingMeeting(true);
+
+    const { data, error } = await supabase
+      .from("meetings")
+      .update({ status: "completed", completed_at: new Date().toISOString() })
+      .eq("id", meeting.id)
+      .eq("status", "scheduled")
+      .select("id, status, requester_id, recipient_id, requested_at, scheduled_at, location_note, duration_minutes, completed_at")
+      .single();
+
+    setCompletingMeeting(false);
+    if (error) {
+      toast.error("Couldn't mark this meeting complete — it may already have been updated.");
+      await loadMeeting();
+      return;
+    }
+
+    setMeeting(data as MeetingRow);
+    toast.success("Meeting marked complete");
+  };
+
   return (
     <div className="fixed inset-0 z-50 bg-aqua flex flex-col">
       <header className="bg-card/95 border-b-2 border-primary flex items-center gap-3 px-4 py-3 shrink-0">
@@ -125,6 +442,128 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
           </p>
         </div>
       </header>
+
+      {(meeting || (hasBackAndForth && eventId)) && (
+        <div className="border-b-2 border-primary bg-warm px-4 py-3 shrink-0">
+          <div className="max-w-2xl mx-auto space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              {meeting && (
+                <span className="font-label text-xs ooo-border bg-card px-3 py-2">
+                  {meetingStatusLabel(meeting.status, meeting.requester_id === userId)}
+                </span>
+              )}
+              {meeting?.status === "requested" && meeting.recipient_id === userId && (
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={() => respondToMeeting("declined")}
+                    disabled={respondingToMeeting !== null}
+                    variant="outline"
+                    size="sm"
+                  >
+                    {respondingToMeeting === "declined" ? "Declining…" : "Decline"}
+                  </Button>
+                  <Button
+                    onClick={() => respondToMeeting("accepted")}
+                    disabled={respondingToMeeting !== null}
+                    size="sm"
+                  >
+                    {respondingToMeeting === "accepted" ? "Accepting…" : "Accept"}
+                  </Button>
+                </div>
+              )}
+              {!hasActiveMeeting && canRequestMeeting && hasBackAndForth && eventId && (
+                <Button
+                  onClick={requestMeeting}
+                  disabled={requestingMeeting}
+                  size="sm"
+                >
+                  {requestingMeeting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarPlus className="h-4 w-4" />}
+                  {requestingMeeting ? "Requesting…" : "Request a Meeting"}
+                </Button>
+              )}
+              {meetingRequestsClosed && (
+                <span className="text-sm text-muted-foreground normal-case font-sans">
+                  No further meeting requests available for this match.
+                </span>
+              )}
+            </div>
+
+            {meeting?.status === "accepted" && (
+              <div className="ooo-border bg-card p-3 grid gap-3 sm:grid-cols-2">
+                <label className="text-xs font-label">
+                  Date
+                  <input
+                    type="date"
+                    className="mt-1 w-full ooo-border bg-card px-3 py-2 normal-case font-sans"
+                    value={scheduleDate}
+                    min={eventDateRange?.date}
+                    max={eventDateRange?.end_date ?? eventDateRange?.date}
+                    onChange={(event) => setScheduleDate(event.target.value)}
+                  />
+                </label>
+                <label className="text-xs font-label">
+                  Time
+                  <select
+                    className="mt-1 w-full ooo-border bg-card px-3 py-2 normal-case font-sans"
+                    value={scheduleTime}
+                    onChange={(event) => setScheduleTime(event.target.value)}
+                  >
+                    <option value="">Select a time</option>
+                    {MEETING_TIME_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs font-label sm:col-span-2">
+                  Meeting spot
+                  <input
+                    type="text"
+                    className="mt-1 w-full ooo-border bg-card px-3 py-2 normal-case font-sans"
+                    placeholder="Main entrance or Booth 12"
+                    value={scheduleLocation}
+                    onChange={(event) => setScheduleLocation(event.target.value)}
+                  />
+                </label>
+                <Button
+                  className="sm:col-span-2"
+                  onClick={scheduleMeeting}
+                  disabled={schedulingMeeting || !scheduleDate || !scheduleTime || !scheduleLocation.trim()}
+                >
+                  {schedulingMeeting && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {schedulingMeeting ? "Scheduling…" : "Schedule meeting"}
+                </Button>
+              </div>
+            )}
+
+            {meeting?.status === "scheduled" && meeting.scheduled_at && (
+              <div className="ooo-border bg-card px-4 py-3 normal-case font-sans">
+                <p className="font-bold">{formatScheduledDateTime(meeting.scheduled_at)}</p>
+                <p className="text-sm text-muted-foreground mt-1">{meeting.location_note || "Location to be confirmed"}</p>
+                <Button className="mt-3" onClick={addToCalendar} size="sm">
+                  <Download className="h-4 w-4" />
+                  Add to Calendar
+                </Button>
+                <Button className="mt-3 ml-2" onClick={completeMeeting} disabled={completingMeeting} size="sm">
+                  {completingMeeting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle className="h-4 w-4" />}
+                  {completingMeeting ? "Completing…" : "We Met"}
+                </Button>
+              </div>
+            )}
+
+            {meeting?.status === "completed" && meeting.completed_at && (
+              <div className="ooo-border bg-card px-4 py-3 normal-case font-sans">
+                <p className="font-bold flex items-center gap-2">
+                  <CheckCircle className="h-4 w-4" />
+                  Meeting completed
+                </p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Marked complete {formatScheduledDateTime(meeting.completed_at)}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 max-w-2xl w-full mx-auto">
         {loading ? (
