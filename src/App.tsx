@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
 import NotFound from "./pages/NotFound.tsx";
+import OffripPreview from "./pages/OffripPreview.tsx";
 import AuthV2 from "./pages/v2/Auth.tsx";
 import DashboardV2 from "./pages/v2/Dashboard.tsx";
 import Landing from "./pages/v2/Landing.tsx";
@@ -60,6 +61,7 @@ const App = () => (
             <Route path="/v2/admin" element={<OrganizerAdmin />} />
             <Route path="/v2/setup" element={<ProtectedRoute><ProfileSetupV2 /></ProtectedRoute>} />
             <Route path="/v2" element={<ProtectedRoute><DashboardV2 /></ProtectedRoute>} />
+            <Route path="/offrip-preview" element={<OffripPreview />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

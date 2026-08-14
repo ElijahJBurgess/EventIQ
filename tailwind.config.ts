@@ -18,7 +18,22 @@ export default {
       },
     },
     extend: {
+      fontFamily: {
+        "offrip-display": ["var(--offrip-font-display)"],
+        "offrip-body": ["Inter", "ui-sans-serif", "system-ui", "sans-serif"],
+      },
       colors: {
+        offrip: {
+          aqua: "#69C0BE",
+          orange: "#FF5338",
+          lime: "#DCE86A",
+          blue: "#4387F5",
+          black: "#000000",
+          "dark-gray": "#1A1A1A",
+          "medium-gray": "#6B6B6B",
+          "light-gray": "#F1F1F1",
+          white: "#FFFFFF",
+        },
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
@@ -85,9 +100,13 @@ export default {
         },
       },
       borderRadius: {
+        "offrip-sharp": "0px",
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
+      },
+      boxShadow: {
+        "offrip-hard": "4px 4px 0 0 #000000",
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",

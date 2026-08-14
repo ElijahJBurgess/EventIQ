@@ -1,4 +1,5 @@
 @import url("https://fonts.googleapis.com/css2?family=Archivo+Black&family=Bebas+Neue&family=Inter:wght@400;500;600;700;800;900&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Barlow:wght@900&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -10,6 +11,8 @@ All colors MUST be HSL.
 
 @layer base {
   :root {
+    --offrip-font-display: "Barlow", Inter, ui-sans-serif, system-ui, sans-serif;
+
     --background: 60 8% 95%;
     --foreground: 0 0% 0%;
 

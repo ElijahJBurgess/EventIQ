@@ -5,6 +5,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import MatchesTab from "@/components/matches/MatchesTab";
 import MessagesTab from "@/components/messages/MessagesTab";
+import OffripButton from "@/components/offrip/Button";
+import OffripCard from "@/components/offrip/Card";
+import OffripChip from "@/components/offrip/Chip";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 type Tab = "home" | "profile" | "events" | "matches" | "messages";
 type NavItem = Tab | "enterprise";
@@ -21,6 +25,7 @@ interface Profile {
   role_type: string | null;
   bio: string | null;
   interests: string[] | null;
+  avatar_url: string | null;
   total_points: number | null;
   profile_completion_score: number | null;
 }
@@ -43,7 +48,9 @@ interface HomeStatsData {
 
 interface HomeMeeting {
   id: string;
+  otherId: string;
   otherName: string;
+  otherAvatarUrl: string | null;
   otherRole: string;
   otherCompany: string | null;
   scheduledAt: string;
@@ -52,7 +59,9 @@ interface HomeMeeting {
 
 interface HomeMatch {
   id: string;
+  otherId: string;
   name: string;
+  avatarUrl: string | null;
   role: string;
   company: string | null;
   score: number;
@@ -61,12 +70,35 @@ interface HomeMatch {
 
 interface HomeConnection {
   id: string;
+  otherId: string;
   otherName: string;
+  otherAvatarUrl: string | null;
   status: "requested" | "accepted" | "scheduled";
   isRequester: boolean;
 }
 
 const ROLE_TYPES = ["Founder", "Investor", "Recruiter", "Corporate Leader", "Creator", "Community Builder", "Student", "Professional", "Sponsor", "Other"];
+
+const OFFRIP_AVATAR_PALETTE = [
+  "bg-offrip-aqua text-offrip-black",
+  "bg-offrip-lime text-offrip-black",
+  "bg-offrip-orange text-offrip-white",
+  "bg-offrip-blue text-offrip-white",
+];
+
+function offripAvatarClasses(id: string) {
+  let hash = 0;
+  for (const character of id) hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
+  return OFFRIP_AVATAR_PALETTE[hash % OFFRIP_AVATAR_PALETTE.length];
+}
+
+function profileInitials(name: string | null) {
+  if (!name) return "?";
+  const parts = name.trim().split(/\s+/);
+  const first = parts[0]?.[0] ?? "";
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+  return (first + last).toUpperCase() || "?";
+}
 
 export default function DashboardV2() {
   const { user, signOut } = useAuth();
@@ -111,10 +143,10 @@ export default function DashboardV2() {
   }
 
   return (
-    <div className="min-h-screen bg-aqua">
+    <div className={`min-h-screen ${tab === "home" ? "bg-offrip-white" : "bg-aqua"}`}>
       <header className="bg-card/95 border-b-2 border-primary sticky top-0 z-20 backdrop-blur">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-          <span className="font-display text-lg">OOO</span>
+          <span className="font-display text-lg">OFFRIP</span>
           <nav className="hidden sm:flex items-center gap-1">
             {NAV_ITEMS.map((t) => (
               <button
@@ -230,7 +262,7 @@ function HomeTab({ profile, userId, onSeeRoom }: { profile: Profile | null; user
           .eq("event_id", activeEvent.id)
           .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
           .order("match_score", { ascending: false })
-          .limit(4),
+          .limit(5),
         supabase
           .from("messages")
           .select("match_id,created_at")
@@ -291,9 +323,9 @@ function HomeTab({ profile, userId, onSeeRoom }: { profile: Profile | null; user
       const { data: meetingProfiles } = otherIds.length > 0
         ? await supabase
           .from("profiles")
-          .select("id,full_name,title,role_type,company")
+          .select("id,full_name,title,role_type,company,avatar_url")
           .in("id", otherIds)
-        : { data: [] as Pick<Profile, "id" | "full_name" | "title" | "role_type" | "company">[] };
+        : { data: [] as Pick<Profile, "id" | "full_name" | "title" | "role_type" | "company" | "avatar_url">[] };
       const profileById = new Map((meetingProfiles ?? []).map((meetingProfile) => [meetingProfile.id, meetingProfile]));
       const scheduledMeetings: HomeMeeting[] = meetingRows
         .map((meeting) => {
@@ -303,7 +335,9 @@ function HomeTab({ profile, userId, onSeeRoom }: { profile: Profile | null; user
           if (!other) return null;
           return {
             id: meeting.id,
+            otherId: other.id,
             otherName: other.full_name ?? "OOO member",
+            otherAvatarUrl: other.avatar_url,
             otherRole: other.title ?? other.role_type ?? "Member",
             otherCompany: other.company,
             scheduledAt: meeting.scheduled_at,
@@ -319,9 +353,9 @@ function HomeTab({ profile, userId, onSeeRoom }: { profile: Profile | null; user
       const { data: topMatchProfiles } = topMatchProfileIds.length > 0
         ? await supabase
           .from("profiles")
-          .select("id,full_name,title,role_type,company")
+          .select("id,full_name,title,role_type,company,avatar_url")
           .in("id", topMatchProfileIds)
-        : { data: [] as Pick<Profile, "id" | "full_name" | "title" | "role_type" | "company">[] };
+        : { data: [] as Pick<Profile, "id" | "full_name" | "title" | "role_type" | "company" | "avatar_url">[] };
       const topMatchProfileById = new Map((topMatchProfiles ?? []).map((matchProfile) => [matchProfile.id, matchProfile]));
       const topMatches: HomeMatch[] = topMatchRows
         .map((match) => {
@@ -330,7 +364,9 @@ function HomeTab({ profile, userId, onSeeRoom }: { profile: Profile | null; user
           if (!other) return null;
           return {
             id: match.id,
+            otherId: other.id,
             name: other.full_name ?? "OOO member",
+            avatarUrl: other.avatar_url,
             role: other.title ?? other.role_type ?? "Member",
             company: other.company,
             score: match.match_score ?? 0,
@@ -348,9 +384,9 @@ function HomeTab({ profile, userId, onSeeRoom }: { profile: Profile | null; user
       const { data: connectionProfiles } = connectionProfileIds.length > 0
         ? await supabase
           .from("profiles")
-          .select("id,full_name")
+          .select("id,full_name,avatar_url")
           .in("id", connectionProfileIds)
-        : { data: [] as Pick<Profile, "id" | "full_name">[] };
+        : { data: [] as Pick<Profile, "id" | "full_name" | "avatar_url">[] };
       const connectionProfileById = new Map((connectionProfiles ?? []).map((connectionProfile) => [connectionProfile.id, connectionProfile]));
       const connectionsInMotion: HomeConnection[] = connectionRows
         .map((connection) => {
@@ -360,7 +396,9 @@ function HomeTab({ profile, userId, onSeeRoom }: { profile: Profile | null; user
           if (!other) return null;
           return {
             id: connection.id,
+            otherId: other.id,
             otherName: other.full_name ?? "OOO member",
+            otherAvatarUrl: other.avatar_url,
             status: connection.status as HomeConnection["status"],
             isRequester: connection.requester_id === userId,
           };
@@ -410,126 +448,201 @@ function HomeTab({ profile, userId, onSeeRoom }: { profile: Profile | null; user
     if (connection.status === "accepted") return "Meeting Accepted";
     return "Meeting Scheduled";
   };
+  const matchColors = ["aqua", "lime", "orange", "blue"] as const;
+  const matchAccentClasses = [
+    "border-t-offrip-aqua",
+    "border-t-offrip-lime",
+    "border-t-offrip-orange",
+    "border-t-offrip-blue",
+  ];
+  const connectionColors = (connection: HomeConnection) => {
+    if (connection.status === "requested") return connection.isRequester ? "lime" : "orange";
+    if (connection.status === "accepted") return "aqua";
+    return "blue";
+  };
 
   return (
-    <section className="ooo-card bg-card p-6 sm:p-8">
-      <h1 className="text-3xl sm:text-4xl">Good to see you, {firstName}.</h1>
+    <section className="bg-offrip-white p-6 font-offrip-body text-offrip-black sm:p-8">
+      <h1 className="font-offrip-display text-3xl font-black uppercase tracking-tight sm:text-4xl">
+        Good to see you, <span className="text-offrip-orange">{firstName}</span>.
+      </h1>
       {stats === undefined ? (
-        <p className="normal-case font-sans text-muted-foreground mt-3">Your day is loading.</p>
+        <p className="mt-3 font-offrip-body text-offrip-medium-gray">Your day is loading.</p>
       ) : stats === null ? (
         <div className="mt-6 space-y-3">
-          <div className="ooo-border bg-warm p-6 text-center">
-            <p className="normal-case font-sans text-muted-foreground">Join an event to see what's happening.</p>
+          <div className="border-2 border-offrip-black bg-offrip-light-gray p-6 text-center">
+            <p className="font-offrip-body text-offrip-medium-gray">Join an event to see what's happening.</p>
           </div>
-          <div className="ooo-border bg-card p-6 text-center">
-            <p className="normal-case font-sans text-muted-foreground">No event happening right now.</p>
+          <div className="border-2 border-offrip-black bg-offrip-white p-6 text-center">
+            <p className="font-offrip-body text-offrip-medium-gray">No event happening right now.</p>
           </div>
         </div>
       ) : (
         <div className="mt-6">
-          <p className="font-label text-xs mb-3">Today at {stats.eventName}</p>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <p className="mb-3 font-offrip-display text-xs font-bold uppercase tracking-widest text-offrip-medium-gray">Today at {stats.eventName}</p>
+          <div className="grid grid-cols-2 gap-3 bg-offrip-aqua p-4 lg:grid-cols-4">
             {[
               ["People registered", stats.registrations],
               ["Strong matches", stats.strongMatches],
               ["Pending requests", stats.pendingRequests],
               ["Unread messages", stats.unreadMessages],
             ].map(([label, value]) => (
-              <div key={label} className="ooo-border bg-warm p-4">
-                <p className="text-3xl font-display">{value}</p>
-                <p className="normal-case font-sans text-xs text-muted-foreground mt-1">{label}</p>
+              <div key={label} className="border-2 border-offrip-black bg-offrip-white p-4">
+                <p className="font-offrip-display text-3xl font-black">{value}</p>
+                <p className="mt-1 font-offrip-display text-[10px] font-bold uppercase tracking-widest text-offrip-dark-gray">{label}</p>
               </div>
             ))}
           </div>
-          <div className="ooo-border bg-card p-5 mt-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="mt-5 flex flex-col gap-4 border-2 border-offrip-black bg-offrip-black p-6 text-offrip-white sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="font-label text-xs text-muted-foreground">Current event</p>
-              <h2 className="text-2xl mt-1">{stats.eventName}</h2>
-              <p className="normal-case font-sans text-sm text-muted-foreground mt-2">
+              <p className="font-offrip-display text-xs font-bold uppercase tracking-widest text-offrip-aqua">Current event</p>
+              <h2 className="mt-1 font-offrip-display text-2xl font-black uppercase">{stats.eventName}</h2>
+              <p className="mt-2 font-offrip-body text-sm text-offrip-light-gray">
                 {[stats.eventVenue, stats.eventLocation].filter(Boolean).join(" · ") || "Location to be announced"}
               </p>
-              <p className="normal-case font-sans text-sm text-muted-foreground mt-1">
+              <p className="mt-1 font-offrip-body text-sm text-offrip-light-gray">
                 {formatEventDate(stats.eventDate)}
                 {stats.eventEndDate && stats.eventEndDate !== stats.eventDate
                   ? ` – ${formatEventDate(stats.eventEndDate)}`
                   : ""}
               </p>
             </div>
-            <button onClick={onSeeRoom} className="bg-primary text-primary-foreground px-5 py-3 shadow-card hover-lift font-label shrink-0">
+            <OffripButton onClick={onSeeRoom} className="shrink-0 !bg-offrip-white !text-offrip-black hover:!bg-offrip-aqua">
               See the Room
-            </button>
+            </OffripButton>
           </div>
           <div className="mt-8">
-            <h2 className="text-2xl">Your Day</h2>
+            <h2 className="font-offrip-display text-2xl font-black uppercase tracking-tight">Your Day</h2>
             {stats.scheduledMeetings.length === 0 ? (
-              <div className="ooo-border bg-warm p-5 mt-3">
-                <p className="normal-case font-sans text-sm text-muted-foreground">Nothing scheduled yet.</p>
-              </div>
+              <OffripCard className="mt-3 bg-offrip-light-gray p-5">
+                <p className="font-offrip-body text-sm text-offrip-medium-gray">Nothing scheduled yet.</p>
+              </OffripCard>
             ) : (
-              <div className="space-y-3 mt-3">
+              <div className="mt-3 space-y-3">
                 {stats.scheduledMeetings.map((meeting) => (
-                  <div key={meeting.id} className="ooo-border bg-warm p-4 flex items-start justify-between gap-4">
-                    <div className="min-w-0">
-                      <p className="font-bold normal-case font-sans">{meeting.otherName}</p>
-                      <p className="normal-case font-sans text-sm text-muted-foreground mt-1">
-                        {meeting.otherRole}{meeting.otherCompany ? ` · ${meeting.otherCompany}` : ""}
-                      </p>
-                      <p className="normal-case font-sans text-sm mt-2">{meeting.location ?? "Location to be decided"}</p>
+                  <OffripCard key={meeting.id} className="flex items-start justify-between gap-4 p-4">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <Avatar className="h-12 w-12 shrink-0 rounded-full border-2 border-offrip-black">
+                        {meeting.otherAvatarUrl && <AvatarImage src={meeting.otherAvatarUrl} alt={meeting.otherName} />}
+                        <AvatarFallback className={`rounded-full font-offrip-display text-sm font-bold ${offripAvatarClasses(meeting.otherId)}`}>
+                          {profileInitials(meeting.otherName)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="min-w-0">
+                        <p className="font-offrip-display font-bold uppercase">{meeting.otherName}</p>
+                        <p className="mt-1 font-offrip-body text-sm text-offrip-medium-gray">
+                          {meeting.otherRole}{meeting.otherCompany ? ` · ${meeting.otherCompany}` : ""}
+                        </p>
+                        <p className="mt-2 font-offrip-body text-sm">{meeting.location ?? "Location to be decided"}</p>
+                      </div>
                     </div>
-                    <span className="font-label text-sm shrink-0">{formatMeetingTime(meeting.scheduledAt)}</span>
-                  </div>
+                    <div className="flex shrink-0 flex-col items-end gap-2">
+                      <span className="font-offrip-display text-sm font-bold uppercase tracking-wide">{formatMeetingTime(meeting.scheduledAt)}</span>
+                      <OffripChip color="blue">Scheduled</OffripChip>
+                    </div>
+                  </OffripCard>
                 ))}
               </div>
             )}
           </div>
           <div className="mt-8">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-2xl">Top Matches</h2>
+              <div>
+                <h2 className="font-offrip-display text-2xl font-black uppercase tracking-tight">Don't Leave Without Meeting</h2>
+                <p className="mt-1 font-offrip-body text-sm text-offrip-medium-gray">Start here.</p>
+              </div>
               {stats.topMatches.length > 0 && (
-                <button onClick={onSeeRoom} className="font-label text-xs underline underline-offset-4">See all matches</button>
+                <OffripButton variant="tertiary" onClick={onSeeRoom}>See all matches</OffripButton>
               )}
             </div>
             {stats.topMatches.length === 0 ? (
-              <div className="ooo-border bg-warm p-5 mt-3">
-                <p className="normal-case font-sans text-sm text-muted-foreground">No matches yet.</p>
-              </div>
+              <OffripCard className="mt-3 bg-offrip-light-gray p-5">
+                <p className="font-offrip-body text-sm text-offrip-medium-gray">No matches yet.</p>
+              </OffripCard>
             ) : (
-              <div className="grid sm:grid-cols-2 gap-3 mt-3">
-                {stats.topMatches.map((match) => (
-                  <div key={match.id} className="ooo-border bg-warm p-4">
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {stats.topMatches.slice(0, 4).map((match, index) => (
+                  <OffripCard key={match.id} interactive className={`border-t-8 p-4 ${matchAccentClasses[index % matchAccentClasses.length]}`}>
                     <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="font-bold normal-case font-sans truncate">{match.name}</p>
-                        <p className="normal-case font-sans text-sm text-muted-foreground mt-1">
-                          {match.role}{match.company ? ` · ${match.company}` : ""}
-                        </p>
+                      <div className="flex min-w-0 items-center gap-3">
+                        <Avatar className="h-12 w-12 shrink-0 rounded-full border-2 border-offrip-black">
+                          {match.avatarUrl && <AvatarImage src={match.avatarUrl} alt={match.name} />}
+                          <AvatarFallback className={`rounded-full font-offrip-display text-sm font-bold ${OFFRIP_AVATAR_PALETTE[index % OFFRIP_AVATAR_PALETTE.length]}`}>
+                            {profileInitials(match.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0">
+                          <p className="truncate font-offrip-display font-bold uppercase">{match.name}</p>
+                          <p className="mt-1 font-offrip-body text-sm text-offrip-medium-gray">
+                            {match.role}{match.company ? ` · ${match.company}` : ""}
+                          </p>
+                        </div>
                       </div>
-                      <span className="ooo-border bg-citron px-2 py-1 font-label text-xs shrink-0">{match.score}%</span>
+                      <OffripChip color={matchColors[index % matchColors.length]}>{match.score}%</OffripChip>
                     </div>
-                    <p className="font-label text-xs mt-3">{matchLabel(match.score)}</p>
+                    <p className="mt-3 font-offrip-display text-xs font-bold uppercase tracking-widest">{matchLabel(match.score)}</p>
                     {match.reason && (
-                      <p className="normal-case font-sans text-sm text-muted-foreground mt-2 line-clamp-2">{match.reason}</p>
+                      <p className="mt-2 line-clamp-2 font-offrip-body text-sm text-offrip-medium-gray">{match.reason}</p>
                     )}
-                  </div>
+                  </OffripCard>
                 ))}
               </div>
             )}
           </div>
-          <div className="mt-8">
-            <h2 className="text-2xl">Connections in Motion</h2>
-            {stats.connectionsInMotion.length === 0 ? (
-              <div className="ooo-border bg-warm p-5 mt-3">
-                <p className="normal-case font-sans text-sm text-muted-foreground">Nothing in motion right now.</p>
-              </div>
-            ) : (
-              <div className="space-y-3 mt-3">
-                {stats.connectionsInMotion.map((connection) => (
-                  <div key={connection.id} className="ooo-border bg-warm p-4 flex items-center justify-between gap-4">
-                    <p className="font-bold normal-case font-sans">{connection.otherName}</p>
-                    <span className="ooo-border bg-card px-3 py-2 font-label text-xs text-right">
-                      {connectionLabel(connection)}
-                    </span>
+          {stats.topMatches[4] && (
+            <div className="mt-8">
+              <h2 className="font-offrip-display text-lg font-black uppercase tracking-tight">Someone Worth Knowing Just Showed Up.</h2>
+              <OffripCard className="mt-4 flex flex-col gap-5 !bg-offrip-black p-5 text-offrip-white sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex min-w-0 items-center gap-4">
+                  <Avatar className="h-12 w-12 shrink-0 rounded-full border-2 border-offrip-black">
+                    {stats.topMatches[4].avatarUrl && (
+                      <AvatarImage src={stats.topMatches[4].avatarUrl} alt={stats.topMatches[4].name} />
+                    )}
+                    <AvatarFallback className="rounded-full bg-offrip-lime font-offrip-display text-sm font-bold text-offrip-black">
+                      {profileInitials(stats.topMatches[4].name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0">
+                    <p className="truncate font-offrip-display font-bold uppercase">{stats.topMatches[4].name}</p>
+                    <p className="mt-1 truncate font-offrip-body text-sm text-offrip-medium-gray">
+                      {stats.topMatches[4].role}{stats.topMatches[4].company ? ` · ${stats.topMatches[4].company}` : ""}
+                    </p>
                   </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  <OffripChip color="lime">{stats.topMatches[4].score}% Match</OffripChip>
+                  <OffripButton
+                    variant="secondary"
+                    onClick={onSeeRoom}
+                    className="!border-offrip-white !text-offrip-white hover:!bg-offrip-white hover:!text-offrip-black"
+                  >
+                    See Why →
+                  </OffripButton>
+                </div>
+              </OffripCard>
+            </div>
+          )}
+          <div className="mt-8">
+            <h2 className="font-offrip-display text-2xl font-black uppercase tracking-tight">Connections in Motion</h2>
+            {stats.connectionsInMotion.length === 0 ? (
+              <OffripCard className="mt-3 bg-offrip-light-gray p-5">
+                <p className="font-offrip-body text-sm text-offrip-medium-gray">Nothing in motion right now.</p>
+              </OffripCard>
+            ) : (
+              <div className="mt-3 space-y-3">
+                {stats.connectionsInMotion.map((connection) => (
+                  <OffripCard key={connection.id} className="flex items-center justify-between gap-4 p-4">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <Avatar className="h-10 w-10 shrink-0 rounded-full border-2 border-offrip-black">
+                        {connection.otherAvatarUrl && <AvatarImage src={connection.otherAvatarUrl} alt={connection.otherName} />}
+                        <AvatarFallback className={`rounded-full font-offrip-display text-xs font-bold ${offripAvatarClasses(connection.otherId)}`}>
+                          {profileInitials(connection.otherName)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <p className="truncate font-offrip-display font-bold uppercase">{connection.otherName}</p>
+                    </div>
+                    <OffripChip color={connectionColors(connection)}>{connectionLabel(connection)}</OffripChip>
+                  </OffripCard>
                 ))}
               </div>
             )}
