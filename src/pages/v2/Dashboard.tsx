@@ -7,6 +7,9 @@ import MatchesTab from "@/components/matches/MatchesTab";
 import MessagesTab from "@/components/messages/MessagesTab";
 
 type Tab = "profile" | "events" | "matches" | "messages";
+type NavItem = Tab | "enterprise";
+
+const NAV_ITEMS: NavItem[] = ["profile", "events", "matches", "messages", "enterprise"];
 
 interface Profile {
   id: string;
@@ -31,6 +34,14 @@ export default function DashboardV2() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
+
+  const selectNavigationItem = (item: NavItem) => {
+    if (item === "enterprise") {
+      navigate("/v2/admin");
+      return;
+    }
+    setTab(item);
+  };
 
   const loadProfile = useCallback(async () => {
     if (!user) return;
@@ -64,13 +75,13 @@ export default function DashboardV2() {
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <span className="font-display text-lg">OOO</span>
           <nav className="hidden sm:flex items-center gap-1">
-            {(["profile", "events", "matches", "messages"] as Tab[]).map((t) => (
+            {NAV_ITEMS.map((t) => (
               <button
                 key={t}
-                onClick={() => setTab(t)}
+                onClick={() => selectNavigationItem(t)}
                 className={`relative font-label text-xs px-3 py-2 ooo-border ${tab === t ? "bg-aqua" : "bg-card"}`}
               >
-                {t}
+                {t === "enterprise" ? "Enterprise" : t}
                 {t === "messages" && hasUnreadMessages && (
                   <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-vermillion border border-primary" aria-label="Unread messages" />
                 )}
@@ -82,9 +93,9 @@ export default function DashboardV2() {
           </button>
         </div>
         <div className="sm:hidden flex border-t-2 border-primary">
-          {(["profile", "events", "matches", "messages"] as Tab[]).map((t) => (
-            <button key={t} onClick={() => setTab(t)} className={`relative flex-1 font-label text-[11px] py-2 ${tab === t ? "bg-aqua" : "bg-card"}`}>
-              {t}
+          {NAV_ITEMS.map((t) => (
+            <button key={t} onClick={() => selectNavigationItem(t)} className={`relative flex-1 font-label text-[11px] py-2 ${tab === t ? "bg-aqua" : "bg-card"}`}>
+              {t === "enterprise" ? "Enterprise" : t}
               {t === "messages" && hasUnreadMessages && (
                 <span className="absolute top-1 right-2 h-2 w-2 rounded-full bg-vermillion border border-primary" aria-label="Unread messages" />
               )}

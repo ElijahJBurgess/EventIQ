@@ -9,6 +9,7 @@ import NotFound from "./pages/NotFound.tsx";
 import AuthV2 from "./pages/v2/Auth.tsx";
 import DashboardV2 from "./pages/v2/Dashboard.tsx";
 import Landing from "./pages/v2/Landing.tsx";
+import OrganizerAdmin from "./pages/v2/OrganizerAdmin.tsx";
 import ProfileSetupV2 from "./pages/v2/ProfileSetup.tsx";
 import { AuthProvider } from "./v2/AuthProvider.tsx";
 import ProtectedRoute from "./v2/ProtectedRoute.tsx";
@@ -56,6 +57,7 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Root />} />
             <Route path="/v2/auth" element={<AuthV2 />} />
+            <Route path="/v2/admin" element={<OrganizerAdmin />} />
             <Route path="/v2/setup" element={<ProtectedRoute><ProfileSetupV2 /></ProtectedRoute>} />
             <Route path="/v2" element={<ProtectedRoute><DashboardV2 /></ProtectedRoute>} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
