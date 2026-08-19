@@ -214,7 +214,9 @@ export function buildWhyThisMakesSense(matchDetail: MatchDetailResult): string {
   const strongRoles = meaningfulRolePairs(details.matchedRoles);
   if (strongRoles.length > 0) {
     const pair = strongRoles[0];
-    sentences.push(`${pair.roleA} and ${pair.roleB} tend to be a strong pairing at events like this.`);
+    const currentRoles = ownRoles(matchDetail.currentUser);
+    const orientedPair = orientToCurrentUserFirst(pair.roleA, pair.roleB, currentRoles);
+    sentences.push(`${orientedPair.labelA} and ${orientedPair.labelB} tend to be a strong pairing at events like this.`);
   } else {
     const expertise = sharedExpertise(matchDetail);
     if (expertise.length > 0) {

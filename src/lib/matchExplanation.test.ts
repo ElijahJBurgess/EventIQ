@@ -219,5 +219,13 @@ describe("matchExplanation", () => {
     // must land in "what THEY can offer YOU", not "what you can offer them".
     expect(buildWhatTheyCanOfferYou(match)).toEqual(["Founder Advice"]);
     expect(buildWhatYouCanOfferThem(match)).toEqual([]);
+
+    // The role-pairing sentence inside buildWhyThisMakesSense must use the
+    // same viewer-first orientation as buildWhyItClicks -- "Investor" (the
+    // viewer's own role) first, not "Founder / Co-founder" (stored as
+    // roleA, but actually the other person's role) first.
+    expect(buildWhyThisMakesSense(match)).toBe(
+      'Other can offer Founder Advice, which is exactly what you\'re looking for. Your goal of "Meet Investors" complements Other\'s goal of "Meet Collaborators". Investor and Founder / Co-founder tend to be a strong pairing at events like this.',
+    );
   });
 });
