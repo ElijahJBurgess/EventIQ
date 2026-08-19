@@ -682,6 +682,30 @@ export type Database = {
           },
         ]
       }
+      needs_offers_compatibility: {
+        Row: {
+          created_at: string
+          id: number
+          match_weight: number
+          need_value: string
+          offer_value: string
+        }
+        Insert: {
+          created_at?: string
+          id?: number
+          match_weight: number
+          need_value: string
+          offer_value: string
+        }
+        Update: {
+          created_at?: string
+          id?: number
+          match_weight?: number
+          need_value?: string
+          offer_value?: string
+        }
+        Relationships: []
+      }
       points: {
         Row: {
           action: string
@@ -727,39 +751,57 @@ export type Database = {
       profiles: {
         Row: {
           activities: string[] | null
+          additional_functions: string[] | null
           areas_of_expertise: string[] | null
           avatar_url: string | null
           bio: string | null
           candidate_level: string | null
+          career_level_preference: string[] | null
           check_size: string | null
           communities: string[] | null
           company: string | null
           company_stage: string | null
+          connection_preference: string[] | null
           created_at: string | null
           desired_outcomes: string[] | null
           email: string
+          expertise_sought: string[] | null
           favorite_cities: string[] | null
           favorite_conferences: string[] | null
           festivals: string[] | null
+          first_name: string | null
           full_name: string | null
           funding_raised: string | null
           hiring_priorities: string | null
           hiring_status: boolean | null
           hobbies: string[] | null
           id: string
+          industries: string[] | null
           industry_focus: string[] | null
+          industry_preference: string | null
           interests: string[] | null
           investment_stage: string | null
+          last_name: string | null
           linkedin_url: string | null
           location: string | null
+          location_city: string | null
+          location_preference: string | null
+          location_state_code: string | null
           looking_for_investors: boolean | null
           matching_goal: string | null
           music_interests: string[] | null
+          needs: string[] | null
+          offers: string[] | null
           open_roles: string[] | null
+          primary_function: string | null
+          primary_goal: string | null
           profile_completed: boolean | null
           profile_completion_score: number | null
           role_details: Json | null
           role_type: string | null
+          secondary_goals: string[] | null
+          secondary_role_types: string[] | null
+          seniority: string | null
           sports: string[] | null
           title: string | null
           total_points: number | null
@@ -771,39 +813,57 @@ export type Database = {
         }
         Insert: {
           activities?: string[] | null
+          additional_functions?: string[] | null
           areas_of_expertise?: string[] | null
           avatar_url?: string | null
           bio?: string | null
           candidate_level?: string | null
+          career_level_preference?: string[] | null
           check_size?: string | null
           communities?: string[] | null
           company?: string | null
           company_stage?: string | null
+          connection_preference?: string[] | null
           created_at?: string | null
           desired_outcomes?: string[] | null
           email: string
+          expertise_sought?: string[] | null
           favorite_cities?: string[] | null
           favorite_conferences?: string[] | null
           festivals?: string[] | null
+          first_name?: string | null
           full_name?: string | null
           funding_raised?: string | null
           hiring_priorities?: string | null
           hiring_status?: boolean | null
           hobbies?: string[] | null
           id: string
+          industries?: string[] | null
           industry_focus?: string[] | null
+          industry_preference?: string | null
           interests?: string[] | null
           investment_stage?: string | null
+          last_name?: string | null
           linkedin_url?: string | null
           location?: string | null
+          location_city?: string | null
+          location_preference?: string | null
+          location_state_code?: string | null
           looking_for_investors?: boolean | null
           matching_goal?: string | null
           music_interests?: string[] | null
+          needs?: string[] | null
+          offers?: string[] | null
           open_roles?: string[] | null
+          primary_function?: string | null
+          primary_goal?: string | null
           profile_completed?: boolean | null
           profile_completion_score?: number | null
           role_details?: Json | null
           role_type?: string | null
+          secondary_goals?: string[] | null
+          secondary_role_types?: string[] | null
+          seniority?: string | null
           sports?: string[] | null
           title?: string | null
           total_points?: number | null
@@ -815,39 +875,57 @@ export type Database = {
         }
         Update: {
           activities?: string[] | null
+          additional_functions?: string[] | null
           areas_of_expertise?: string[] | null
           avatar_url?: string | null
           bio?: string | null
           candidate_level?: string | null
+          career_level_preference?: string[] | null
           check_size?: string | null
           communities?: string[] | null
           company?: string | null
           company_stage?: string | null
+          connection_preference?: string[] | null
           created_at?: string | null
           desired_outcomes?: string[] | null
           email?: string
+          expertise_sought?: string[] | null
           favorite_cities?: string[] | null
           favorite_conferences?: string[] | null
           festivals?: string[] | null
+          first_name?: string | null
           full_name?: string | null
           funding_raised?: string | null
           hiring_priorities?: string | null
           hiring_status?: boolean | null
           hobbies?: string[] | null
           id?: string
+          industries?: string[] | null
           industry_focus?: string[] | null
+          industry_preference?: string | null
           interests?: string[] | null
           investment_stage?: string | null
+          last_name?: string | null
           linkedin_url?: string | null
           location?: string | null
+          location_city?: string | null
+          location_preference?: string | null
+          location_state_code?: string | null
           looking_for_investors?: boolean | null
           matching_goal?: string | null
           music_interests?: string[] | null
+          needs?: string[] | null
+          offers?: string[] | null
           open_roles?: string[] | null
+          primary_function?: string | null
+          primary_goal?: string | null
           profile_completed?: boolean | null
           profile_completion_score?: number | null
           role_details?: Json | null
           role_type?: string | null
+          secondary_goals?: string[] | null
+          secondary_role_types?: string[] | null
+          seniority?: string | null
           sports?: string[] | null
           title?: string | null
           total_points?: number | null
@@ -1012,12 +1090,54 @@ export type Database = {
           },
         ]
       }
+      us_cities: {
+        Row: {
+          admin_name: string
+          city: string
+          id: number
+          lat: number
+          lng: number
+          population: number
+          state_code: string
+        }
+        Insert: {
+          admin_name: string
+          city: string
+          id?: number
+          lat: number
+          lng: number
+          population: number
+          state_code: string
+        }
+        Update: {
+          admin_name?: string
+          city?: string
+          id?: number
+          lat?: number
+          lng?: number
+          population?: number
+          state_code?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      search_us_cities: {
+        Args: { result_limit?: number; search_query: string }
+        Returns: {
+          admin_name: string
+          city: string
+          display_name: string
+          id: number
+          lat: number
+          lng: number
+          population: number
+          state_code: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never
