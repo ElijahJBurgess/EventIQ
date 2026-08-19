@@ -66,7 +66,7 @@ function getMatchLabel(score: number) {
   return { text: "Potential Match", className: "bg-muted text-muted-foreground" };
 }
 
-export default function MatchesTab({ userId }: { userId: string }) {
+export default function MatchesTab({ userId, onViewFullProfile }: { userId: string; onViewFullProfile: (matchId: string) => void }) {
   const [matches, setMatches] = useState<EnrichedMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
@@ -282,7 +282,7 @@ export default function MatchesTab({ userId }: { userId: string }) {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {matches.map((m) => (
-            <MatchCard key={m.id} match={m} eventName={selectedEvent?.name ?? "this event"} />
+            <MatchCard key={m.id} match={m} eventName={selectedEvent?.name ?? "this event"} onViewFullProfile={onViewFullProfile} />
           ))}
         </div>
       )}
@@ -290,7 +290,15 @@ export default function MatchesTab({ userId }: { userId: string }) {
   );
 }
 
-function MatchCard({ match, eventName }: { match: EnrichedMatch; eventName: string }) {
+function MatchCard({
+  match,
+  eventName,
+  onViewFullProfile,
+}: {
+  match: EnrichedMatch;
+  eventName: string;
+  onViewFullProfile: (matchId: string) => void;
+}) {
   const [status, setStatus] = useState<"idle" | "composing" | "sending" | "sent">(
     match.alreadyConnected ? "sent" : "idle",
   );
@@ -337,51 +345,57 @@ function MatchCard({ match, eventName }: { match: EnrichedMatch; eventName: stri
 
   return (
     <div className="ooo-border bg-warm p-4 flex flex-col gap-3">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3 min-w-0">
-          <Avatar className="h-12 w-12 border-2 border-primary shrink-0">
-            {other.avatar_url && <AvatarImage src={other.avatar_url} alt={other.full_name ?? "Profile photo"} />}
-            <AvatarFallback className={`font-label text-sm ${avatarClasses(other.id)}`}>
-              {initials(other.full_name)}
-            </AvatarFallback>
-          </Avatar>
-          <div className="min-w-0">
-            <p className="font-bold normal-case font-sans truncate">{other.full_name ?? "Member"}</p>
-            {subtitle && <p className="text-xs text-muted-foreground normal-case font-sans truncate">{subtitle}</p>}
-            {other.location && (
-              <p className="text-[11px] text-muted-foreground normal-case font-sans flex items-center gap-1 mt-0.5">
-                <MapPin className="h-3 w-3 shrink-0" />
-                <span className="truncate">{other.location}</span>
-              </p>
-            )}
+      <button
+        type="button"
+        onClick={() => onViewFullProfile(match.id)}
+        className="flex flex-col gap-3 text-left"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <Avatar className="h-12 w-12 border-2 border-primary shrink-0">
+              {other.avatar_url && <AvatarImage src={other.avatar_url} alt={other.full_name ?? "Profile photo"} />}
+              <AvatarFallback className={`font-label text-sm ${avatarClasses(other.id)}`}>
+                {initials(other.full_name)}
+              </AvatarFallback>
+            </Avatar>
+            <div className="min-w-0">
+              <p className="font-bold normal-case font-sans truncate">{other.full_name ?? "Member"}</p>
+              {subtitle && <p className="text-xs text-muted-foreground normal-case font-sans truncate">{subtitle}</p>}
+              {other.location && (
+                <p className="text-[11px] text-muted-foreground normal-case font-sans flex items-center gap-1 mt-0.5">
+                  <MapPin className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{other.location}</span>
+                </p>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-col items-end gap-1 shrink-0">
+            <span className={`font-label text-[10px] px-2 py-1 ooo-border ${label.className}`}>{label.text}</span>
+            <span className="font-label text-xs text-muted-foreground">{match.score}</span>
           </div>
         </div>
-        <div className="flex flex-col items-end gap-1 shrink-0">
-          <span className={`font-label text-[10px] px-2 py-1 ooo-border ${label.className}`}>{label.text}</span>
-          <span className="font-label text-xs text-muted-foreground">{match.score}</span>
-        </div>
-      </div>
 
-      <Separator className="bg-primary/20" />
+        <Separator className="bg-primary/20" />
 
-      {match.reason && (
-        <p className="text-sm leading-relaxed normal-case font-sans break-words">{match.reason}</p>
-      )}
+        {match.reason && (
+          <p className="text-sm leading-relaxed normal-case font-sans break-words">{match.reason}</p>
+        )}
 
-      {(match.sharedIndustries.length > 0 || match.sharedInterests.length > 0) && (
-        <div className="flex flex-wrap gap-1.5">
-          {match.sharedIndustries.length > 0 && (
-            <span className="text-[10px] font-label bg-muted text-muted-foreground px-2 py-1 ooo-border">
-              Shared: {match.sharedIndustries.join(", ")}
-            </span>
-          )}
-          {match.sharedInterests.slice(0, 3).map((interest) => (
-            <span key={interest} className="text-[10px] font-label bg-muted text-muted-foreground px-2 py-1 ooo-border">
-              {interest}
-            </span>
-          ))}
-        </div>
-      )}
+        {(match.sharedIndustries.length > 0 || match.sharedInterests.length > 0) && (
+          <div className="flex flex-wrap gap-1.5">
+            {match.sharedIndustries.length > 0 && (
+              <span className="text-[10px] font-label bg-muted text-muted-foreground px-2 py-1 ooo-border">
+                Shared: {match.sharedIndustries.join(", ")}
+              </span>
+            )}
+            {match.sharedInterests.slice(0, 3).map((interest) => (
+              <span key={interest} className="text-[10px] font-label bg-muted text-muted-foreground px-2 py-1 ooo-border">
+                {interest}
+              </span>
+            ))}
+          </div>
+        )}
+      </button>
 
       {status === "composing" || status === "sending" ? (
         <ConnectComposer

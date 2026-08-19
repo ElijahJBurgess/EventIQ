@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/v2/AuthProvider";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import FullProfileView from "@/components/matches/FullProfileView";
 import MatchesTab from "@/components/matches/MatchesTab";
 import MessagesTab from "@/components/messages/MessagesTab";
 import OffripButton from "@/components/offrip/Button";
@@ -113,8 +114,13 @@ export default function DashboardV2() {
   const [loading, setLoading] = useState(true);
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
   const [editingFullProfile, setEditingFullProfile] = useState(false);
+  // Set from either Home or Matches; whichever tab was active when this was
+  // set is exactly the tab the user lands back on, since `tab` itself is
+  // never changed to open Full Profile View -- only overlaid on top of it.
+  const [viewingMatchId, setViewingMatchId] = useState<string | null>(null);
 
   const selectNavigationItem = (item: NavItem) => {
+    setViewingMatchId(null);
     if (item === "enterprise") {
       navigate("/v2/admin");
       return;
@@ -149,7 +155,7 @@ export default function DashboardV2() {
   }
 
   return (
-    <div className={`min-h-screen ${tab === "home" ? "bg-offrip-white" : "bg-aqua"}`}>
+    <div className={`min-h-screen ${tab === "home" || viewingMatchId ? "bg-offrip-white" : "bg-aqua"}`}>
       <header className="bg-card/95 border-b-2 border-primary sticky top-0 z-20 backdrop-blur">
         <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
           <span className="font-display text-lg">OFFRIP</span>
@@ -206,28 +212,48 @@ export default function DashboardV2() {
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-8">
-        {tab === "home" && (
-          <HomeTab profile={profile} userId={user!.id} onSeeRoom={() => setTab("matches")} />
-        )}
-        {tab === "profile" && editingFullProfile && (
-          <EditProfileScreen
-            userId={user!.id}
-            onClose={() => {
-              setEditingFullProfile(false);
-              setTab("home");
-            }}
-            onSaved={loadProfile}
+        {viewingMatchId ? (
+          <FullProfileView
+            matchId={viewingMatchId}
+            currentUserId={user!.id}
+            onBack={() => setViewingMatchId(null)}
           />
+        ) : (
+          <>
+            {tab === "home" && (
+              <HomeTab profile={profile} userId={user!.id} onSeeRoom={() => setTab("matches")} onViewFullProfile={setViewingMatchId} />
+            )}
+            {tab === "profile" && editingFullProfile && (
+              <EditProfileScreen
+                userId={user!.id}
+                onClose={() => {
+                  setEditingFullProfile(false);
+                  setTab("home");
+                }}
+                onSaved={loadProfile}
+              />
+            )}
+            {tab === "events" && <EventsTab userId={user!.id} onViewMatches={() => setTab("matches")} />}
+            {tab === "matches" && <MatchesTab userId={user!.id} onViewFullProfile={setViewingMatchId} />}
+            {tab === "messages" && <MessagesTab userId={user!.id} />}
+          </>
         )}
-        {tab === "events" && <EventsTab userId={user!.id} onViewMatches={() => setTab("matches")} />}
-        {tab === "matches" && <MatchesTab userId={user!.id} />}
-        {tab === "messages" && <MessagesTab userId={user!.id} />}
       </main>
     </div>
   );
 }
 
-function HomeTab({ profile, userId, onSeeRoom }: { profile: Profile | null; userId: string; onSeeRoom: () => void }) {
+function HomeTab({
+  profile,
+  userId,
+  onSeeRoom,
+  onViewFullProfile,
+}: {
+  profile: Profile | null;
+  userId: string;
+  onSeeRoom: () => void;
+  onViewFullProfile: (matchId: string) => void;
+}) {
   const [stats, setStats] = useState<HomeStatsData | null | undefined>(undefined);
 
   useEffect(() => {
@@ -599,7 +625,12 @@ function HomeTab({ profile, userId, onSeeRoom }: { profile: Profile | null; user
             ) : (
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 {stats.topMatches.slice(0, 4).map((match, index) => (
-                  <OffripCard key={match.id} interactive className={`border-t-8 p-4 ${matchAccentClasses[index % matchAccentClasses.length]}`}>
+                  <OffripCard
+                    key={match.id}
+                    interactive
+                    onClick={() => onViewFullProfile(match.id)}
+                    className={`border-t-8 p-4 ${matchAccentClasses[index % matchAccentClasses.length]}`}
+                  >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex min-w-0 items-center gap-3">
                         <Avatar className="h-12 w-12 shrink-0 rounded-full border-2 border-offrip-black">
