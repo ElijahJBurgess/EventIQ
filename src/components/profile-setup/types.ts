@@ -7,16 +7,30 @@ export interface ProfileSetupFormData {
   jobTitle: string;
   company: string;
   location: string;
+  locationCity: string;
+  locationStateCode: string;
+  locationSelectionType: "database" | "custom" | "existing" | "";
   linkedinUrl: string;
   roleType: string;
+  secondaryRoleTypes: string[];
+  primaryFunction: string;
+  additionalFunctions: string[];
+  seniority: string;
 
-  // Page 2 — Matching Preferences
+  // Page 2 — Goals, Needs, Offers
+  primaryGoal: string;
+  secondaryGoals: string[];
+  needs: string[];
+  offers: string[];
+
+  // Page 3 — Who to Meet and Match Filters
   whoToMeet: string[];
-  desiredOutcomes: string[];
-  areasOfExpertise: string[];
-  matchingGoal: string;
+  industryPreference: string;
+  locationPreference: string;
+  careerLevelPreference: string[];
+  connectionPreference: string[];
 
-  // Page 3 — Role Specific Questions (exact fields defined when Page 3 is built)
+  // Page 4 — Role Specific Questions
   roleDetails: Record<string, unknown>;
 
   // Page 4 — Terms and AI Consent (exact fields defined when Page 4 is built)
@@ -30,12 +44,24 @@ export const initialProfileSetupFormData: ProfileSetupFormData = {
   jobTitle: "",
   company: "",
   location: "",
+  locationCity: "",
+  locationStateCode: "",
+  locationSelectionType: "",
   linkedinUrl: "",
   roleType: "",
+  secondaryRoleTypes: [],
+  primaryFunction: "",
+  additionalFunctions: [],
+  seniority: "",
+  primaryGoal: "",
+  secondaryGoals: [],
+  needs: [],
+  offers: [],
   whoToMeet: [],
-  desiredOutcomes: [],
-  areasOfExpertise: [],
-  matchingGoal: "",
+  industryPreference: "",
+  locationPreference: "",
+  careerLevelPreference: [],
+  connectionPreference: [],
   roleDetails: {},
   agreedToTerms: false,
   aiConsent: false,

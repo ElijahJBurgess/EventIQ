@@ -8,12 +8,19 @@ import MessagesTab from "@/components/messages/MessagesTab";
 import OffripButton from "@/components/offrip/Button";
 import OffripCard from "@/components/offrip/Card";
 import OffripChip from "@/components/offrip/Chip";
+import EditProfileScreen from "@/components/profile/EditProfileScreen";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 type Tab = "home" | "profile" | "events" | "matches" | "messages";
-type NavItem = Tab | "enterprise";
+type NavItem = Exclude<Tab, "profile"> | "enterprise";
 
-const NAV_ITEMS: NavItem[] = ["home", "profile", "events", "matches", "messages", "enterprise"];
+const NAV_ITEMS: NavItem[] = ["home", "events", "matches", "messages", "enterprise"];
 
 interface Profile {
   id: string;
@@ -77,8 +84,6 @@ interface HomeConnection {
   isRequester: boolean;
 }
 
-const ROLE_TYPES = ["Founder", "Investor", "Recruiter", "Corporate Leader", "Creator", "Community Builder", "Student", "Professional", "Sponsor", "Other"];
-
 const OFFRIP_AVATAR_PALETTE = [
   "bg-offrip-aqua text-offrip-black",
   "bg-offrip-lime text-offrip-black",
@@ -107,6 +112,7 @@ export default function DashboardV2() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
+  const [editingFullProfile, setEditingFullProfile] = useState(false);
 
   const selectNavigationItem = (item: NavItem) => {
     if (item === "enterprise") {
@@ -161,9 +167,31 @@ export default function DashboardV2() {
               </button>
             ))}
           </nav>
-          <button onClick={async () => { await signOut(); navigate("/v2/auth"); }} className="font-label text-xs px-3 py-2 ooo-border bg-card">
-            Sign out
-          </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="rounded-full" aria-label="Open account menu">
+                <Avatar className="h-10 w-10 rounded-full border-2 border-primary">
+                  <AvatarFallback className={`rounded-full font-label text-xs ${offripAvatarClasses(user!.id)}`}>
+                    {profileInitials(profile?.full_name ?? null)}
+                  </AvatarFallback>
+                </Avatar>
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="ooo-border bg-card">
+              <DropdownMenuItem
+                onSelect={() => {
+                  setTab("profile");
+                  setEditingFullProfile(true);
+                }}
+              >
+                Edit Profile
+              </DropdownMenuItem>
+              <DropdownMenuItem disabled>Privacy Policy</DropdownMenuItem>
+              <DropdownMenuItem onSelect={async () => { await signOut(); navigate("/v2/auth"); }}>
+                Sign Out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
         <div className="sm:hidden flex border-t-2 border-primary">
           {NAV_ITEMS.map((t) => (
@@ -181,7 +209,16 @@ export default function DashboardV2() {
         {tab === "home" && (
           <HomeTab profile={profile} userId={user!.id} onSeeRoom={() => setTab("matches")} />
         )}
-        {tab === "profile" && <ProfileTab profile={profile} userId={user!.id} email={user!.email!} onSaved={loadProfile} />}
+        {tab === "profile" && editingFullProfile && (
+          <EditProfileScreen
+            userId={user!.id}
+            onClose={() => {
+              setEditingFullProfile(false);
+              setTab("home");
+            }}
+            onSaved={loadProfile}
+          />
+        )}
         {tab === "events" && <EventsTab userId={user!.id} onViewMatches={() => setTab("matches")} />}
         {tab === "matches" && <MatchesTab userId={user!.id} />}
         {tab === "messages" && <MessagesTab userId={user!.id} />}
@@ -662,57 +699,6 @@ function Section({ title, children, action }: { title: string; children: React.R
       </div>
       {children}
     </section>
-  );
-}
-
-function ProfileTab({ profile, userId, email, onSaved }: { profile: Profile | null; userId: string; email: string; onSaved: () => void }) {
-  const [form, setForm] = useState({
-    full_name: profile?.full_name ?? "",
-    company: profile?.company ?? "",
-    title: profile?.title ?? "",
-    location: profile?.location ?? "",
-    role_type: profile?.role_type ?? "Professional",
-    bio: profile?.bio ?? "",
-    interests: (profile?.interests ?? []).join(", "),
-  });
-  const [saving, setSaving] = useState(false);
-
-  const save = async () => {
-    setSaving(true);
-    const interests = form.interests.split(",").map((s) => s.trim()).filter(Boolean);
-    // profile_completion_score (and profile_completed) are set once by the
-    // setup wizard, which is the one true source of what "complete" means
-    // for this app -- saving here must not recalculate or overwrite them.
-    const { error } = await supabase.from("profiles").update({
-      ...form,
-      interests,
-      email,
-    }).eq("id", userId);
-    setSaving(false);
-    if (error) return toast.error(error.message);
-    toast.success("Profile saved");
-    onSaved();
-  };
-
-  const input = "w-full ooo-border bg-card px-4 py-3 normal-case font-sans";
-
-  return (
-    <Section title="Your profile" action={<span className="font-label text-xs">{profile?.profile_completion_score ?? 0}% complete</span>}>
-      <div className="grid sm:grid-cols-2 gap-3">
-        <input className={input} placeholder="Full name" value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} />
-        <input className={input} placeholder="Company" value={form.company} onChange={(e) => setForm({ ...form, company: e.target.value })} />
-        <input className={input} placeholder="Title" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
-        <input className={input} placeholder="Location" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} />
-        <select className={input} value={form.role_type} onChange={(e) => setForm({ ...form, role_type: e.target.value })}>
-          {ROLE_TYPES.map((r) => <option key={r}>{r}</option>)}
-        </select>
-        <input className={input} placeholder="Interests (comma separated)" value={form.interests} onChange={(e) => setForm({ ...form, interests: e.target.value })} />
-      </div>
-      <textarea className={`${input} mt-3`} placeholder="Short bio" rows={3} value={form.bio} onChange={(e) => setForm({ ...form, bio: e.target.value })} />
-      <button onClick={save} disabled={saving} className="mt-4 bg-primary text-primary-foreground px-6 py-3 shadow-card hover-lift font-label disabled:opacity-50">
-        {saving ? "Saving…" : "Save profile"}
-      </button>
-    </Section>
   );
 }
 

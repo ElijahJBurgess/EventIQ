@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ProgressIndicator from "@/components/profile-setup/ProgressIndicator";
 import Page1BasicInfo from "@/components/profile-setup/Page1BasicInfo";
-import Page2MatchingPrefs from "@/components/profile-setup/Page2MatchingPrefs";
+import Page2Goals from "@/components/profile-setup/Page2Goals";
+import Page3WhoAndFilters from "@/components/profile-setup/Page3WhoAndFilters";
 import Page3RoleQuestions from "@/components/profile-setup/Page3RoleQuestions";
 import Page4Terms from "@/components/profile-setup/Page4Terms";
 import Page5EventSelection from "@/components/profile-setup/Page5EventSelection";
@@ -15,7 +16,13 @@ import { useAuth } from "@/v2/AuthProvider";
 // Page 3 (Page3RoleQuestions.tsx) only has real questions for these role
 // types -- everyone else sees a static "you're all set" message with no
 // fields at all, so role_details can never gain a key for them.
-const ROLE_TYPES_WITH_PAGE3_QUESTIONS = new Set(["Founder", "Investor", "Recruiter", "Hiring Manager", "Creator"]);
+const ROLE_TYPES_WITH_PAGE3_QUESTIONS = new Set([
+  "Founder / Co-founder",
+  "Investor",
+  "Recruiter",
+  "Hiring Manager",
+  "Creator / Influencer",
+]);
 
 function calculateCompletionScore(formData: ProfileSetupFormData): number {
   let score = 0;
@@ -24,8 +31,7 @@ function calculateCompletionScore(formData: ProfileSetupFormData): number {
     formData.fullName.trim().length > 0 &&
     formData.roleType.trim().length > 0 &&
     formData.whoToMeet.length >= 1 &&
-    formData.desiredOutcomes.length >= 1 &&
-    formData.matchingGoal.trim().length > 0;
+    formData.primaryGoal.trim().length > 0;
   if (mandatoryFilled) score += 50;
 
   const optionalPage1Filled =
@@ -39,11 +45,13 @@ function calculateCompletionScore(formData: ProfileSetupFormData): number {
   // Role types with no Page 3 questions have nothing to fill in, so they
   // get these 20 points automatically instead of it being permanently
   // unreachable for them.
-  const hasPage3Questions = ROLE_TYPES_WITH_PAGE3_QUESTIONS.has(formData.roleType);
+  const hasPage3Questions = [formData.roleType, ...formData.secondaryRoleTypes].some((role) =>
+    ROLE_TYPES_WITH_PAGE3_QUESTIONS.has(role),
+  );
   const roleDetailsFilled = Object.keys(formData.roleDetails).length > 0;
   if (!hasPage3Questions || roleDetailsFilled) score += 20;
 
-  if (formData.areasOfExpertise.length >= 1) score += 10;
+  if (formData.offers.length >= 1) score += 10;
 
   return Math.min(score, 100);
 }
@@ -76,10 +84,21 @@ export default function ProfileSetup() {
         location: formData.location,
         linkedin_url: formData.linkedinUrl,
         role_type: formData.roleType,
+        secondary_role_types: formData.secondaryRoleTypes,
+        primary_function: formData.primaryFunction,
+        additional_functions: formData.additionalFunctions,
+        seniority: formData.seniority,
         who_to_meet: formData.whoToMeet,
-        desired_outcomes: formData.desiredOutcomes,
-        areas_of_expertise: formData.areasOfExpertise,
-        matching_goal: formData.matchingGoal,
+        primary_goal: formData.primaryGoal,
+        secondary_goals: formData.secondaryGoals,
+        needs: formData.needs,
+        offers: formData.offers,
+        areas_of_expertise: formData.offers,
+        matching_goal: formData.primaryGoal,
+        industry_preference: formData.industryPreference,
+        location_preference: formData.locationPreference,
+        career_level_preference: formData.careerLevelPreference,
+        connection_preference: formData.connectionPreference,
         role_details: formData.roleDetails as Json,
         profile_completed: true,
         profile_completion_score: calculateCompletionScore(formData),
@@ -93,7 +112,7 @@ export default function ProfileSetup() {
       return;
     }
 
-    setCurrentPage(5);
+    setCurrentPage(6);
   };
 
   useEffect(() => {
@@ -105,7 +124,7 @@ export default function ProfileSetup() {
   return (
     <div className="min-h-screen bg-aqua flex items-start justify-center px-4 py-10 sm:py-16">
       <div className="w-full max-w-xl">
-        {!isComplete && <ProgressIndicator currentPage={currentPage} totalPages={5} />}
+        {!isComplete && currentPage <= 4 && <ProgressIndicator currentPage={currentPage} totalPages={4} />}
         {isComplete ? (
           <SuccessScreen />
         ) : (
@@ -114,23 +133,31 @@ export default function ProfileSetup() {
               <Page1BasicInfo formData={formData} setFormData={setFormData} onNext={onNext} onBack={onBack} />
             )}
             {currentPage === 2 && (
-              <Page2MatchingPrefs formData={formData} setFormData={setFormData} onNext={onNext} onBack={onBack} />
+              <Page2Goals formData={formData} setFormData={setFormData} onNext={onNext} onBack={onBack} />
             )}
             {currentPage === 3 && (
-              <Page3RoleQuestions formData={formData} setFormData={setFormData} onNext={onNext} onBack={onBack} />
+              <Page3WhoAndFilters formData={formData} setFormData={setFormData} onNext={onNext} onBack={onBack} />
             )}
             {currentPage === 4 && (
+              <Page3RoleQuestions
+                formData={formData}
+                setFormData={setFormData}
+                onNext={() => setCurrentPage(5)}
+                onBack={onBack}
+              />
+            )}
+            {currentPage === 5 && (
               <Page4Terms
                 formData={formData}
                 setFormData={setFormData}
                 onNext={onNext}
-                onBack={onBack}
+                onBack={() => setCurrentPage(4)}
                 onSubmit={onSubmit}
                 isSubmitting={isSubmitting}
                 submitError={submitError}
               />
             )}
-            {currentPage === 5 && (
+            {currentPage === 6 && (
               <Page5EventSelection profileId={user!.id} onContinue={() => setIsComplete(true)} />
             )}
           </div>
