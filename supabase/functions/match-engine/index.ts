@@ -10,7 +10,7 @@
 // job, not a user-facing table write.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { calculateMatchScore, type Profile } from "./scorer.ts";
+import { buildMatchDetails, calculateMatchScore, type MatchDetails, type Profile } from "./scorer.ts";
 
 const PROFILE_SELECT =
   "id, full_name, role_type, secondary_role_types, role_details, who_to_meet, desired_outcomes, areas_of_expertise, matching_goal, primary_goal, secondary_goals, industry_focus, needs, offers, connection_preference, interests, communities, hobbies, music_interests, favorite_conferences, location";
@@ -180,6 +180,7 @@ Deno.serve(async (req) => {
       score: number;
       breakdown: ReturnType<typeof calculateMatchScore>["scoreBreakdown"];
       reasons: string[];
+      details: MatchDetails;
     }[] = [];
     for (const other of otherProfiles) {
       const result = calculateMatchScore(requestingProfile, other);
@@ -188,6 +189,7 @@ Deno.serve(async (req) => {
         score: result.score,
         breakdown: result.scoreBreakdown,
         reasons: result.matchReasons,
+        details: buildMatchDetails(requestingProfile, other),
       });
     }
 
@@ -223,6 +225,7 @@ Deno.serve(async (req) => {
         event_id: eventId,
         match_score: match.score,
         score_breakdown: match.breakdown,
+        match_details: match.details,
         match_reason: match.reasons.join(" "),
         shared_goals: sharedGoals(requestingProfile, match.other),
         shared_industries: overlapValues(requestingProfile.industry_focus, match.other.industry_focus),
