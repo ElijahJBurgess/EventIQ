@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { MapPin, Loader2, RefreshCw, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { sendConnectRequest } from "@/lib/connectRequest";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -311,37 +312,27 @@ function MatchCard({ match, eventName }: { match: EnrichedMatch; eventName: stri
       return;
     }
 
-    const { error: messageError } = await supabase.from("messages").insert({
-      match_id: match.id,
-      event_id: match.eventId,
-      sender_id: actingUser.id,
-      recipient_id: other.id,
+    const result = await sendConnectRequest({
+      matchId: match.id,
+      eventId: match.eventId,
+      senderId: actingUser.id,
+      recipientId: other.id,
       content,
-      message_type: "connect_request",
     });
 
-    if (messageError) {
-      // A unique constraint violation here means a connect message for this
-      // match already exists (e.g. sent from another tab/device) -- treat
-      // it as already sent rather than a failure.
-      if (messageError.code === "23505") {
-        setStatus("sent");
-        return;
-      }
+    if (result.status === "error") {
       setStatus("composing");
       toast.error("Couldn't send the message — try again.");
       return;
     }
 
-    const { error: actionError } = await supabase.from("match_actions").insert({
-      match_id: match.id,
-      action_type: "message_sent",
-      user_id: actingUser.id,
-    });
-    if (actionError) console.error("match_actions insert failed:", actionError);
-
     setStatus("sent");
-    toast.success(`Message sent to ${other.full_name ?? "this member"}`);
+    // "already_sent" (a unique constraint violation under the hood -- e.g.
+    // sent from another tab/device) shows the same sent state without a
+    // fresh success toast, matching the original behavior.
+    if (result.status === "sent") {
+      toast.success(`Message sent to ${other.full_name ?? "this member"}`);
+    }
   };
 
   return (

@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { ArrowLeftRight } from "lucide-react";
+import { ArrowLeftRight, Check } from "lucide-react";
+import { toast } from "sonner";
 import { fetchMatchDetail, type MatchDetailResult } from "@/lib/matchDetail";
 import { buildFullProfileExplanation, type ClickPair } from "@/lib/matchExplanation";
+import { sendConnectRequest } from "@/lib/connectRequest";
 import OffripButton from "@/components/offrip/Button";
 import OffripCard from "@/components/offrip/Card";
 import OffripChip from "@/components/offrip/Chip";
@@ -11,8 +13,6 @@ interface FullProfileViewProps {
   currentUserId: string;
   /** Optional for now -- Piece 8 wires the real "back to matches" navigation. Renders inert without it. */
   onBack?: () => void;
-  /** Optional for now -- Piece 7 wires the real connect action. Renders inert without it. */
-  onMakeIntro?: () => void;
 }
 
 const AVATAR_PALETTE = ["bg-offrip-aqua", "bg-offrip-lime", "bg-offrip-orange", "bg-offrip-blue"];
@@ -104,13 +104,15 @@ function OfferList({ items, emptyMessage }: { items: string[]; emptyMessage: str
   );
 }
 
-export default function FullProfileView({ matchId, currentUserId, onBack, onMakeIntro }: FullProfileViewProps) {
+export default function FullProfileView({ matchId, currentUserId, onBack }: FullProfileViewProps) {
   // undefined = loading, null = not found (or an error -- both render the same honest "couldn't load" state)
   const [detail, setDetail] = useState<MatchDetailResult | null | undefined>(undefined);
+  const [introStatus, setIntroStatus] = useState<"idle" | "sending" | "sent">("idle");
 
   useEffect(() => {
     let cancelled = false;
     setDetail(undefined);
+    setIntroStatus("idle");
 
     fetchMatchDetail(matchId, currentUserId)
       .then((result) => {
@@ -132,6 +134,34 @@ export default function FullProfileView({ matchId, currentUserId, onBack, onMake
   const explanation = buildFullProfileExplanation(detail);
   const { otherPerson } = detail;
   const roleCompany = [otherPerson.role_type, otherPerson.company].filter(Boolean).join(" · ");
+
+  const handleMakeIntro = async () => {
+    if (introStatus !== "idle") return;
+    setIntroStatus("sending");
+
+    // Same real mechanism as MatchesTab's "Request to Connect": insert a
+    // messages row (message_type: "connect_request") then a match_actions
+    // row. "already_sent" (a unique-constraint violation under the hood)
+    // shows the same sent state, just without a fresh success toast.
+    const result = await sendConnectRequest({
+      matchId: detail.match.id,
+      eventId: detail.match.eventId,
+      senderId: currentUserId,
+      recipientId: otherPerson.id,
+      content: "Hi! I'd love to connect.",
+    });
+
+    if (result.status === "error") {
+      setIntroStatus("idle");
+      toast.error("Couldn't send the intro — try again.");
+      return;
+    }
+
+    setIntroStatus("sent");
+    if (result.status === "sent") {
+      toast.success(`Intro sent to ${otherPerson.full_name ?? "this member"}`);
+    }
+  };
 
   return (
     <div className="bg-offrip-white font-offrip-body text-offrip-black">
@@ -166,8 +196,13 @@ export default function FullProfileView({ matchId, currentUserId, onBack, onMake
             </div>
           </div>
 
-          <OffripButton onClick={onMakeIntro} className="w-full">
-            Make the Intro
+          <OffripButton
+            onClick={handleMakeIntro}
+            disabled={introStatus !== "idle"}
+            className="w-full justify-center"
+          >
+            {introStatus === "sent" && <Check className="h-4 w-4" />}
+            {introStatus === "sent" ? "Intro Sent" : introStatus === "sending" ? "Sending…" : "Make the Intro"}
           </OffripButton>
         </div>
 
