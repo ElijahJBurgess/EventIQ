@@ -459,6 +459,7 @@ export type Database = {
           event_id: string | null
           generated_at: string | null
           id: string
+          match_details: Json | null
           match_reason: string | null
           match_score: number | null
           recommended_next_step: string | null
@@ -476,6 +477,7 @@ export type Database = {
           event_id?: string | null
           generated_at?: string | null
           id?: string
+          match_details?: Json | null
           match_reason?: string | null
           match_score?: number | null
           recommended_next_step?: string | null
@@ -493,6 +495,7 @@ export type Database = {
           event_id?: string | null
           generated_at?: string | null
           id?: string
+          match_details?: Json | null
           match_reason?: string | null
           match_score?: number | null
           recommended_next_step?: string | null

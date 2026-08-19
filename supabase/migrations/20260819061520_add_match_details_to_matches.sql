@@ -1,0 +1,26 @@
+-- Structured "which specific thing matched which specific thing" data for
+-- Full Profile View. Distinct from score_breakdown (numbers only) and
+-- match_reason (flattened prose) -- this column holds the underlying pairs
+-- those are derived from, so a later view can render them individually
+-- instead of as one dense sentence.
+--
+-- Populated by the match-engine scorer in a later piece; NULL here (and on
+-- all existing rows) until that lands. Expected shape once populated:
+--
+-- {
+--   "matchedGoals": [
+--     { "goalA": string, "goalB": string, "type": "complementary" | "shared" }
+--   ],
+--   "matchedRoles": [
+--     { "roleA": string, "roleB": string, "pairType": string }
+--   ],
+--   "matchedInterests": [string],
+--   "needsOffersAToB": [
+--     { "need": string, "offer": string, "matchType": "exact" | "near" }
+--   ],
+--   "needsOffersBToA": [
+--     { "need": string, "offer": string, "matchType": "exact" | "near" }
+--   ]
+-- }
+ALTER TABLE public.matches
+  ADD COLUMN match_details JSONB DEFAULT NULL;
