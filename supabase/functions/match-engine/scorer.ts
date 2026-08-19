@@ -697,3 +697,196 @@ export function calculateMatchScore(profileA: Profile, profileB: Profile): Match
     matchReasons: generateMatchReasons(profileA, profileB, scoreBreakdown),
   };
 }
+
+// ---------------------------------------------------------------------------
+// structured match-explanation data (Full Profile View data foundation)
+//
+// Everything above computes SCORES. These functions instead expose WHICH
+// specific things matched -- the same underlying signals this file already
+// scores, decomposed into individually renderable facts instead of a single
+// number or sentence. Pure functions only: nothing here is wired into
+// calculateMatchScore, index.ts, or persisted anywhere yet.
+//
+// Shape matches the match_details column added in the
+// add_match_details_to_matches migration.
+// ---------------------------------------------------------------------------
+
+export interface MatchedGoal {
+  goalA: string;
+  goalB: string;
+  type: "complementary" | "shared";
+}
+
+export interface MatchedRole {
+  roleA: string;
+  roleB: string;
+  /**
+   * One of: "founder-investor-aligned" | "founder-investor-moderate" |
+   * "strong" | "weak" | "community-builder" | "same-role" | "unspecified".
+   * Mirrors the branches of calculateRolePairComplementarity.
+   */
+  pairType: string;
+}
+
+export interface NeedsOffersMatch {
+  need: string;
+  offer: string;
+  matchType: "exact" | "near";
+}
+
+export interface MatchDetails {
+  matchedGoals: MatchedGoal[];
+  matchedRoles: MatchedRole[];
+  matchedInterests: string[];
+  needsOffersAToB: NeedsOffersMatch[];
+  needsOffersBToA: NeedsOffersMatch[];
+}
+
+/** Same complementary-pair check as complementaryGoalPair, exposed standalone so every pair can be tested, not just the first found. */
+function isComplementaryGoalPair(goalA: string, goalB: string): boolean {
+  return COMPLEMENTARY_GOAL_PAIRS.some(
+    ([left, right]) =>
+      (norm(goalA) === norm(left) && norm(goalB) === norm(right)) ||
+      (norm(goalA) === norm(right) && norm(goalB) === norm(left)),
+  );
+}
+
+/**
+ * Every complementary or shared goal pair between the two people -- not
+ * just whether alignment exists (calculateEventGoalAlignment) and not just
+ * the first pair found (complementaryGoalPair).
+ */
+export function extractMatchedGoals(personA: Profile, personB: Profile): MatchedGoal[] {
+  const goalsA = selectedGoals(personA);
+  const goalsB = selectedGoals(personB);
+  const matches: MatchedGoal[] = [];
+
+  for (const goalA of goalsA) {
+    for (const goalB of goalsB) {
+      if (isComplementaryGoalPair(goalA, goalB)) {
+        matches.push({ goalA, goalB, type: "complementary" });
+      } else if (norm(goalA) === norm(goalB)) {
+        matches.push({ goalA, goalB, type: "shared" });
+      }
+    }
+  }
+
+  return matches;
+}
+
+/** Same classification as calculateRolePairComplementarity, but keeps the type label instead of collapsing to a bare score. */
+function classifyRolePairComplementarity(
+  a: Profile,
+  b: Profile,
+  roleA: string,
+  roleB: string,
+): { score: number; pairType: string } {
+  const key = pairKey(roleA, roleB);
+
+  const isFounderInvestor = key === pairKey("Founder / Co-founder", "Investor");
+  if (isFounderInvestor) {
+    const founder = norm(roleA) === "founder / co-founder" ? a : b;
+    const investor = norm(roleA) === "investor" ? a : b;
+    const isRaising = roleDetailString(founder, "Founder", "lookingForInvestors") === "Yes";
+    const focusOverlap = overlap(
+      founder.industry_focus,
+      roleDetailArray(investor, "Investor", "investmentFocusAreas"),
+    );
+    return isRaising && focusOverlap.length > 0
+      ? { score: 20, pairType: "founder-investor-aligned" }
+      : { score: 10, pairType: "founder-investor-moderate" };
+  }
+
+  if (STRONG_PAIRS.has(key)) return { score: 20, pairType: "strong" };
+  if (WEAK_PAIRS.has(key)) return { score: 0, pairType: "weak" };
+  if (norm(roleA) === "community builder" || norm(roleB) === "community builder") {
+    return { score: 10, pairType: "community-builder" };
+  }
+  if (MODERATE_SAME_ROLE_PAIRS.has(key)) return { score: 10, pairType: "same-role" };
+
+  return { score: 10, pairType: "unspecified" };
+}
+
+/**
+ * Which specific identity from A paired with which specific identity from
+ * B to produce calculateRoleComplementarity's score. Mirrors that
+ * function's "strongest pairing across every identity combo" selection
+ * exactly (including ties), instead of collapsing to just the max number.
+ */
+export function extractMatchedRoles(personA: Profile, personB: Profile): MatchedRole[] {
+  const rolesA = [personA.role_type, ...personA.secondary_role_types].filter((role): role is string => Boolean(role));
+  const rolesB = [personB.role_type, ...personB.secondary_role_types].filter((role): role is string => Boolean(role));
+  if (rolesA.length === 0 || rolesB.length === 0) return [];
+
+  const classified = rolesA.flatMap((roleA) =>
+    rolesB.map((roleB) => ({ roleA, roleB, ...classifyRolePairComplementarity(personA, personB, roleA, roleB) })),
+  );
+
+  const maxScore = Math.max(...classified.map((entry) => entry.score));
+  return classified
+    .filter((entry) => entry.score === maxScore)
+    .map(({ roleA, roleB, pairType }) => ({ roleA, roleB, pairType }));
+}
+
+/** The actual overlapping items behind calculateSharedInterests's count. */
+export function extractMatchedInterests(personA: Profile, personB: Profile): string[] {
+  return [
+    ...overlap(personA.interests, personB.interests),
+    ...overlap(personA.communities, personB.communities),
+    ...overlap(personA.hobbies, personB.hobbies),
+    ...overlap(personA.music_interests, personB.music_interests),
+    ...overlap(personA.favorite_conferences, personB.favorite_conferences),
+  ];
+}
+
+/**
+ * Which of personNeeds was satisfied by which of personOffers, and whether
+ * it was an exact or near match. Mirrors calculateNeedsOffersScore's
+ * precedence (exact checked before near) and its "one credit per need"
+ * rule -- at most one match per need, no double-counting when several
+ * offers would qualify.
+ */
+export function extractNeedsOffersMatches(personNeeds: string[], personOffers: string[]): NeedsOffersMatch[] {
+  if (personNeeds.length === 0 || personOffers.length === 0) return [];
+
+  const matches: NeedsOffersMatch[] = [];
+
+  for (const need of personNeeds) {
+    const normalizedNeed = norm(need);
+
+    if (EXACT_NEEDS_OFFERS_MATCHES.has(normalizedNeed)) {
+      const exactOffer = personOffers.find((offer) => norm(offer) === normalizedNeed);
+      if (exactOffer) {
+        matches.push({ need, offer: exactOffer, matchType: "exact" });
+        continue;
+      }
+    }
+
+    const compatibleOffers = NEAR_NEEDS_OFFERS_MATCHES[normalizedNeed];
+    if (compatibleOffers) {
+      const nearOffer = personOffers.find((offer) => compatibleOffers.has(norm(offer)));
+      if (nearOffer) {
+        matches.push({ need, offer: nearOffer, matchType: "near" });
+      }
+    }
+  }
+
+  return matches;
+}
+
+/**
+ * Assembles the structured match_details shape (see the
+ * add_match_details_to_matches migration) from the four extractors above.
+ * needsOffersAToB / needsOffersBToA follow calculateMatchScore's existing
+ * direction convention: AToB = personA's needs satisfied by personB's
+ * offers (value flowing to A), BToA = the reverse.
+ */
+export function buildMatchDetails(personA: Profile, personB: Profile): MatchDetails {
+  return {
+    matchedGoals: extractMatchedGoals(personA, personB),
+    matchedRoles: extractMatchedRoles(personA, personB),
+    matchedInterests: extractMatchedInterests(personA, personB),
+    needsOffersAToB: extractNeedsOffersMatches(personA.needs ?? [], personB.offers ?? []),
+    needsOffersBToA: extractNeedsOffersMatches(personB.needs ?? [], personA.offers ?? []),
+  };
+}

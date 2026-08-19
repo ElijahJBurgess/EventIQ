@@ -11,10 +11,13 @@
 //      good follow-up before running this against live data.
 
 import {
+  buildMatchDetails,
   calculateMatchScore,
   calculateNeedsOffersScore,
   calculateOpportunityCompatibility,
   calculateTimingConnectionCompatibility,
+  extractMatchedGoals,
+  extractNeedsOffersMatches,
   type Profile,
 } from "./scorer.ts";
 
@@ -404,5 +407,122 @@ for (const testCase of compatibilityCases) {
     console.error(`  Expected ${String(testCase.expected)}, received ${String(testCase.actual)}`);
   }
 }
+
+// ---------------------------------------------------------------------------
+// Structured match-explanation extraction (buildMatchDetails and friends).
+// Doesn't touch calculateMatchScore -- these are the new "which specific
+// thing matched which specific thing" functions.
+// ---------------------------------------------------------------------------
+
+function assertDeepEqual(label: string, actual: unknown, expected: unknown) {
+  const actualJson = JSON.stringify(actual);
+  const expectedJson = JSON.stringify(expected);
+  console.log(`${label}: ${actualJson}`);
+  if (actualJson !== expectedJson) {
+    failures += 1;
+    console.error(`  Expected ${expectedJson}, received ${actualJson}`);
+  }
+}
+
+console.log("\n=== Structured match details (buildMatchDetails) ===");
+
+// Scenario 1: Founder/Investor pair with real complementary goals, real
+// role pairing, and real needs/offers overlap in both directions.
+const detailFounder = profile({
+  id: "details-founder",
+  full_name: "Jordan Blake",
+  role_type: "Founder / Co-founder",
+  primary_goal: "Meet Investors",
+  industry_focus: ["Fintech"],
+  role_details: { Founder: { lookingForInvestors: "Yes" } },
+  needs: ["Investor Introductions", "Strategic Advice"],
+  offers: ["Product Feedback"],
+  interests: ["Hiking", "Coffee"],
+  communities: ["YC Alumni"],
+});
+const detailInvestor = profile({
+  id: "details-investor",
+  full_name: "Priya Nair",
+  role_type: "Investor",
+  primary_goal: "Meet Collaborators",
+  role_details: { Investor: { investmentFocusAreas: ["Fintech", "AI"] } },
+  needs: ["Product Feedback"],
+  offers: ["Investor Introductions", "Mentorship"],
+  interests: ["Hiking", "Wine"],
+  communities: ["YC Alumni"],
+});
+
+const scenario1 = buildMatchDetails(detailFounder, detailInvestor);
+assertDeepEqual("1a. matchedGoals", scenario1.matchedGoals, [
+  { goalA: "Meet Investors", goalB: "Meet Collaborators", type: "complementary" },
+]);
+assertDeepEqual("1b. matchedRoles", scenario1.matchedRoles, [
+  { roleA: "Founder / Co-founder", roleB: "Investor", pairType: "founder-investor-aligned" },
+]);
+assertDeepEqual("1c. matchedInterests", scenario1.matchedInterests, ["Hiking", "YC Alumni"]);
+assertDeepEqual("1d. needsOffersAToB", scenario1.needsOffersAToB, [
+  { need: "Investor Introductions", offer: "Investor Introductions", matchType: "exact" },
+]);
+assertDeepEqual("1e. needsOffersBToA", scenario1.needsOffersBToA, [
+  { need: "Product Feedback", offer: "Product Feedback", matchType: "exact" },
+]);
+
+// Scenario 2: no goal overlap, no role pairing, no needs/offers overlap, no
+// shared interests -- confirm empty arrays, not errors.
+const noMatchA = profile({
+  id: "no-match-a",
+  full_name: "No Match A",
+  role_type: null,
+  primary_goal: "Learn From Experts",
+  needs: ["Technical Expertise"],
+  interests: ["Skiing"],
+});
+const noMatchB = profile({
+  id: "no-match-b",
+  full_name: "No Match B",
+  role_type: null,
+  primary_goal: "Make Social Connections",
+  offers: ["Marketing Expertise"],
+  interests: ["Cooking"],
+});
+const scenario2 = buildMatchDetails(noMatchA, noMatchB);
+assertDeepEqual("2a. matchedGoals (empty)", scenario2.matchedGoals, []);
+assertDeepEqual("2b. matchedRoles (empty)", scenario2.matchedRoles, []);
+assertDeepEqual("2c. matchedInterests (empty)", scenario2.matchedInterests, []);
+assertDeepEqual("2d. needsOffersAToB (empty)", scenario2.needsOffersAToB, []);
+assertDeepEqual("2e. needsOffersBToA (empty)", scenario2.needsOffersBToA, []);
+
+// Scenario 3: multiple simultaneous goal pairs -- one complementary pair AND
+// one shared pair present at once across primary/secondary goals.
+const multiGoalA = profile({
+  id: "multi-goal-a",
+  full_name: "Multi Goal A",
+  primary_goal: "Meet Investors",
+  secondary_goals: ["Build Community"],
+});
+const multiGoalB = profile({
+  id: "multi-goal-b",
+  full_name: "Multi Goal B",
+  primary_goal: "Raise Capital",
+  secondary_goals: ["Build Community"],
+});
+assertDeepEqual("3. extractMatchedGoals (multiple simultaneous pairs)", extractMatchedGoals(multiGoalA, multiGoalB), [
+  { goalA: "Meet Investors", goalB: "Raise Capital", type: "complementary" },
+  { goalA: "Build Community", goalB: "Build Community", type: "shared" },
+]);
+
+// Scenario 4: extractNeedsOffersMatches distinguishes exact vs near matches
+// using real entries from the approved needs/offers compatibility map.
+assertDeepEqual(
+  "4. extractNeedsOffersMatches (exact + near + no-match)",
+  extractNeedsOffersMatches(
+    ["Investor Introductions", "Raising Capital", "Nonexistent Need"],
+    ["Investor Introductions", "Investment Capital"],
+  ),
+  [
+    { need: "Investor Introductions", offer: "Investor Introductions", matchType: "exact" },
+    { need: "Raising Capital", offer: "Investment Capital", matchType: "near" },
+  ],
+);
 
 if (failures > 0) process.exit(1);
