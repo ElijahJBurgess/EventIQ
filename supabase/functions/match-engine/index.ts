@@ -2,8 +2,8 @@
 //
 // POST { profileId, eventId } -> scores the requesting profile against every
 // other attendee registered for the same event (using the scorer from
-// ./scorer.ts), saves every pair that scores 25+ into the `matches` table,
-// and returns a summary of what happened.
+// ./scorer.ts), saves every pair into the `matches` table, and returns a
+// summary of what happened.
 //
 // Server-side only. Uses the service role key (auto-provided by the Supabase
 // Edge Runtime) to bypass RLS for the write, since this is a trusted backend
@@ -13,9 +13,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { calculateMatchScore, type Profile } from "./scorer.ts";
 
 const PROFILE_SELECT =
-  "id, full_name, role_type, role_details, who_to_meet, desired_outcomes, areas_of_expertise, matching_goal, industry_focus, interests, communities, hobbies, music_interests, favorite_conferences, location";
-
-const MATCH_THRESHOLD = 25;
+  "id, full_name, role_type, secondary_role_types, role_details, who_to_meet, desired_outcomes, areas_of_expertise, matching_goal, primary_goal, secondary_goals, industry_focus, needs, offers, connection_preference, interests, communities, hobbies, music_interests, favorite_conferences, location";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -36,6 +34,7 @@ function toScoringProfile(row: Record<string, unknown>): Profile {
     full_name: (row.full_name as string | null) ?? null,
     location: (row.location as string | null) ?? null,
     role_type: (row.role_type as string | null) ?? null,
+    secondary_role_types: (row.secondary_role_types as string[] | null) ?? [],
     // company/title aren't in this function's fetch list (per spec) and
     // aren't used by any scoring calculation in scorer.ts -- present only
     // to satisfy the Profile type.
@@ -45,8 +44,13 @@ function toScoringProfile(row: Record<string, unknown>): Profile {
     desired_outcomes: (row.desired_outcomes as string[] | null) ?? null,
     areas_of_expertise: (row.areas_of_expertise as string[] | null) ?? null,
     matching_goal: (row.matching_goal as string | null) ?? null,
+    primary_goal: (row.primary_goal as string | null) ?? null,
+    secondary_goals: (row.secondary_goals as string[] | null) ?? null,
     role_details: (row.role_details as Record<string, unknown> | null) ?? null,
     industry_focus: (row.industry_focus as string[] | null) ?? null,
+    needs: (row.needs as string[] | null) ?? null,
+    offers: (row.offers as string[] | null) ?? null,
+    connection_preference: (row.connection_preference as string[] | null) ?? null,
     interests: (row.interests as string[] | null) ?? null,
     communities: (row.communities as string[] | null) ?? null,
     hobbies: (row.hobbies as string[] | null) ?? null,
@@ -71,10 +75,12 @@ function overlapValues(a: string[] | null, b: string[] | null): string[] {
 }
 
 function sharedGoals(a: Profile, b: Profile): string[] {
-  if (a.matching_goal && b.matching_goal && a.matching_goal.toLowerCase() === b.matching_goal.toLowerCase()) {
-    return [a.matching_goal];
-  }
-  return [];
+  const goalsA = [a.primary_goal, ...(a.secondary_goals ?? [])].filter((goal): goal is string => Boolean(goal));
+  const goalsB = [b.primary_goal, ...(b.secondary_goals ?? [])].filter((goal): goal is string => Boolean(goal));
+  return overlapValues(
+    goalsA.length > 0 ? goalsA : a.matching_goal ? [a.matching_goal] : [],
+    goalsB.length > 0 ? goalsB : b.matching_goal ? [b.matching_goal] : [],
+  );
 }
 
 function sharedInterestsList(a: Profile, b: Profile): string[] {
@@ -168,27 +174,21 @@ Deno.serve(async (req) => {
     }
     const otherProfiles = Array.from(otherProfilesById.values());
 
-    // 4 & 5. Score every pair, split by threshold.
-    const qualifyingMatches: {
+    // 4 & 5. Score every pair. There is intentionally no minimum threshold.
+    const scoredMatches: {
       other: Profile;
       score: number;
       breakdown: ReturnType<typeof calculateMatchScore>["scoreBreakdown"];
       reasons: string[];
     }[] = [];
-    let skippedBelowThreshold = 0;
-
     for (const other of otherProfiles) {
       const result = calculateMatchScore(requestingProfile, other);
-      if (result.score >= MATCH_THRESHOLD) {
-        qualifyingMatches.push({
-          other,
-          score: result.score,
-          breakdown: result.scoreBreakdown,
-          reasons: result.matchReasons,
-        });
-      } else {
-        skippedBelowThreshold += 1;
-      }
+      scoredMatches.push({
+        other,
+        score: result.score,
+        breakdown: result.scoreBreakdown,
+        reasons: result.matchReasons,
+      });
     }
 
     // 6/7. Check for existing matches (either direction) before inserting.
@@ -209,7 +209,7 @@ Deno.serve(async (req) => {
     const rowsToInsert: Record<string, unknown>[] = [];
     const now = new Date().toISOString();
 
-    for (const match of qualifyingMatches) {
+    for (const match of scoredMatches) {
       const key = pairKey(profileId, match.other.id);
       if (existingPairKeys.has(key)) {
         skippedDuplicates += 1;
@@ -251,10 +251,9 @@ Deno.serve(async (req) => {
     return jsonResponse(
       {
         profileId,
-        matchesGenerated: qualifyingMatches.length,
+        matchesGenerated: scoredMatches.length,
         matchesSaved,
         skippedDuplicates,
-        skippedBelowThreshold,
       },
       200,
     );
