@@ -1,110 +1,101 @@
-import { Link } from "react-router-dom";
-import { Handshake, Sparkles, UserRound } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 
-const steps = [
-  {
-    icon: UserRound,
-    title: "Build your profile",
-    description: "Tell us who you are, what you're looking for, and who you want to meet.",
-    accent: "bg-aqua text-aqua-foreground",
-  },
-  {
-    icon: Sparkles,
-    title: "Get matched instantly",
-    description: "Our AI analyzes everyone attending and finds your strongest connections.",
-    accent: "bg-citron text-citron-foreground",
-  },
-  {
-    icon: Handshake,
-    title: "Connect at the event",
-    description: "Request to connect, and meet the right people in person.",
-    accent: "bg-vermillion text-vermillion-foreground",
-  },
+const PROFILES = [
+  { initials: "JL", name: "Jordan Lee", role: "VP Engineering · TechCo", match: 94, color: "#69C0BE" },
+  { initials: "MP", name: "Maya Patel", role: "Investor · Spark Capital", match: 92, color: "#DCE86A" },
+  { initials: "TS", name: "Taylor Smith", role: "Founder · Buildr", match: 90, color: "#FF5338" },
+  { initials: "AR", name: "Aisha Robinson", role: "Brand Partnerships · Nike", match: 88, color: "#4387F5" },
+  { initials: "KW", name: "Kelsey Wong", role: "Product Manager · OpenAI", match: 87, color: "#69C0BE" },
 ];
 
 export default function Landing() {
+  const navigate = useNavigate();
+  const [email, setEmail] = useState("");
+
+  const startSignup = () => {
+    const query = email.trim() ? `&email=${encodeURIComponent(email.trim())}` : "";
+    navigate(`/v2/auth?mode=signup${query}`);
+  };
+
   return (
-    <div className="min-h-screen bg-aqua">
-      <header className="sticky top-0 z-20 border-b-2 border-primary bg-card/95 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
-          <span className="font-display text-lg">OOO</span>
-          <Button asChild variant="quiet" size="sm">
-            <Link to="/v2/auth">Sign In</Link>
-          </Button>
+    <div className="min-h-screen bg-black text-white flex flex-col">
+      <header className="px-6 sm:px-8 py-5 flex items-center justify-between border-b border-white/10">
+        <div>
+          <div className="font-display text-2xl font-black tracking-tight text-white normal-case">OFFRIP</div>
+          <div className="text-[10px] text-white/50 tracking-widest font-display mt-0.5">BY OUT OF OFFICE</div>
         </div>
+        <button onClick={() => navigate("/v2/auth")} className="text-[11px] tracking-widest border border-white/30 px-4 py-2 hover:border-white text-white/70 hover:text-white transition-colors">
+          Sign in
+        </button>
       </header>
 
-      <section className="px-4 py-16 sm:px-6 sm:py-24">
-        <div className="mx-auto max-w-3xl text-center">
-          <h1 className="text-4xl leading-[0.95] sm:text-6xl lg:text-7xl">
-            Meet the room before you work the room.
-          </h1>
-          <p className="mx-auto mt-6 max-w-xl text-base normal-case font-sans leading-7 text-charcoal sm:text-lg">
-            OOO helps you find the right people, conversations and opportunities at every event.
-          </p>
-          <div className="mt-10">
-            <Button asChild variant="hero" size="lg" className="h-14 px-10 text-base sm:text-lg">
-              <Link to="/v2/auth?mode=signup">Get Matched</Link>
-            </Button>
+      <div className="flex-1 grid md:grid-cols-2">
+        <div className="flex flex-col justify-center px-8 md:px-16 py-16 md:py-20">
+          <div className="text-[11px] tracking-widest font-display text-offrip-aqua mb-6">
+            Relationship intelligence for the rooms that matter
           </div>
-        </div>
-      </section>
-
-      <section className="bg-card px-4 py-16 sm:px-6 sm:py-20">
-        <div className="mx-auto max-w-5xl">
-          <h2 className="text-center text-2xl sm:text-3xl">How it works</h2>
-          <div className="mt-10 grid gap-6 sm:grid-cols-3">
-            {steps.map((step, index) => (
-              <div key={step.title} className="ooo-card bg-warm p-6">
-                <span className="font-label text-xs text-charcoal">Step {index + 1}</span>
-                <div
-                  className={`mb-5 mt-4 flex h-12 w-12 items-center justify-center rounded-full border-2 border-primary ${step.accent}`}
-                >
-                  <step.icon className="h-5 w-5" />
-                </div>
-                <h3 className="text-lg">{step.title}</h3>
-                <p className="mt-2 text-sm normal-case font-sans leading-6 text-charcoal">
-                  {step.description}
-                </p>
+          <h1 className="font-display font-black text-5xl md:text-7xl leading-[0.92] tracking-tight uppercase text-white mb-6">
+            Know<br />who to<br /><span className="text-offrip-orange">know.</span><br />Off rip.
+          </h1>
+          <p className="text-white/60 text-base leading-relaxed max-w-sm mb-6 font-offrip-body">
+            Know the room before you work it. Tell us what you're looking for and we'll find the people worth knowing.
+          </p>
+          <p className="text-white/30 text-sm max-w-sm mb-6 font-offrip-body">Less random networking. Better intros.</p>
+          <div className="flex flex-col sm:flex-row gap-3 max-w-sm">
+            <input
+              type="email"
+              placeholder="Your work email"
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              onKeyDown={(event) => event.key === "Enter" && startSignup()}
+              className="flex-1 bg-white/10 border border-white/20 text-white placeholder:text-white/30 px-4 py-3 text-sm font-offrip-body outline-none focus:border-offrip-aqua transition-colors"
+            />
+            <button onClick={startSignup} className="bg-white text-black text-[11px] tracking-widest px-6 py-3 hover:bg-offrip-aqua transition-colors whitespace-nowrap">
+              Get in the room
+            </button>
+          </div>
+          <div className="flex flex-wrap gap-2 mt-10">
+            {["AI matching", "Real connections", "Measurable outcomes"].map((feature) => (
+              <span key={feature} className="border border-white/20 text-white/50 text-[10px] font-display px-3 py-1.5 uppercase tracking-wider">{feature}</span>
+            ))}
+          </div>
+          <div className="flex flex-wrap gap-8 mt-12 border-t border-white/10 pt-8">
+            {[["1,842", "People in the room", "text-white"], ["94%", "Match accuracy", "text-offrip-aqua"], ["412", "Outcomes reported", "text-white"]].map(([value, label, color]) => (
+              <div key={label}>
+                <div className={`font-display font-black text-2xl ${color}`}>{value}</div>
+                <div className="text-[10px] text-white/40 tracking-wider font-display mt-0.5">{label}</div>
               </div>
             ))}
           </div>
         </div>
-      </section>
 
-      <section className="bg-primary px-4 py-16 text-primary-foreground sm:px-6 sm:py-24">
-        <div className="mx-auto max-w-2xl text-center">
-          <h2 className="text-2xl sm:text-4xl">Networking without the guesswork</h2>
-          <p className="mt-6 normal-case font-sans text-sm leading-7 text-primary-foreground/80 sm:text-base">
-            Most conference networking is random — you talk to whoever happens to be standing
-            near you and hope for the best. OOO Intelligence changes that. Before you even walk
-            in the room, we show you exactly who you should meet and why.
-          </p>
-        </div>
-      </section>
-
-      <section className="px-4 py-16 sm:px-6 sm:py-24">
-        <div className="mx-auto max-w-xl text-center">
-          <h2 className="text-3xl sm:text-5xl">Ready to meet your people?</h2>
-          <div className="mt-8">
-            <Button asChild variant="hero" size="lg" className="h-14 px-10 text-base sm:text-lg">
-              <Link to="/v2/auth?mode=signup">Get Matched</Link>
-            </Button>
+        <div className="relative hidden md:flex items-center justify-center overflow-hidden border-l border-white/10">
+          <div className="absolute w-80 h-80 rounded-full bg-offrip-aqua/10 blur-3xl" />
+          <div className="relative z-10 flex flex-col gap-3 p-8 w-full max-w-sm">
+            <div className="text-[10px] tracking-widest font-display text-white/30 mb-2">Don't leave without meeting</div>
+            {PROFILES.map((profile) => (
+              <div key={profile.initials} className="bg-white/5 border border-white/10 p-4 flex items-center gap-4 hover:bg-white/10 hover:border-white/20 transition-all">
+                <div className="w-10 h-10 rounded-full flex items-center justify-center text-xs font-black font-display flex-shrink-0 text-black" style={{ backgroundColor: profile.color }}>{profile.initials}</div>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-display font-black text-white truncate normal-case">{profile.name}</div>
+                  <div className="text-[11px] text-white/40 font-offrip-body truncate">{profile.role}</div>
+                </div>
+                <div className="text-[11px] font-black font-display px-2 py-1 text-black" style={{ backgroundColor: profile.color }}>{profile.match}% match</div>
+              </div>
+            ))}
+            <div className="mt-2 bg-offrip-aqua p-4">
+              <div className="text-[10px] tracking-widest font-display text-black mb-1">OFFRIP concierge</div>
+              <div className="text-sm font-offrip-body text-black/70">“Who should I meet if I'm looking for a technical cofounder?”</div>
+              <div className="mt-2 text-[10px] font-display text-black">→ 3 strong matches found</div>
+            </div>
           </div>
-          <p className="mt-4 text-xs normal-case font-sans text-charcoal">
-            Free to join · Takes 2 minutes
-          </p>
         </div>
-      </section>
+      </div>
 
-      <footer className="border-t-2 border-primary bg-card px-4 py-8 sm:px-6">
-        <div className="mx-auto flex max-w-5xl flex-col items-center gap-2 text-center">
-          <span className="font-display text-base">OOO</span>
-          <p className="text-xs normal-case font-sans text-muted-foreground">
-            Built for Render ATL 2026
-          </p>
-        </div>
+      <footer className="border-t border-white/10 px-6 sm:px-8 py-4 flex flex-wrap gap-3 items-center justify-between">
+        <div className="text-[10px] text-white/20 font-display tracking-widest">© 2026 Out Of Office. All rights reserved.</div>
+        <button onClick={() => navigate("/v2/admin")} className="text-[10px] text-white/30 font-display tracking-widest hover:text-white/60">Enterprise →</button>
       </footer>
     </div>
   );

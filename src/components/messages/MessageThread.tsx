@@ -119,9 +119,10 @@ interface MessageThreadProps {
   eventName: string | null;
   other: OtherProfile;
   onBack: () => void;
+  embedded?: boolean;
 }
 
-export default function MessageThread({ userId, matchId, eventId, eventName, other, onBack }: MessageThreadProps) {
+export default function MessageThread({ userId, matchId, eventId, eventName, other, onBack, embedded = false }: MessageThreadProps) {
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState("");
@@ -424,9 +425,9 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-aqua flex flex-col">
-      <header className="bg-card/95 border-b-2 border-primary flex items-center gap-3 px-4 py-3 shrink-0">
-        <button onClick={onBack} className="ooo-border bg-card p-2 shrink-0" aria-label="Back to conversations">
+    <div className={`${embedded ? "fixed inset-0 z-50 md:static md:z-auto" : "fixed inset-0 z-50"} bg-white flex h-full min-h-0 flex-col`}>
+      <header className="bg-white border-b border-black flex items-center gap-3 px-4 py-3 shrink-0">
+        <button onClick={onBack} className={`border border-black bg-white p-2 shrink-0 ${embedded ? "md:hidden" : ""}`} aria-label="Back to conversations">
           <ArrowLeft className="h-4 w-4" />
         </button>
         <Avatar className="h-10 w-10 border-2 border-primary shrink-0">
@@ -444,7 +445,7 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
       </header>
 
       {(meeting || (hasBackAndForth && eventId)) && (
-        <div className="border-b-2 border-primary bg-warm px-4 py-3 shrink-0">
+        <div className="border-b border-black/10 bg-offrip-light-gray px-4 py-3 shrink-0">
           <div className="max-w-2xl mx-auto space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               {meeting && (
@@ -590,7 +591,7 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
         <div ref={bottomRef} />
       </div>
 
-      <div className="border-t-2 border-primary bg-card p-3 shrink-0">
+      <div className="border-t border-black bg-white p-3 shrink-0">
         <div className="max-w-2xl mx-auto flex gap-2">
           <input
             className="flex-1 ooo-border bg-card px-4 py-3 normal-case font-sans"

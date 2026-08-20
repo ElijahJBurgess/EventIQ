@@ -17,11 +17,21 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { buildConnectionSummary } from "@/lib/connectionSummary";
 
-type Tab = "home" | "profile" | "events" | "matches" | "messages";
-type NavItem = Exclude<Tab, "profile"> | "enterprise";
+type Tab = "home" | "profile" | "events" | "matches" | "connections" | "messages" | "myday";
+type NavItem = Exclude<Tab, "profile" | "myday"> | "enterprise";
 
-const NAV_ITEMS: NavItem[] = ["home", "events", "matches", "messages", "enterprise"];
+const NAV_ITEMS: NavItem[] = ["home", "events", "matches", "connections", "messages"];
+
+const NAV_LABELS: Record<NavItem, string> = {
+  home: "Home",
+  events: "Rooms",
+  matches: "People",
+  connections: "Connections",
+  messages: "Messages",
+  enterprise: "Enterprise",
+};
 
 interface Profile {
   id: string;
@@ -110,6 +120,7 @@ export default function DashboardV2() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("home");
+  const [peopleEventId, setPeopleEventId] = useState<string | undefined>();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
@@ -151,39 +162,42 @@ export default function DashboardV2() {
   }, [user]);
 
   if (loading) {
-    return <div className="min-h-screen bg-aqua flex items-center justify-center font-label text-xl">Loading…</div>;
+    return <div className="min-h-screen bg-background flex items-center justify-center font-label text-xl">Loading…</div>;
   }
 
   return (
-    <div className={`min-h-screen ${tab === "home" || viewingMatchId ? "bg-offrip-white" : "bg-aqua"}`}>
-      <header className="bg-card/95 border-b-2 border-primary sticky top-0 z-20 backdrop-blur">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
-          <span className="font-display text-lg">OFFRIP</span>
-          <nav className="hidden sm:flex items-center gap-1">
+    <div className="min-h-screen bg-white">
+      <header className="bg-white border-b border-black sticky top-0 z-20">
+        <div className="max-w-7xl mx-auto px-6 h-14 flex items-center gap-10">
+          <button onClick={() => selectNavigationItem("home")} className="font-display text-xl tracking-tight leading-none normal-case shrink-0">OFFRIP</button>
+          <nav className="hidden md:flex items-center gap-6 flex-1">
             {NAV_ITEMS.map((t) => (
               <button
                 key={t}
                 onClick={() => selectNavigationItem(t)}
-                className={`relative font-label text-xs px-3 py-2 ooo-border ${tab === t ? "bg-aqua" : "bg-card"}`}
+                className={`relative text-[11px] tracking-widest transition-colors ${tab === t ? "text-black border-b-2 border-black pb-0.5" : "text-black/40 hover:text-black"}`}
               >
-                {t === "enterprise" ? "Enterprise" : t === "home" ? "Home" : t}
+                {NAV_LABELS[t]}
                 {t === "messages" && hasUnreadMessages && (
-                  <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-vermillion border border-primary" aria-label="Unread messages" />
+                  <span className="absolute -top-1 -right-2 h-2 w-2 rounded-full bg-offrip-orange" aria-label="Unread messages" />
                 )}
               </button>
             ))}
           </nav>
+          <button onClick={() => selectNavigationItem("enterprise")} className="hidden md:flex text-[10px] tracking-widest border border-black px-3 py-1.5 hover:bg-black hover:text-white transition-colors">
+            Enterprise
+          </button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button className="rounded-full" aria-label="Open account menu">
-                <Avatar className="h-10 w-10 rounded-full border-2 border-primary">
+                <Avatar className="h-8 w-8 rounded-full border-2 border-black">
                   <AvatarFallback className={`rounded-full font-label text-xs ${offripAvatarClasses(user!.id)}`}>
                     {profileInitials(profile?.full_name ?? null)}
                   </AvatarFallback>
                 </Avatar>
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="ooo-border bg-card">
+            <DropdownMenuContent align="end" className="border border-black bg-white rounded-sm">
               <DropdownMenuItem
                 onSelect={() => {
                   setTab("profile");
@@ -199,10 +213,10 @@ export default function DashboardV2() {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-        <div className="sm:hidden flex border-t-2 border-primary">
+        <div className="md:hidden flex overflow-x-auto border-t border-black">
           {NAV_ITEMS.map((t) => (
-            <button key={t} onClick={() => selectNavigationItem(t)} className={`relative flex-1 font-label text-[11px] py-2 ${tab === t ? "bg-aqua" : "bg-card"}`}>
-              {t === "enterprise" ? "Enterprise" : t === "home" ? "Home" : t}
+            <button key={t} onClick={() => selectNavigationItem(t)} className={`relative shrink-0 px-4 py-2.5 text-[10px] tracking-widest ${tab === t ? "bg-black text-white" : "text-black/40"}`}>
+              {NAV_LABELS[t]}
               {t === "messages" && hasUnreadMessages && (
                 <span className="absolute top-1 right-2 h-2 w-2 rounded-full bg-vermillion border border-primary" aria-label="Unread messages" />
               )}
@@ -211,7 +225,7 @@ export default function DashboardV2() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-8">
+      <main className="max-w-5xl mx-auto px-6 py-8">
         {viewingMatchId ? (
           <FullProfileView
             matchId={viewingMatchId}
@@ -221,7 +235,7 @@ export default function DashboardV2() {
         ) : (
           <>
             {tab === "home" && (
-              <HomeTab profile={profile} userId={user!.id} onSeeRoom={() => setTab("matches")} onViewFullProfile={setViewingMatchId} />
+              <HomeTab profile={profile} userId={user!.id} onSeeRoom={(eventId) => { setPeopleEventId(eventId); setTab("matches"); }} onSeeDay={() => setTab("myday")} onViewFullProfile={setViewingMatchId} />
             )}
             {tab === "profile" && editingFullProfile && (
               <EditProfileScreen
@@ -233,9 +247,11 @@ export default function DashboardV2() {
                 onSaved={loadProfile}
               />
             )}
-            {tab === "events" && <EventsTab userId={user!.id} onViewMatches={() => setTab("matches")} />}
-            {tab === "matches" && <MatchesTab userId={user!.id} onViewFullProfile={setViewingMatchId} />}
+            {tab === "events" && <EventsTab userId={user!.id} onViewMatches={(eventId) => { setPeopleEventId(eventId); setTab("matches"); }} />}
+            {tab === "matches" && <MatchesTab userId={user!.id} initialEventId={peopleEventId} onViewFullProfile={setViewingMatchId} />}
+            {tab === "connections" && <ConnectionsTab userId={user!.id} />}
             {tab === "messages" && <MessagesTab userId={user!.id} />}
+            {tab === "myday" && <MyDayTab userId={user!.id} onBack={() => setTab("home")} />}
           </>
         )}
       </main>
@@ -247,11 +263,13 @@ function HomeTab({
   profile,
   userId,
   onSeeRoom,
+  onSeeDay,
   onViewFullProfile,
 }: {
   profile: Profile | null;
   userId: string;
-  onSeeRoom: () => void;
+  onSeeRoom: (eventId?: string) => void;
+  onSeeDay: () => void;
   onViewFullProfile: (matchId: string) => void;
 }) {
   const [stats, setStats] = useState<HomeStatsData | null | undefined>(undefined);
@@ -570,12 +588,15 @@ function HomeTab({
                   : ""}
               </p>
             </div>
-            <OffripButton onClick={onSeeRoom} className="shrink-0 !bg-offrip-white !text-offrip-black hover:!bg-offrip-aqua">
+            <OffripButton onClick={() => onSeeRoom(stats.eventId)} className="shrink-0 !bg-offrip-white !text-offrip-black hover:!bg-offrip-aqua">
               See the Room
             </OffripButton>
           </div>
           <div className="mt-8">
-            <h2 className="font-offrip-display text-2xl font-black uppercase tracking-tight">Your Day</h2>
+            <div className="flex items-center justify-between gap-4">
+              <h2 className="font-offrip-display text-2xl font-black uppercase tracking-tight">Your Day</h2>
+              <OffripButton variant="tertiary" onClick={onSeeDay}>See full day</OffripButton>
+            </div>
             {stats.scheduledMeetings.length === 0 ? (
               <OffripCard className="mt-3 bg-offrip-light-gray p-5">
                 <p className="font-offrip-body text-sm text-offrip-medium-gray">Nothing scheduled yet.</p>
@@ -615,7 +636,7 @@ function HomeTab({
                 <p className="mt-1 font-offrip-body text-sm text-offrip-medium-gray">Start here.</p>
               </div>
               {stats.topMatches.length > 0 && (
-                <OffripButton variant="tertiary" onClick={onSeeRoom}>See all matches</OffripButton>
+                <OffripButton variant="tertiary" onClick={() => onSeeRoom(stats.eventId)}>See all matches</OffripButton>
               )}
             </div>
             {stats.topMatches.length === 0 ? (
@@ -681,7 +702,7 @@ function HomeTab({
                   <OffripChip color="lime">{stats.topMatches[4].score}% Match</OffripChip>
                   <OffripButton
                     variant="secondary"
-                    onClick={onSeeRoom}
+                    onClick={() => onSeeRoom(stats.eventId)}
                     className="!border-offrip-white !text-offrip-white hover:!bg-offrip-white hover:!text-offrip-black"
                   >
                     See Why →
@@ -733,9 +754,201 @@ function Section({ title, children, action }: { title: string; children: React.R
   );
 }
 
+interface DayMeetingRow {
+  id: string;
+  status: string;
+  scheduled_at: string | null;
+  location_note: string | null;
+  duration_minutes: number | null;
+  requester_id: string;
+  recipient_id: string;
+  event_id: string | null;
+  otherName: string;
+  eventName: string;
+}
+
+function MyDayTab({ userId, onBack }: { userId: string; onBack: () => void }) {
+  const [meetings, setMeetings] = useState<DayMeetingRow[]>([]);
+  const [loadingDay, setLoadingDay] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadDay = async () => {
+      const { data } = await supabase
+        .from("meetings")
+        .select("id,status,scheduled_at,location_note,duration_minutes,requester_id,recipient_id,event_id")
+        .or(`requester_id.eq.${userId},recipient_id.eq.${userId}`)
+        .in("status", ["accepted", "scheduled"])
+        .order("scheduled_at", { ascending: true, nullsFirst: false });
+      const raw = data ?? [];
+      const profileIds = Array.from(new Set(raw.map((meeting) => meeting.requester_id === userId ? meeting.recipient_id : meeting.requester_id)));
+      const eventIds = Array.from(new Set(raw.map((meeting) => meeting.event_id).filter((id): id is string => Boolean(id))));
+      const [{ data: profiles }, { data: events }] = await Promise.all([
+        profileIds.length ? supabase.from("profiles").select("id,full_name").in("id", profileIds) : Promise.resolve({ data: [] }),
+        eventIds.length ? supabase.from("events").select("id,name").in("id", eventIds) : Promise.resolve({ data: [] }),
+      ]);
+      const profileMap = new Map((profiles ?? []).map((profile) => [profile.id, profile.full_name ?? "Member"]));
+      const eventMap = new Map((events ?? []).map((event) => [event.id, event.name]));
+      const enriched = raw.map((meeting) => {
+        const otherId = meeting.requester_id === userId ? meeting.recipient_id : meeting.requester_id;
+        return {
+          ...meeting,
+          otherName: profileMap.get(otherId) ?? "Member",
+          eventName: eventMap.get(meeting.event_id ?? "") ?? "OFFRIP event",
+        };
+      });
+      if (!cancelled) {
+        setMeetings(enriched);
+        setLoadingDay(false);
+      }
+    };
+    loadDay();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  const scheduledMinutes = meetings.reduce((total, meeting) => total + (meeting.duration_minutes ?? 30), 0);
+  return (
+    <div>
+      <button onClick={onBack} className="text-[10px] tracking-widest text-black/40 hover:text-black mb-8">← Back home</button>
+      <div className="mb-8">
+        <div className="text-[10px] tracking-widest font-display text-black/30 mb-2">Your OFFRIP schedule</div>
+        <h1 className="font-display text-4xl">Your day</h1>
+        <p className="mt-1 text-sm text-black/40 normal-case font-offrip-body">Your meetings, plans, and people already in motion.</p>
+      </div>
+      <div className="grid grid-cols-2 gap-4 mb-8">
+        <div className="bg-offrip-aqua p-5"><div className="font-display text-4xl">{meetings.length}</div><div className="text-[10px] tracking-widest font-display text-black/50">Meetings</div></div>
+        <div className="bg-offrip-lime p-5"><div className="font-display text-4xl">{scheduledMinutes}</div><div className="text-[10px] tracking-widest font-display text-black/50">Minutes scheduled</div></div>
+      </div>
+      <h2 className="font-display text-lg mb-4">Today's meetings</h2>
+      {loadingDay ? (
+        <p className="text-sm text-black/40 normal-case font-offrip-body">Loading your day…</p>
+      ) : meetings.length === 0 ? (
+        <div className="border border-black/10 p-8 text-center text-sm text-black/40 normal-case font-offrip-body">Nothing scheduled yet. Start a conversation with someone worth knowing.</div>
+      ) : (
+        <div className="space-y-3">
+          {meetings.map((meeting, index) => (
+            <div key={meeting.id} className="border border-black/10 p-5 flex flex-col sm:flex-row sm:items-center gap-4 hover:border-black transition-colors">
+              <div className="font-display text-lg sm:w-28">{meeting.scheduled_at ? new Date(meeting.scheduled_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "Pending"}</div>
+              <div className="h-11 w-11 rounded-full border-2 border-black flex items-center justify-center font-display text-xs" style={{ backgroundColor: ["#69C0BE", "#DCE86A", "#4387F5"][index % 3] }}>{profileInitials(meeting.otherName)}</div>
+              <div className="flex-1 min-w-0">
+                <div className="font-display text-sm">{meeting.otherName}</div>
+                <div className="text-xs text-black/40 normal-case font-offrip-body mt-1">{meeting.eventName} · {meeting.location_note ?? "Location to be confirmed"}</div>
+              </div>
+              <span className={`text-[10px] tracking-widest px-2 py-1 ${meeting.status === "scheduled" ? "bg-offrip-aqua" : "bg-offrip-lime"}`}>{meeting.status}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+interface ConnectionRow {
+  id: string;
+  otherName: string;
+  otherInitials: string;
+  eventName: string;
+  status: string;
+  statusColor: string;
+}
+
+function ConnectionsTab({ userId }: { userId: string }) {
+  const [connections, setConnections] = useState<ConnectionRow[]>([]);
+  const [conversationCount, setConversationCount] = useState(0);
+  const [peopleMetCount, setPeopleMetCount] = useState(0);
+  const [inMotionCount, setInMotionCount] = useState(0);
+  const [loadingConnections, setLoadingConnections] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadConnections = async () => {
+      const [{ data: messages }, { data: meetings }] = await Promise.all([
+        supabase
+          .from("messages")
+          .select("id,match_id,event_id,sender_id,recipient_id,message_type,created_at")
+          .or(`sender_id.eq.${userId},recipient_id.eq.${userId}`)
+          .order("created_at", { ascending: false }),
+        supabase
+          .from("meetings")
+          .select("id,event_id,requester_id,recipient_id,status,requested_at,completed_at")
+          .or(`requester_id.eq.${userId},recipient_id.eq.${userId}`)
+          .order("requested_at", { ascending: false }),
+      ]);
+
+      const summary = buildConnectionSummary(userId, messages ?? [], meetings ?? []);
+
+      const otherIds = summary.people.map((person) => person.personId);
+      const eventIds = Array.from(new Set(summary.people.map((person) => person.eventId).filter((id): id is string => Boolean(id))));
+
+      const [{ data: profiles }, { data: events }] = await Promise.all([
+        otherIds.length ? supabase.from("profiles").select("id,full_name").in("id", otherIds) : Promise.resolve({ data: [] }),
+        eventIds.length ? supabase.from("events").select("id,name").in("id", eventIds) : Promise.resolve({ data: [] }),
+      ]);
+      const profileMap = new Map((profiles ?? []).map((profile) => [profile.id, profile.full_name ?? "Member"]));
+      const eventMap = new Map((events ?? []).map((event) => [event.id, event.name]));
+      const rows = summary.people.map((person) => {
+        const name = profileMap.get(person.personId) ?? "Member";
+        return {
+          id: person.personId,
+          otherName: name,
+          otherInitials: profileInitials(name),
+          eventName: eventMap.get(person.eventId ?? "") ?? "OFFRIP connection",
+          status: person.status,
+          statusColor: person.statusColor,
+        };
+      });
+      if (!cancelled) {
+        setConnections(rows);
+        setConversationCount(summary.conversationCount);
+        setPeopleMetCount(summary.peopleMetCount);
+        setInMotionCount(summary.inMotionCount);
+        setLoadingConnections(false);
+      }
+    };
+    loadConnections();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  return (
+    <div>
+      <div className="mb-8">
+        <h1 className="font-display text-4xl tracking-tight">Your people</h1>
+        <p className="mt-1 text-sm text-black/40 normal-case font-offrip-body">The connections you've made—and the ones already in motion.</p>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8">
+        {[[peopleMetCount, "People You Met"], [inMotionCount, "In Motion"], [conversationCount, "Conversations"]].map(([value, label]) => (
+          <div key={String(label)} className="border border-black/10 p-5">
+            <div className="font-display text-4xl">{value}</div>
+            <div className="text-[10px] tracking-widest font-display text-black/40 mt-1">{label}</div>
+          </div>
+        ))}
+      </div>
+      <div className="font-display text-lg mb-4">Connections in motion</div>
+      {loadingConnections ? (
+        <p className="text-sm text-black/40 normal-case font-offrip-body">Loading connections…</p>
+      ) : connections.length === 0 ? (
+        <div className="border border-black/10 p-8 text-center text-sm text-black/40 normal-case font-offrip-body">Your accepted connections and conversations will appear here.</div>
+      ) : (
+        <div className="space-y-3">
+          {connections.map((connection) => (
+            <div key={connection.id} className="flex items-center gap-4 border border-black/10 p-4 hover:border-black transition-colors">
+              <div className="h-11 w-11 rounded-full flex items-center justify-center border-2 border-black font-display text-xs" style={{ backgroundColor: connection.statusColor }}>{connection.otherInitials}</div>
+              <div className="flex-1 min-w-0">
+                <div className="font-display text-sm truncate">{connection.otherName}</div>
+                <div className="text-xs text-black/40 normal-case font-offrip-body truncate">{connection.eventName}</div>
+              </div>
+              <div className="text-[10px] tracking-widest font-display text-right" style={{ color: connection.statusColor === "#DCE86A" ? "#000" : connection.statusColor }}>{connection.status}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface EventRow { id: string; name: string; venue: string | null; location: string | null; date: string | null; end_date: string | null; is_demo: boolean | null; }
 
-function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: () => void }) {
+function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (eventId: string) => void }) {
   const [events, setEvents] = useState<EventRow[]>([]);
   const [joined, setJoined] = useState<Set<string>>(new Set());
   const [checkedIn, setCheckedIn] = useState<Set<string>>(new Set());
@@ -850,36 +1063,36 @@ function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (
   };
 
   const renderEvent = (ev: EventRow) => (
-    <div key={ev.id} className="ooo-border bg-warm p-4 flex items-center justify-between gap-3">
+    <div key={ev.id} className="border border-black/10 bg-white p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-black transition-colors">
       <div>
-        <p className="font-display text-base">{ev.name}</p>
-        <p className="text-xs text-muted-foreground normal-case font-sans">{ev.venue} · {ev.location} · {ev.date}</p>
+        <p className="font-display text-lg">{ev.name}</p>
+        <p className="text-xs text-black/40 normal-case font-offrip-body mt-1">{ev.venue} · {ev.location} · {ev.date}</p>
       </div>
       {joined.has(ev.id) ? (
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <span className="font-label text-xs bg-aqua px-3 py-2 ooo-border">Joined</span>
+          <span className="text-[10px] bg-offrip-aqua px-3 py-2">Active room</span>
           {isEventHappeningToday(ev) && (
             checkedIn.has(ev.id) ? (
-              <span className="font-label text-xs bg-citron px-3 py-2 ooo-border">✓ Checked In</span>
+              <span className="text-[10px] bg-offrip-lime px-3 py-2">✓ Checked in</span>
             ) : (
               <button
                 onClick={() => checkIn(ev.id)}
                 disabled={checkingInEventId !== null}
-                className="font-label text-xs bg-citron px-3 py-2 ooo-border disabled:opacity-50"
+                className="text-[10px] bg-offrip-lime px-3 py-2 disabled:opacity-50"
               >
                 {checkingInEventId === ev.id ? "Checking In…" : "Check In"}
               </button>
             )
           )}
-          <button onClick={onViewMatches} className="font-label text-xs bg-primary text-primary-foreground px-3 py-2 shadow-card">
-            View Matches
+          <button onClick={() => onViewMatches(ev.id)} className="text-[10px] bg-black text-white px-4 py-2.5 hover:bg-offrip-aqua hover:text-black transition-colors">
+            See the room →
           </button>
         </div>
       ) : (
         <button
           onClick={() => join(ev.id)}
           disabled={joiningEventId !== null}
-          className="font-label text-xs bg-primary text-primary-foreground px-3 py-2 shadow-card disabled:opacity-50"
+          className="text-[10px] bg-black text-white px-4 py-2.5 hover:bg-offrip-aqua hover:text-black transition-colors disabled:opacity-50"
         >
           {joiningEventId === ev.id ? "Joining…" : "Join"}
         </button>
@@ -888,7 +1101,11 @@ function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (
   );
 
   return (
-    <Section title="Events">
+    <div>
+      <div className="mb-8">
+        <h1 className="font-display text-4xl">Your rooms</h1>
+        <p className="mt-1 text-sm text-black/40 normal-case font-offrip-body">Where you're showing up—and who you should know when you get there.</p>
+      </div>
       {events.length === 0 && <p className="text-sm text-muted-foreground normal-case font-sans">No published events yet. Check back soon.</p>}
       {upcomingEvents.length > 0 && (
         <div>
@@ -902,6 +1119,6 @@ function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (
           <div className="space-y-3">{pastEvents.map(renderEvent)}</div>
         </div>
       )}
-    </Section>
+    </div>
   );
 }

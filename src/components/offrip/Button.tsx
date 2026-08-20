@@ -9,7 +9,7 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 
 const VARIANT_CLASSES: Record<ButtonVariant, string> = {
   primary: "bg-offrip-black text-offrip-white hover:bg-offrip-aqua",
-  secondary: "border-2 border-offrip-black bg-transparent text-offrip-black hover:bg-offrip-black hover:text-offrip-white",
+  secondary: "border border-offrip-black bg-transparent text-offrip-black hover:bg-offrip-black hover:text-offrip-white",
   tertiary: "bg-transparent text-offrip-black hover:text-offrip-aqua",
 };
 
@@ -25,7 +25,7 @@ export default function Button({
     <button
       type={type}
       disabled={disabled}
-      className={`inline-flex items-center justify-center gap-1 px-5 py-3 font-offrip-display text-[11px] font-bold uppercase tracking-widest transition-colors duration-150 disabled:pointer-events-none disabled:opacity-50 ${VARIANT_CLASSES[variant]} ${className}`}
+      className={`inline-flex items-center justify-center gap-1 px-5 py-3 font-offrip-display text-[11px] font-black uppercase tracking-widest transition-colors duration-150 disabled:pointer-events-none disabled:opacity-50 ${VARIANT_CLASSES[variant]} ${className}`}
       {...rest}
     >
       {children}

@@ -122,13 +122,16 @@ export default function ProfileSetup() {
   }, [isComplete, navigate]);
 
   return (
-    <div className="min-h-screen bg-aqua flex items-start justify-center px-4 py-10 sm:py-16">
-      <div className="w-full max-w-xl">
+    <div className="min-h-screen bg-white">
+      <header className="border-b border-black px-6 sm:px-8 py-4">
+        <div className="font-display text-xl tracking-tight normal-case">OFFRIP</div>
+      </header>
+      <div className="w-full max-w-xl mx-auto px-6 py-10">
         {!isComplete && currentPage <= 4 && <ProgressIndicator currentPage={currentPage} totalPages={4} />}
         {isComplete ? (
           <SuccessScreen />
         ) : (
-          <div className="ooo-card bg-card p-6 sm:p-8">
+          <div className="bg-white">
             {currentPage === 1 && (
               <Page1BasicInfo formData={formData} setFormData={setFormData} onNext={onNext} onBack={onBack} />
             )}

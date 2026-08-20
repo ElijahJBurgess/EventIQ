@@ -3,6 +3,7 @@ import { MapPin, Loader2, RefreshCw, Check, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { sendConnectRequest } from "@/lib/connectRequest";
+import { selectTopCheckedInMatches } from "@/lib/checkedInMatches";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -66,12 +67,14 @@ function getMatchLabel(score: number) {
   return { text: "Potential Match", className: "bg-muted text-muted-foreground" };
 }
 
-export default function MatchesTab({ userId, onViewFullProfile }: { userId: string; onViewFullProfile: (matchId: string) => void }) {
+export default function MatchesTab({ userId, initialEventId, onViewFullProfile }: { userId: string; initialEventId?: string; onViewFullProfile: (matchId: string) => void }) {
   const [matches, setMatches] = useState<EnrichedMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [joinedEvents, setJoinedEvents] = useState<JoinedEvent[]>([]);
   const [selectedEventId, setSelectedEventId] = useState("");
+  const [eligibleCount, setEligibleCount] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -117,34 +120,48 @@ export default function MatchesTab({ userId, onViewFullProfile }: { userId: stri
 
       const nextEvents = (events as JoinedEvent[] | null) ?? [];
       setJoinedEvents(nextEvents);
-      setSelectedEventId((current) =>
-        current && nextEvents.some((event) => event.id === current) ? current : (nextEvents[0]?.id ?? ""),
-      );
+      setSelectedEventId((current) => {
+        if (initialEventId && nextEvents.some((event) => event.id === initialEventId)) return initialEventId;
+        return current && nextEvents.some((event) => event.id === current) ? current : (nextEvents[0]?.id ?? "");
+      });
     };
 
     loadJoinedEvents();
     return () => {
       cancelled = true;
     };
-  }, [userId]);
+  }, [initialEventId, userId]);
 
   const loadMatches = useCallback(async () => {
     if (!selectedEventId) return;
 
-    const { data: matchRows, error } = await supabase
-      .from("matches")
-      .select("id, event_id, user_a_id, user_b_id, match_score, match_reason, shared_industries, shared_interests")
-      .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
-      .eq("event_id", selectedEventId)
-      .order("match_score", { ascending: false });
+    const [{ data: matchRows, error }, { data: checkedInRegistrations, error: checkInError }] = await Promise.all([
+      supabase
+        .from("matches")
+        .select("id, event_id, user_a_id, user_b_id, match_score, match_reason, shared_industries, shared_interests")
+        .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
+        .eq("event_id", selectedEventId)
+        .order("match_score", { ascending: false }),
+      supabase
+        .from("event_registrations")
+        .select("profile_id")
+        .eq("event_id", selectedEventId)
+        .eq("is_checked_in", true)
+        .not("profile_id", "is", null),
+    ]);
 
-    if (error) {
+    if (error || checkInError) {
       toast.error("Couldn't load matches — try refreshing.");
       setLoading(false);
       return;
     }
 
-    const rows = matchRows ?? [];
+    const checkedInProfileIds = new Set(
+      (checkedInRegistrations ?? []).map((registration) => registration.profile_id).filter((id): id is string => Boolean(id)),
+    );
+    const selected = selectTopCheckedInMatches(matchRows ?? [], userId, checkedInProfileIds);
+    const rows = selected.rows;
+    setEligibleCount(selected.eligibleCount);
     const otherIds = Array.from(
       new Set(rows.map((m) => (m.user_a_id === userId ? m.user_b_id : m.user_a_id)).filter((id): id is string => Boolean(id))),
     );
@@ -215,23 +232,36 @@ export default function MatchesTab({ userId, onViewFullProfile }: { userId: stri
     await loadMatches();
   };
 
+  const refreshRoom = async () => {
+    if (!selectedEventId || refreshing) return;
+    setRefreshing(true);
+    await loadMatches();
+    setRefreshing(false);
+  };
+
   const selectedEvent = joinedEvents.find((event) => event.id === selectedEventId) ?? null;
 
   return (
     <div>
-      <div className="ooo-card bg-card p-6 mb-6">
+      <div className="mb-8">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-2xl">Your Matches</h2>
-            <p className="text-sm text-muted-foreground normal-case font-sans mt-1">
+            <h1 className="font-display text-4xl">People worth knowing</h1>
+            <p className="text-sm text-black/40 normal-case font-offrip-body mt-1 max-w-2xl">
               {selectedEvent ? `People you should meet at ${selectedEvent.name}` : "Join an event to discover people you should meet"}
             </p>
           </div>
           {selectedEvent && (
-            <Button onClick={runMatching} disabled={running} variant="secondary" size="sm">
-              {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-              {running ? "Running…" : "Run Matching"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={refreshRoom} disabled={refreshing || running} variant="outline" size="sm">
+                {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                {refreshing ? "Refreshing…" : "Refresh Room"}
+              </Button>
+              <Button onClick={runMatching} disabled={running || refreshing} variant="secondary" size="sm">
+                {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                {running ? "Running…" : "Run Matching"}
+              </Button>
+            </div>
           )}
         </div>
         {joinedEvents.length > 1 && (
@@ -250,13 +280,15 @@ export default function MatchesTab({ userId, onViewFullProfile }: { userId: stri
         )}
         {selectedEvent && (
           <p className="text-xs text-muted-foreground normal-case font-sans mt-3">
-            {matches.length} {matches.length === 1 ? "person" : "people"} matched
+            {eligibleCount > 10
+              ? `Showing 10 of ${eligibleCount} checked-in matches`
+              : `${eligibleCount} checked-in ${eligibleCount === 1 ? "match" : "matches"}`}
           </p>
         )}
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {[0, 1, 2, 3].map((i) => (
             <div key={i} className="ooo-border bg-warm p-4 space-y-3">
               <div className="flex items-center gap-3">
@@ -272,15 +304,15 @@ export default function MatchesTab({ userId, onViewFullProfile }: { userId: stri
           ))}
         </div>
       ) : matches.length === 0 ? (
-        <div className="ooo-border bg-warm p-8 text-center">
+        <div className="border border-black/10 bg-white p-8 text-center">
           <p className="text-sm text-muted-foreground normal-case font-sans">
             {selectedEvent
-              ? "No matches yet. Your matches will appear here once matching runs."
+              ? `No checked-in matches yet in ${selectedEvent.name}.`
               : "You haven't joined any events yet. Join an event to start finding matches."}
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {matches.map((m) => (
             <MatchCard key={m.id} match={m} eventName={selectedEvent?.name ?? "this event"} onViewFullProfile={onViewFullProfile} />
           ))}
@@ -344,7 +376,7 @@ function MatchCard({
   };
 
   return (
-    <div className="ooo-border bg-warm p-4 flex flex-col gap-3">
+    <div className="border border-black/10 bg-white p-5 flex flex-col gap-3 hover:border-black hover:shadow-offrip-hard transition-all">
       <button
         type="button"
         onClick={() => onViewFullProfile(match.id)}

@@ -14,7 +14,7 @@ export default function Input({ label, className = "", id, ...rest }: InputProps
       )}
       <input
         id={id}
-        className={`w-full border-2 border-offrip-black bg-offrip-white px-4 py-3 font-offrip-body text-offrip-black outline-none transition-colors duration-150 placeholder:text-offrip-medium-gray focus:border-offrip-aqua disabled:bg-offrip-light-gray disabled:opacity-50 ${className}`}
+        className={`w-full border border-offrip-black/20 bg-offrip-white px-4 py-3 font-offrip-body text-sm text-offrip-black outline-none transition-colors duration-150 placeholder:text-offrip-medium-gray focus:border-offrip-black disabled:bg-offrip-light-gray disabled:opacity-50 ${className}`}
         {...rest}
       />
     </label>

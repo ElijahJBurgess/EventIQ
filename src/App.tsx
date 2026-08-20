@@ -17,7 +17,7 @@ import ProtectedRoute from "./v2/ProtectedRoute.tsx";
 import { useAuth } from "./v2/AuthProvider.tsx";
 
 function LoadingScreen() {
-  return <div className="min-h-screen bg-aqua flex items-center justify-center font-label text-xl">Loading…</div>;
+  return <div className="min-h-screen bg-background flex items-center justify-center font-label text-xl">Loading…</div>;
 }
 
 function Root() {

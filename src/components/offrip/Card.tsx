@@ -8,7 +8,7 @@ interface CardProps extends HTMLAttributes<HTMLDivElement> {
 export default function Card({ children, className = "", interactive = false, ...rest }: CardProps) {
   return (
     <div
-      className={`border-2 border-offrip-black bg-offrip-white ${interactive ? "cursor-pointer transition-all hover:shadow-offrip-hard" : ""} ${className}`}
+      className={`border border-offrip-black/10 bg-offrip-white ${interactive ? "cursor-pointer transition-all hover:border-offrip-black hover:shadow-offrip-hard" : ""} ${className}`}
       {...rest}
     >
       {children}

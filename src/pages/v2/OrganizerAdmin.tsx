@@ -130,23 +130,25 @@ export default function OrganizerAdmin() {
   };
 
   return (
-    <div className="min-h-screen bg-aqua">
-      <header className="border-b-2 border-primary bg-card/95">
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
-          <span className="font-display text-lg">OOO</span>
-          <button onClick={() => navigate("/v2")} className="font-label text-xs text-muted-foreground hover:text-foreground">
-            Back to app
+    <div className="min-h-screen bg-white">
+      <header className="border-b border-white/10 bg-black text-white sticky top-0 z-20">
+        <div className="max-w-7xl mx-auto px-6 h-14 flex items-center gap-6">
+          <span className="font-display text-lg normal-case">OFFRIP</span>
+          <span className="text-[10px] tracking-widest font-display text-white/30">Enterprise</span>
+          <div className="flex-1" />
+          <button onClick={() => navigate("/v2")} className="text-[10px] tracking-widest text-white/50 hover:text-white border border-white/20 px-3 py-1.5">
+            Attendee view →
           </button>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-12">
+      <main className="max-w-5xl mx-auto px-6 py-10">
         {accessHash ? (
           <div>
-            <p className="font-label text-xs text-muted-foreground mb-2">View only</p>
-            <h1 className="text-3xl sm:text-4xl">Organizer Dashboard</h1>
-            <p className="normal-case font-sans text-muted-foreground mt-2 mb-8">
-              Live event activity and attendee insights for published events.
+            <p className="font-display text-[10px] text-black/30 mb-2 tracking-widest">Current event intelligence</p>
+            <h1 className="text-4xl">Relationship overview</h1>
+            <p className="normal-case font-offrip-body text-black/40 mt-2 mb-8">
+              See who showed up, how the room connected, and what happened next.
             </p>
 
             {loadingStats ? (
@@ -164,7 +166,7 @@ export default function OrganizerAdmin() {
                     ? 0
                     : Math.round((event.totalCheckedIn / event.totalRegistrations) * 100);
                   return (
-                    <section key={event.id} className="ooo-card bg-card p-6 sm:p-8">
+                    <section key={event.id} className="border border-black p-6 sm:p-8">
                       <h2 className="text-2xl">{event.name}</h2>
                       <p className="normal-case font-sans text-sm text-muted-foreground mt-1 mb-6">
                         {formatEventDate(event.date)}

@@ -102,8 +102,8 @@ export default function Page1BasicInfo({ formData, setFormData, onNext }: Profil
   const locationSearchRef = useRef<HTMLDivElement>(null);
   const initializedExistingLocationRef = useRef(false);
 
-  const inputClass = "w-full ooo-border bg-card px-4 py-3 normal-case font-sans";
-  const labelClass = "text-sm font-bold mb-1.5 block";
+  const inputClass = "w-full border border-black/20 bg-white px-4 py-3 text-sm normal-case font-offrip-body outline-none focus:border-black transition-colors";
+  const labelClass = "text-[10px] tracking-widest font-display text-black/40 mb-1 block";
   const errorClass = "text-xs text-destructive mt-1.5 normal-case font-sans";
 
   const update = (field: StringField) => (value: string) =>
@@ -327,9 +327,9 @@ export default function Page1BasicInfo({ formData, setFormData, onNext }: Profil
 
   return (
     <div>
-      <h1 className="text-3xl sm:text-4xl font-black">Tell us about yourself</h1>
-      <p className="text-sm text-muted-foreground normal-case font-sans mt-2 mb-8">
-        This helps us create your profile and find the right matches for you
+      <h1 className="text-4xl font-black">Start with you.</h1>
+      <p className="text-sm text-black/50 normal-case font-offrip-body mt-2 mb-8">
+        Give the room a little context on who they're meeting.
       </p>
 
       <div className="space-y-5">

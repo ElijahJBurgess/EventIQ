@@ -131,35 +131,10 @@ export default function MessagesTab({ userId }: { userId: string }) {
     loadConversations();
   }, [loadConversations]);
 
-  if (openConversation) {
-    return (
-      <MessageThread
-        userId={userId}
-        matchId={openConversation.matchId}
-        eventId={openConversation.eventId}
-        eventName={openConversation.eventName}
-        other={openConversation.other}
-        onBack={() => {
-          setOpenConversation(null);
-          loadConversations();
-        }}
-      />
-    );
-  }
-
-  return (
-    <div>
-      <div className="ooo-card bg-card p-6 mb-6">
-        <h2 className="text-2xl">Messages</h2>
-        <p className="text-sm text-muted-foreground normal-case font-sans mt-1">
-          Conversations with your event connections
-        </p>
-      </div>
-
-      {loading ? (
+  const conversationList = loading ? (
         <div className="space-y-3">
           {[0, 1, 2].map((i) => (
-            <div key={i} className="ooo-border bg-warm p-4 flex items-center gap-3">
+            <div key={i} className="border-b border-black/10 p-4 flex items-center gap-3">
               <Skeleton className="h-12 w-12 rounded-full" />
               <div className="space-y-2 flex-1">
                 <Skeleton className="h-4 w-1/3" />
@@ -169,18 +144,18 @@ export default function MessagesTab({ userId }: { userId: string }) {
           ))}
         </div>
       ) : conversations.length === 0 ? (
-        <div className="ooo-border bg-warm p-8 text-center">
+        <div className="p-8 text-center">
           <p className="text-sm text-muted-foreground normal-case font-sans">
             No conversations yet. Connect with a match to start one.
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div>
           {conversations.map((c) => (
             <button
               key={c.matchId}
               onClick={() => setOpenConversation(c)}
-              className="w-full text-left ooo-border bg-warm p-4 flex items-center gap-3 hover-lift"
+              className={`w-full text-left border-b border-black/10 p-4 flex items-start gap-3 transition-colors ${openConversation?.matchId === c.matchId ? "bg-black text-white" : "hover:bg-offrip-light-gray"}`}
             >
               <Avatar className="h-12 w-12 border-2 border-primary shrink-0">
                 {c.other.avatar_url && <AvatarImage src={c.other.avatar_url} alt={c.other.full_name ?? "Profile photo"} />}
@@ -189,21 +164,44 @@ export default function MessagesTab({ userId }: { userId: string }) {
                 </AvatarFallback>
               </Avatar>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 min-w-0">
-                  <p className="font-bold normal-case font-sans truncate">{c.other.full_name ?? "Member"}</p>
-                  <span className="ooo-border bg-card px-2 py-0.5 text-[10px] font-label shrink-0">
-                    {c.eventName ?? "General"}
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground normal-case font-sans truncate mt-0.5">{c.lastContent}</p>
+                <p className="font-display text-xs truncate">{c.other.full_name ?? "Member"}</p>
+                <p className={`text-[11px] normal-case font-offrip-body truncate mt-1 ${openConversation?.matchId === c.matchId ? "text-white/60" : "text-black/40"}`}>{c.lastContent}</p>
               </div>
-              <span className="text-[11px] text-muted-foreground normal-case font-sans shrink-0">
+              <span className={`text-[10px] normal-case font-offrip-body shrink-0 ${openConversation?.matchId === c.matchId ? "text-white/50" : "text-black/30"}`}>
                 {formatTimestamp(c.lastCreatedAt)}
               </span>
             </button>
           ))}
         </div>
-      )}
+      );
+
+  return (
+    <div className="-mx-6 -my-8 flex h-[calc(100vh-56px)] min-h-[520px] border-x border-black/10">
+      <aside className={`${openConversation ? "hidden md:flex" : "flex"} w-full md:w-72 shrink-0 flex-col border-r border-black`}>
+        <div className="border-b border-black p-4">
+          <h1 className="font-display text-sm">Keep it going.</h1>
+          <p className="mt-1 text-xs text-black/40 normal-case font-offrip-body">The intro happened. Don't let the conversation die here.</p>
+        </div>
+        <div className="flex-1 overflow-y-auto">{conversationList}</div>
+      </aside>
+      <section className={`${openConversation ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col`}>
+        {openConversation ? (
+          <MessageThread
+            embedded
+            userId={userId}
+            matchId={openConversation.matchId}
+            eventId={openConversation.eventId}
+            eventName={openConversation.eventName}
+            other={openConversation.other}
+            onBack={() => {
+              setOpenConversation(null);
+              loadConversations();
+            }}
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm text-black/30 normal-case font-offrip-body">Choose a conversation to keep it going.</div>
+        )}
+      </section>
     </div>
   );
 }

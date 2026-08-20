@@ -11,7 +11,7 @@ export default function AuthV2() {
   const [mode, setMode] = useState<"signin" | "signup">(
     searchParams.get("mode") === "signup" ? "signup" : "signin",
   );
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(searchParams.get("email") ?? "");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");
   const [busy, setBusy] = useState(false);
@@ -55,22 +55,25 @@ export default function AuthV2() {
   };
 
   return (
-    <div className="min-h-screen bg-aqua flex items-center justify-center p-4">
-      <div className="ooo-card w-full max-w-md p-8 bg-card">
-        <div className="mb-6">
-          <span className="font-label text-xs bg-vermillion text-vermillion-foreground px-2 py-1 ooo-border inline-block">
-            OOO Intelligence · v2
-          </span>
-          <h1 className="text-3xl mt-4">{mode === "signin" ? "Sign in" : "Create account"}</h1>
-          <p className="text-sm text-muted-foreground mt-2 normal-case">
-            OOO helps you find the right people, conversations and opportunities at every event.
+    <div className="min-h-screen bg-white flex flex-col">
+      <header className="border-b border-black px-6 sm:px-8 py-4 flex items-center justify-between">
+        <button onClick={() => navigate("/")} className="font-display text-xl font-black tracking-tight normal-case">OFFRIP</button>
+        <button onClick={() => navigate("/")} className="text-[10px] text-black/40 hover:text-black">Cancel</button>
+      </header>
+      <div className="flex-1 flex items-center justify-center p-6">
+      <div className="w-full max-w-md border border-black p-7 sm:p-8 bg-white">
+        <div className="mb-8">
+          <div className="text-[10px] tracking-widest font-display text-black/30 mb-3">Welcome to OFFRIP</div>
+          <h1 className="text-4xl leading-none">{mode === "signin" ? "Welcome back." : "Get in the room."}</h1>
+          <p className="text-sm text-black/50 mt-3 normal-case font-offrip-body leading-relaxed">
+            {mode === "signin" ? "Pick up where you left off." : "Create your account, then tell us who is worth meeting."}
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3">
+        <form onSubmit={handleSubmit} className="space-y-4">
           {mode === "signup" && (
             <input
-              className="w-full ooo-border bg-card px-4 py-3 normal-case font-sans"
+              className="w-full border border-black/20 bg-white px-4 py-3 text-sm normal-case font-offrip-body outline-none focus:border-black"
               placeholder="Full name"
               value={fullName}
               onChange={(e) => setFullName(e.target.value)}
@@ -79,7 +82,7 @@ export default function AuthV2() {
           )}
           <input
             type="email"
-            className="w-full ooo-border bg-card px-4 py-3 normal-case font-sans"
+            className="w-full border border-black/20 bg-white px-4 py-3 text-sm normal-case font-offrip-body outline-none focus:border-black"
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -87,7 +90,7 @@ export default function AuthV2() {
           />
           <input
             type="password"
-            className="w-full ooo-border bg-card px-4 py-3 normal-case font-sans"
+            className="w-full border border-black/20 bg-white px-4 py-3 text-sm normal-case font-offrip-body outline-none focus:border-black"
             placeholder="Password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
@@ -97,7 +100,7 @@ export default function AuthV2() {
           <button
             type="submit"
             disabled={busy}
-            className="w-full bg-primary text-primary-foreground py-3 shadow-card hover-lift disabled:opacity-50 font-label"
+            className="w-full bg-black text-white py-3.5 hover:bg-offrip-aqua hover:text-black disabled:opacity-50 text-[11px] transition-colors"
           >
             {mode === "signin" ? "Sign in" : "Create account"}
           </button>
@@ -105,11 +108,11 @@ export default function AuthV2() {
 
         <button
           onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-          className="w-full text-center text-sm mt-4 text-muted-foreground normal-case font-sans hover:text-foreground"
+          className="w-full text-center text-xs mt-5 text-black/40 normal-case font-offrip-body hover:text-black"
         >
           {mode === "signin" ? "Need an account? Sign up" : "Already have an account? Sign in"}
         </button>
-      </div>
+      </div></div>
     </div>
   );
 }

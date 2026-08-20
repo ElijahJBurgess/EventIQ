@@ -68,7 +68,7 @@ function MessageState({ message, onBack }: { message: string; onBack?: () => voi
 
 function ExpertisePill({ children }: { children: string }) {
   return (
-    <span className="border-2 border-offrip-black bg-offrip-white px-3 py-1.5 font-offrip-display text-[10px] font-bold uppercase tracking-wide text-offrip-black">
+    <span className="border border-offrip-black/20 bg-offrip-white px-3 py-1.5 font-offrip-display text-[10px] font-bold uppercase tracking-wide text-offrip-black">
       {children}
     </span>
   );
@@ -81,7 +81,7 @@ function ClickPairRow({ pair }: { pair: ClickPair }) {
         {pair.labelA}
       </span>
       <ArrowLeftRight className="h-3.5 w-3.5 shrink-0 text-offrip-medium-gray" aria-hidden="true" />
-      <span className="border-2 border-offrip-black bg-offrip-white px-3 py-1.5 font-offrip-display text-[10px] font-bold uppercase tracking-wide text-offrip-black">
+      <span className="border border-offrip-black/20 bg-offrip-white px-3 py-1.5 font-offrip-display text-[10px] font-bold uppercase tracking-wide text-offrip-black">
         {pair.labelB}
       </span>
     </div>
@@ -94,8 +94,8 @@ function OfferList({ items, emptyMessage }: { items: string[]; emptyMessage: str
   }
   return (
     <ul className="space-y-1.5">
-      {items.map((item) => (
-        <li key={item} className="flex gap-2 font-offrip-body text-sm text-offrip-black">
+      {items.map((item, index) => (
+        <li key={`${item}-${index}`} className="flex gap-2 font-offrip-body text-sm text-offrip-black">
           <span aria-hidden="true">•</span>
           <span>{item}</span>
         </li>
@@ -175,7 +175,7 @@ export default function FullProfileView({ matchId, currentUserId, onBack }: Full
       <div className="mt-6 grid grid-cols-1 gap-8 lg:grid-cols-[320px_1fr]">
         {/* Left column */}
         <div className="space-y-4">
-          <div className={`flex aspect-square w-full items-center justify-center border-2 border-offrip-black ${avatarClasses(otherPerson.id)}`}>
+          <div className={`flex aspect-square w-full items-center justify-center ${avatarClasses(otherPerson.id)}`}>
             {otherPerson.avatar_url ? (
               <img src={otherPerson.avatar_url} alt={otherPerson.full_name ?? "Profile photo"} className="h-full w-full object-cover" />
             ) : (
@@ -189,7 +189,7 @@ export default function FullProfileView({ matchId, currentUserId, onBack }: Full
             {otherPerson.location && <p className="font-offrip-body text-sm text-offrip-medium-gray">{otherPerson.location}</p>}
           </div>
 
-          <div className="border-2 border-offrip-black bg-offrip-black p-5 text-center">
+          <div className="border border-offrip-black bg-offrip-black p-5 text-center">
             <p className="font-offrip-display text-5xl font-black text-offrip-white">{detail.match.score}%</p>
             <div className="mt-3">
               <OffripChip color="lime">Mutual Value</OffripChip>
