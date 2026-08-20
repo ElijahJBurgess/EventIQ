@@ -119,10 +119,11 @@ interface MessageThreadProps {
   eventName: string | null;
   other: OtherProfile;
   onBack: () => void;
+  onMessagesRead: () => void | Promise<void>;
   embedded?: boolean;
 }
 
-export default function MessageThread({ userId, matchId, eventId, eventName, other, onBack, embedded = false }: MessageThreadProps) {
+export default function MessageThread({ userId, matchId, eventId, eventName, other, onBack, onMessagesRead, embedded = false }: MessageThreadProps) {
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState("");
@@ -149,10 +150,11 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
     if (error) {
       toast.error("Couldn't load this conversation — try again.");
       setLoading(false);
-      return;
+      return false;
     }
     setMessages((data as MessageRow[]) ?? []);
     setLoading(false);
+    return true;
   }, [matchId]);
 
   const loadMeeting = useCallback(async () => {
@@ -193,10 +195,21 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
   }, [eventId]);
 
   useEffect(() => {
-    loadMessages();
+    let cancelled = false;
+    const loadThread = async () => {
+      const loaded = await loadMessages();
+      if (!loaded || cancelled) return;
+
+      const { error } = await supabase.rpc("mark_message_thread_read", { p_match_id: matchId });
+      if (error || cancelled) return;
+      await onMessagesRead();
+    };
+
+    loadThread();
     loadMeeting();
     loadEventDateRange();
-  }, [loadEventDateRange, loadMeeting, loadMessages]);
+    return () => { cancelled = true; };
+  }, [loadEventDateRange, loadMeeting, loadMessages, matchId, onMessagesRead]);
 
   useEffect(() => {
     if (meeting?.status !== "accepted" || !eventDateRange || scheduleDate) return;

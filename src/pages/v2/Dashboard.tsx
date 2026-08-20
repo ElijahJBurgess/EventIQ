@@ -6,6 +6,8 @@ import { toast } from "sonner";
 import FullProfileView from "@/components/matches/FullProfileView";
 import MatchesTab from "@/components/matches/MatchesTab";
 import MessagesTab from "@/components/messages/MessagesTab";
+import NotificationBell from "@/components/notifications/NotificationBell";
+import type { NotificationDestination } from "@/components/notifications/notificationNavigation";
 import OffripButton from "@/components/offrip/Button";
 import OffripCard from "@/components/offrip/Card";
 import OffripChip from "@/components/offrip/Chip";
@@ -124,6 +126,7 @@ export default function DashboardV2() {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
+  const [notificationMatchId, setNotificationMatchId] = useState<string | null>(null);
   const [editingFullProfile, setEditingFullProfile] = useState(false);
   // Set from either Home or Matches; whichever tab was active when this was
   // set is exactly the tab the user lands back on, since `tab` itself is
@@ -132,6 +135,7 @@ export default function DashboardV2() {
 
   const selectNavigationItem = (item: NavItem) => {
     setViewingMatchId(null);
+    setNotificationMatchId(null);
     if (item === "enterprise") {
       navigate("/v2/admin");
       return;
@@ -148,18 +152,34 @@ export default function DashboardV2() {
 
   useEffect(() => { loadProfile(); }, [loadProfile]);
 
-  useEffect(() => {
+  const refreshUnreadMessages = useCallback(async () => {
     if (!user) return;
-    // read_at can't be set from the client (no UPDATE policy on messages),
-    // so this only ever reflects messages that have never been opened.
-    supabase
+    const { data } = await supabase
       .from("messages")
       .select("id")
       .eq("recipient_id", user.id)
       .is("read_at", null)
-      .limit(1)
-      .then(({ data }) => setHasUnreadMessages((data?.length ?? 0) > 0));
+      .limit(1);
+    setHasUnreadMessages((data?.length ?? 0) > 0);
   }, [user]);
+
+  useEffect(() => { refreshUnreadMessages(); }, [refreshUnreadMessages]);
+
+  const handleNotificationNavigation = useCallback((destination: NotificationDestination) => {
+    setViewingMatchId(null);
+    if (destination.tab === "messages") {
+      setNotificationMatchId(destination.matchId);
+      setTab("messages");
+      return;
+    }
+
+    setNotificationMatchId(null);
+    setTab("myday");
+  }, []);
+
+  const handleNotificationTarget = useCallback(() => {
+    setNotificationMatchId(null);
+  }, []);
 
   if (loading) {
     return <div className="min-h-screen bg-background flex items-center justify-center font-label text-xl">Loading…</div>;
@@ -187,31 +207,34 @@ export default function DashboardV2() {
           <button onClick={() => selectNavigationItem("enterprise")} className="hidden md:flex text-[10px] tracking-widest border border-black px-3 py-1.5 hover:bg-black hover:text-white transition-colors">
             Enterprise
           </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button className="rounded-full" aria-label="Open account menu">
-                <Avatar className="h-8 w-8 rounded-full border-2 border-black">
-                  <AvatarFallback className={`rounded-full font-label text-xs ${offripAvatarClasses(user!.id)}`}>
-                    {profileInitials(profile?.full_name ?? null)}
-                  </AvatarFallback>
-                </Avatar>
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="border border-black bg-white rounded-sm">
-              <DropdownMenuItem
-                onSelect={() => {
-                  setTab("profile");
-                  setEditingFullProfile(true);
-                }}
-              >
-                Edit Profile
-              </DropdownMenuItem>
-              <DropdownMenuItem disabled>Privacy Policy</DropdownMenuItem>
-              <DropdownMenuItem onSelect={async () => { await signOut(); navigate("/v2/auth"); }}>
-                Sign Out
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="ml-auto flex items-center gap-3 md:ml-0">
+            <NotificationBell userId={user!.id} onNavigate={handleNotificationNavigation} />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className="rounded-full" aria-label="Open account menu">
+                  <Avatar className="h-8 w-8 rounded-full border-2 border-black">
+                    <AvatarFallback className={`rounded-full font-label text-xs ${offripAvatarClasses(user!.id)}`}>
+                      {profileInitials(profile?.full_name ?? null)}
+                    </AvatarFallback>
+                  </Avatar>
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="border border-black bg-white rounded-sm">
+                <DropdownMenuItem
+                  onSelect={() => {
+                    setTab("profile");
+                    setEditingFullProfile(true);
+                  }}
+                >
+                  Edit Profile
+                </DropdownMenuItem>
+                <DropdownMenuItem disabled>Privacy Policy</DropdownMenuItem>
+                <DropdownMenuItem onSelect={async () => { await signOut(); navigate("/v2/auth"); }}>
+                  Sign Out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </div>
         <div className="md:hidden flex overflow-x-auto border-t border-black">
           {NAV_ITEMS.map((t) => (
@@ -231,6 +254,7 @@ export default function DashboardV2() {
             matchId={viewingMatchId}
             currentUserId={user!.id}
             onBack={() => setViewingMatchId(null)}
+            backLabel={tab === "myday" ? "Back to My Day" : undefined}
           />
         ) : (
           <>
@@ -250,8 +274,15 @@ export default function DashboardV2() {
             {tab === "events" && <EventsTab userId={user!.id} onViewMatches={(eventId) => { setPeopleEventId(eventId); setTab("matches"); }} />}
             {tab === "matches" && <MatchesTab userId={user!.id} initialEventId={peopleEventId} onViewFullProfile={setViewingMatchId} />}
             {tab === "connections" && <ConnectionsTab userId={user!.id} />}
-            {tab === "messages" && <MessagesTab userId={user!.id} />}
-            {tab === "myday" && <MyDayTab userId={user!.id} onBack={() => setTab("home")} />}
+            {tab === "messages" && (
+              <MessagesTab
+                userId={user!.id}
+                onMessagesRead={refreshUnreadMessages}
+                targetMatchId={notificationMatchId}
+                onTargetHandled={handleNotificationTarget}
+              />
+            )}
+            {tab === "myday" && <MyDayTab userId={user!.id} onBack={() => setTab("home")} onViewFullProfile={setViewingMatchId} />}
           </>
         )}
       </main>
@@ -756,6 +787,7 @@ function Section({ title, children, action }: { title: string; children: React.R
 
 interface DayMeetingRow {
   id: string;
+  match_id: string;
   status: string;
   scheduled_at: string | null;
   location_note: string | null;
@@ -767,7 +799,15 @@ interface DayMeetingRow {
   eventName: string;
 }
 
-function MyDayTab({ userId, onBack }: { userId: string; onBack: () => void }) {
+export function MyDayTab({
+  userId,
+  onBack,
+  onViewFullProfile,
+}: {
+  userId: string;
+  onBack: () => void;
+  onViewFullProfile: (matchId: string) => void;
+}) {
   const [meetings, setMeetings] = useState<DayMeetingRow[]>([]);
   const [loadingDay, setLoadingDay] = useState(true);
 
@@ -776,7 +816,7 @@ function MyDayTab({ userId, onBack }: { userId: string; onBack: () => void }) {
     const loadDay = async () => {
       const { data } = await supabase
         .from("meetings")
-        .select("id,status,scheduled_at,location_note,duration_minutes,requester_id,recipient_id,event_id")
+        .select("id,match_id,status,scheduled_at,location_note,duration_minutes,requester_id,recipient_id,event_id")
         .or(`requester_id.eq.${userId},recipient_id.eq.${userId}`)
         .in("status", ["accepted", "scheduled"])
         .order("scheduled_at", { ascending: true, nullsFirst: false });
@@ -827,15 +867,23 @@ function MyDayTab({ userId, onBack }: { userId: string; onBack: () => void }) {
       ) : (
         <div className="space-y-3">
           {meetings.map((meeting, index) => (
-            <div key={meeting.id} className="border border-black/10 p-5 flex flex-col sm:flex-row sm:items-center gap-4 hover:border-black transition-colors">
+            <button
+              key={meeting.id}
+              type="button"
+              onClick={() => onViewFullProfile(meeting.match_id)}
+              className="w-full border border-black/10 p-5 flex flex-col sm:flex-row sm:items-center gap-4 text-left hover:border-black focus-visible:border-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offrip-aqua focus-visible:ring-offset-2 transition-colors"
+            >
               <div className="font-display text-lg sm:w-28">{meeting.scheduled_at ? new Date(meeting.scheduled_at).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "Pending"}</div>
               <div className="h-11 w-11 rounded-full border-2 border-black flex items-center justify-center font-display text-xs" style={{ backgroundColor: ["#69C0BE", "#DCE86A", "#4387F5"][index % 3] }}>{profileInitials(meeting.otherName)}</div>
               <div className="flex-1 min-w-0">
                 <div className="font-display text-sm">{meeting.otherName}</div>
                 <div className="text-xs text-black/40 normal-case font-offrip-body mt-1">{meeting.eventName} · {meeting.location_note ?? "Location to be confirmed"}</div>
               </div>
-              <span className={`text-[10px] tracking-widest px-2 py-1 ${meeting.status === "scheduled" ? "bg-offrip-aqua" : "bg-offrip-lime"}`}>{meeting.status}</span>
-            </div>
+              <div className="flex items-center gap-3 sm:flex-col sm:items-end">
+                <span className={`text-[10px] tracking-widest px-2 py-1 ${meeting.status === "scheduled" ? "bg-offrip-aqua" : "bg-offrip-lime"}`}>{meeting.status}</span>
+                <span className="text-[10px] tracking-widest text-black/40">View profile →</span>
+              </div>
+            </button>
           ))}
         </div>
       )}

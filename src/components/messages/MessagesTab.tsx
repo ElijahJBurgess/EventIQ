@@ -50,10 +50,21 @@ function formatTimestamp(iso: string) {
     : date.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-export default function MessagesTab({ userId }: { userId: string }) {
+export default function MessagesTab({
+  userId,
+  onMessagesRead,
+  targetMatchId,
+  onTargetHandled,
+}: {
+  userId: string;
+  onMessagesRead: () => void | Promise<void>;
+  targetMatchId?: string | null;
+  onTargetHandled?: (opened: boolean) => void;
+}) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [openConversation, setOpenConversation] = useState<Conversation | null>(null);
+  const [notificationOpenVersion, setNotificationOpenVersion] = useState(0);
 
   const loadConversations = useCallback(async () => {
     const { data: messageRows, error } = await supabase
@@ -131,6 +142,15 @@ export default function MessagesTab({ userId }: { userId: string }) {
     loadConversations();
   }, [loadConversations]);
 
+  useEffect(() => {
+    if (loading || !targetMatchId) return;
+
+    const target = conversations.find((conversation) => conversation.matchId === targetMatchId) ?? null;
+    setOpenConversation(target);
+    if (target) setNotificationOpenVersion((version) => version + 1);
+    onTargetHandled?.(target !== null);
+  }, [conversations, loading, onTargetHandled, targetMatchId]);
+
   const conversationList = loading ? (
         <div className="space-y-3">
           {[0, 1, 2].map((i) => (
@@ -187,12 +207,14 @@ export default function MessagesTab({ userId }: { userId: string }) {
       <section className={`${openConversation ? "flex" : "hidden md:flex"} min-w-0 flex-1 flex-col`}>
         {openConversation ? (
           <MessageThread
+            key={`${openConversation.matchId}:${notificationOpenVersion}`}
             embedded
             userId={userId}
             matchId={openConversation.matchId}
             eventId={openConversation.eventId}
             eventName={openConversation.eventName}
             other={openConversation.other}
+            onMessagesRead={onMessagesRead}
             onBack={() => {
               setOpenConversation(null);
               loadConversations();

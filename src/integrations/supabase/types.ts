@@ -709,6 +709,88 @@ export type Database = {
         }
         Relationships: []
       }
+      notifications: {
+        Row: {
+          actor_id: string
+          created_at: string
+          event_id: string | null
+          id: string
+          match_id: string | null
+          meeting_id: string | null
+          message_id: string | null
+          read_at: string | null
+          type: string
+          user_id: string
+        }
+        Insert: {
+          actor_id: string
+          created_at?: string
+          event_id?: string | null
+          id?: string
+          match_id?: string | null
+          meeting_id?: string | null
+          message_id?: string | null
+          read_at?: string | null
+          type: string
+          user_id: string
+        }
+        Update: {
+          actor_id?: string
+          created_at?: string
+          event_id?: string | null
+          id?: string
+          match_id?: string | null
+          meeting_id?: string | null
+          message_id?: string | null
+          read_at?: string | null
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meetings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       points: {
         Row: {
           action: string
@@ -1128,6 +1210,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      mark_message_thread_read: {
+        Args: { p_match_id: string }
+        Returns: number
+      }
+      mark_notification_read: {
+        Args: { notification_id: string }
+        Returns: boolean
+      }
       search_us_cities: {
         Args: { result_limit?: number; search_query: string }
         Returns: {

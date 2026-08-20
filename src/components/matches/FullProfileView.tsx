@@ -13,6 +13,7 @@ interface FullProfileViewProps {
   currentUserId: string;
   /** Optional for now -- Piece 8 wires the real "back to matches" navigation. Renders inert without it. */
   onBack?: () => void;
+  backLabel?: string;
 }
 
 const AVATAR_PALETTE = ["bg-offrip-aqua", "bg-offrip-lime", "bg-offrip-orange", "bg-offrip-blue"];
@@ -50,7 +51,7 @@ function LoadingState() {
   );
 }
 
-function MessageState({ message, onBack }: { message: string; onBack?: () => void }) {
+function MessageState({ message, onBack, backLabel }: { message: string; onBack?: () => void; backLabel: string }) {
   return (
     <div className="bg-offrip-white p-8 text-center font-offrip-body text-offrip-black">
       <p className="text-offrip-medium-gray">{message}</p>
@@ -59,7 +60,7 @@ function MessageState({ message, onBack }: { message: string; onBack?: () => voi
           onClick={onBack}
           className="mt-4 font-offrip-display text-xs font-bold uppercase tracking-widest text-offrip-black underline underline-offset-4"
         >
-          ← Back to Matches
+          ← {backLabel}
         </button>
       )}
     </div>
@@ -104,7 +105,7 @@ function OfferList({ items, emptyMessage }: { items: string[]; emptyMessage: str
   );
 }
 
-export default function FullProfileView({ matchId, currentUserId, onBack }: FullProfileViewProps) {
+export default function FullProfileView({ matchId, currentUserId, onBack, backLabel = "Back to Matches" }: FullProfileViewProps) {
   // undefined = loading, null = not found (or an error -- both render the same honest "couldn't load" state)
   const [detail, setDetail] = useState<MatchDetailResult | null | undefined>(undefined);
   const [introStatus, setIntroStatus] = useState<"idle" | "sending" | "sent">("idle");
@@ -129,7 +130,7 @@ export default function FullProfileView({ matchId, currentUserId, onBack }: Full
   }, [matchId, currentUserId]);
 
   if (detail === undefined) return <LoadingState />;
-  if (detail === null) return <MessageState message="We couldn't find this match." onBack={onBack} />;
+  if (detail === null) return <MessageState message="We couldn't find this match." onBack={onBack} backLabel={backLabel} />;
 
   const explanation = buildFullProfileExplanation(detail);
   const { otherPerson } = detail;
@@ -169,7 +170,7 @@ export default function FullProfileView({ matchId, currentUserId, onBack }: Full
         onClick={onBack}
         className="font-offrip-display text-xs font-bold uppercase tracking-widest text-offrip-medium-gray hover:text-offrip-black"
       >
-        ← Back to Matches
+        ← {backLabel}
       </button>
 
       <div className="mt-6 grid grid-cols-1 gap-8 lg:grid-cols-[320px_1fr]">
