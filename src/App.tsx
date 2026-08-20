@@ -1,20 +1,18 @@
-import { useEffect, useState } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
-import { Toaster } from "@/components/ui/toaster";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { supabase } from "@/integrations/supabase/client";
-import NotFound from "./pages/NotFound.tsx";
-import OffripPreview from "./pages/OffripPreview.tsx";
 import AuthV2 from "./pages/v2/Auth.tsx";
-import DashboardV2 from "./pages/v2/Dashboard.tsx";
 import Landing from "./pages/v2/Landing.tsx";
-import OrganizerAdmin from "./pages/v2/OrganizerAdmin.tsx";
-import ProfileSetupV2 from "./pages/v2/ProfileSetup.tsx";
 import { AuthProvider } from "./v2/AuthProvider.tsx";
 import ProtectedRoute from "./v2/ProtectedRoute.tsx";
 import { useAuth } from "./v2/AuthProvider.tsx";
+
+const DashboardV2 = lazy(() => import("./pages/v2/Dashboard.tsx"));
+const ProfileSetupV2 = lazy(() => import("./pages/v2/ProfileSetup.tsx"));
+const OrganizerAdmin = lazy(() => import("./pages/v2/OrganizerAdmin.tsx"));
+const OffripPreview = lazy(() => import("./pages/OffripPreview.tsx"));
+const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 function LoadingScreen() {
   return <div className="min-h-screen bg-background flex items-center justify-center font-label text-xl">Loading…</div>;
@@ -46,15 +44,12 @@ function Root() {
   return <Navigate to={profileComplete ? "/v2" : "/v2/setup"} replace />;
 }
 
-const queryClient = new QueryClient();
-
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <AuthProvider>
+  <>
+    <Sonner />
+    <BrowserRouter>
+      <AuthProvider>
+        <Suspense fallback={<LoadingScreen />}>
           <Routes>
             <Route path="/" element={<Root />} />
             <Route path="/v2/auth" element={<AuthV2 />} />
@@ -65,10 +60,10 @@ const App = () => (
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>
-        </AuthProvider>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+        </Suspense>
+      </AuthProvider>
+    </BrowserRouter>
+  </>
 );
 
 export default App;
