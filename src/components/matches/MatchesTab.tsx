@@ -222,7 +222,7 @@ export default function MatchesTab({
     if (!selectedEventId) return;
     setRunning(true);
     const { data, error } = await supabase.functions.invoke("match-engine", {
-      body: { profileId: userId, eventId: selectedEventId },
+      body: { eventId: selectedEventId },
     });
     setRunning(false);
 

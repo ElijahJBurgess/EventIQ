@@ -69,7 +69,7 @@ export default function Page5EventSelection({ profileId, onContinue }: Page5Even
 
     try {
       const { error: matchingError } = await supabase.functions.invoke("match-engine", {
-        body: { profileId, eventId },
+        body: { eventId },
       });
       if (matchingError) console.error("match-engine invoke failed after event registration:", matchingError);
     } catch (matchingError) {

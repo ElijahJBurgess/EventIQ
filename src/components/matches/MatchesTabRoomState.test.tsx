@@ -5,6 +5,7 @@ import MatchesTab from "./MatchesTab";
 
 const mocks = vi.hoisted(() => ({
   queriedMatchEvents: [] as string[],
+  invoke: vi.fn(async () => ({ data: { matchesSaved: 0 }, error: null })),
 }));
 
 vi.mock("@/integrations/supabase/client", () => {
@@ -57,7 +58,7 @@ vi.mock("@/integrations/supabase/client", () => {
   return {
     supabase: {
       from: (table: string) => makeBuilder(table),
-      functions: { invoke: vi.fn() },
+      functions: { invoke: mocks.invoke },
     },
   };
 });
@@ -79,6 +80,7 @@ function ControlledPeople() {
 
 beforeEach(() => {
   mocks.queriedMatchEvents.length = 0;
+  mocks.invoke.mockClear();
 });
 afterEach(cleanup);
 
@@ -96,5 +98,10 @@ describe("MatchesTab controlled Room state", () => {
     expect(await screen.findByText("Checked Person B")).toBeInTheDocument();
     expect(mocks.queriedMatchEvents).toContain("room-a");
     expect(mocks.queriedMatchEvents).toContain("room-b");
+
+    fireEvent.click(screen.getByRole("button", { name: "Run Matching" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenCalledWith("match-engine", {
+      body: { eventId: "room-b" },
+    }));
   });
 });

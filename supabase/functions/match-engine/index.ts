@@ -1,6 +1,6 @@
 // Supabase Edge Function: match-engine
 //
-// POST { profileId, eventId } -> scores the requesting profile against every
+// POST { eventId } -> verifies the caller and scores their profile against every
 // other attendee registered for the same event (using the scorer from
 // ./scorer.ts), saves every pair into the `matches` table, and returns a
 // summary of what happened.
@@ -10,22 +10,15 @@
 // job, not a user-facing table write.
 
 import { createClient } from "npm:@supabase/supabase-js@2";
+import {
+  createMatchEngineHandler,
+  type MatchEngineAuthClient,
+  type MatchEngineResult,
+} from "./handler.ts";
 import { buildMatchDetails, calculateMatchScore, type MatchDetails, type Profile } from "./scorer.ts";
 
 const PROFILE_SELECT =
   "id, full_name, role_type, secondary_role_types, role_details, who_to_meet, desired_outcomes, areas_of_expertise, matching_goal, primary_goal, secondary_goals, industry_focus, needs, offers, connection_preference, interests, communities, hobbies, music_interests, favorite_conferences, location";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-function jsonResponse(body: unknown, status: number) {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
-  });
-}
 
 /** DB row (fetched with PROFILE_SELECT) -> the shape scorer.ts expects. */
 function toScoringProfile(row: Record<string, unknown>): Profile {
@@ -96,30 +89,16 @@ function sharedInterestsList(a: Profile, b: Profile): string[] {
 /** Order-independent key so we can detect a match in either direction. */
 const pairKey = (idA: string, idB: string) => [idA, idB].sort().join("|");
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
-
+async function runMatching(profileId: string, eventId: string): Promise<MatchEngineResult> {
   try {
-    let body: { profileId?: string; eventId?: string };
-    try {
-      body = await req.json();
-    } catch {
-      return jsonResponse({ error: "Request body must be valid JSON." }, 400);
-    }
-
-    const { profileId, eventId } = body;
-    if (!profileId || !eventId) {
-      return jsonResponse({ error: "Both profileId and eventId are required." }, 400);
-    }
-
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     if (!supabaseUrl || !serviceRoleKey) {
-      return jsonResponse({ error: "Server misconfiguration: missing Supabase credentials." }, 500);
+      throw new Error("Supabase environment is unavailable");
     }
-    const supabase = createClient(supabaseUrl, serviceRoleKey);
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { autoRefreshToken: false, persistSession: false },
+    });
 
     // 1. Fetch the requesting profile.
     const { data: requestingProfileRow, error: profileError } = await supabase
@@ -129,10 +108,10 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (profileError) {
-      return jsonResponse({ error: "Failed to fetch profile.", detail: profileError.message }, 500);
+      throw new Error("Profile lookup failed");
     }
     if (!requestingProfileRow) {
-      return jsonResponse({ error: `No profile found with id ${profileId}.` }, 404);
+      throw new Error("Profile is unavailable");
     }
 
     // 2. Confirm the profile is registered for this event.
@@ -144,10 +123,10 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (ownRegError) {
-      return jsonResponse({ error: "Failed to check event registration.", detail: ownRegError.message }, 500);
+      throw new Error("Registration lookup failed");
     }
     if (!ownRegistration) {
-      return jsonResponse({ error: "Profile not registered for this event" }, 400);
+      throw new Error("Registration is unavailable");
     }
 
     // 3. Fetch all OTHER attendees registered for the same event.
@@ -159,7 +138,7 @@ Deno.serve(async (req) => {
       .not("profile_id", "is", null);
 
     if (attendeesError) {
-      return jsonResponse({ error: "Failed to fetch event attendees.", detail: attendeesError.message }, 500);
+      throw new Error("Attendee lookup failed");
     }
 
     const requestingProfile = toScoringProfile(requestingProfileRow as Record<string, unknown>);
@@ -167,7 +146,7 @@ Deno.serve(async (req) => {
     // De-dupe in case a profile has more than one registration row for the event.
     const otherProfilesById = new Map<string, Profile>();
     for (const row of otherRegistrations ?? []) {
-      const profileRow = (row as { profiles: Record<string, unknown> | null }).profiles;
+      const profileRow = (row as unknown as { profiles: Record<string, unknown> | null }).profiles;
       if (profileRow && !otherProfilesById.has(profileRow.id as string)) {
         otherProfilesById.set(profileRow.id as string, toScoringProfile(profileRow));
       }
@@ -200,7 +179,7 @@ Deno.serve(async (req) => {
       .eq("event_id", eventId);
 
     if (existingError) {
-      return jsonResponse({ error: "Failed to check existing matches.", detail: existingError.message }, 500);
+      throw new Error("Existing match lookup failed");
     }
 
     const existingPairKeys = new Set(
@@ -246,24 +225,45 @@ Deno.serve(async (req) => {
         .select("id");
 
       if (insertError) {
-        return jsonResponse({ error: "Failed to save matches.", detail: insertError.message }, 500);
+        throw new Error("Match persistence failed");
       }
       matchesSaved = inserted?.length ?? 0;
     }
 
-    return jsonResponse(
-      {
-        profileId,
-        matchesGenerated: scoredMatches.length,
-        matchesSaved,
-        skippedDuplicates,
-      },
-      200,
-    );
-  } catch (err) {
-    return jsonResponse(
-      { error: "Unexpected server error.", detail: err instanceof Error ? err.message : String(err) },
-      500,
-    );
+    return {
+      matchesGenerated: scoredMatches.length,
+      matchesSaved,
+      skippedDuplicates,
+    };
+  } catch {
+    throw new Error("Match engine failed");
   }
+}
+
+const LOCAL_ORIGINS = ["http://localhost:8080", "http://127.0.0.1:8080"];
+const configuredOrigins = (
+  Deno.env.get("MATCH_ENGINE_ALLOWED_ORIGINS") ??
+  Deno.env.get("CONCIERGE_ALLOWED_ORIGINS") ??
+  ""
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+const allowedOrigins = new Set([...LOCAL_ORIGINS, ...configuredOrigins]);
+
+const supabaseUrl = Deno.env.get("SUPABASE_URL");
+const supabaseAnonKey = Deno.env.get("SUPABASE_ANON_KEY");
+
+const handler = createMatchEngineHandler({
+  allowedOrigins,
+  createAuthClient: (authorizationHeader) => {
+    if (!supabaseUrl || !supabaseAnonKey) throw new Error("Supabase environment is unavailable");
+    return createClient(supabaseUrl, supabaseAnonKey, {
+      global: { headers: { Authorization: authorizationHeader } },
+      auth: { autoRefreshToken: false, persistSession: false },
+    }) as unknown as MatchEngineAuthClient;
+  },
+  runMatching,
 });
+
+Deno.serve(handler);

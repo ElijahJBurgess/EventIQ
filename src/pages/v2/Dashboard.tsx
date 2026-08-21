@@ -1092,7 +1092,7 @@ function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (
 
     try {
       const { error: matchingError } = await supabase.functions.invoke("match-engine", {
-        body: { profileId: userId, eventId },
+        body: { eventId },
       });
       if (matchingError) console.error("match-engine invoke failed after event registration:", matchingError);
     } catch (matchingError) {
