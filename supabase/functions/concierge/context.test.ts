@@ -177,7 +177,7 @@ test("treats no meetings as a valid ready context with an empty array", async ()
 
 test("Supabase source selects no message content, email, LinkedIn, URLs, or unrelated private fields", async () => {
   const selections: Array<{ table: string; columns: string }> = [];
-  const client: ConciergeQueryClient = {
+  const client = {
     from: <T,>(table: string) => {
       const builder = {
         select: (columns: string) => {
@@ -194,7 +194,7 @@ test("Supabase source selects no message content, email, LinkedIn, URLs, or unre
       };
       return builder;
     },
-  };
+  } as unknown as ConciergeQueryClient;
   const databaseSource = createSupabaseContextSource(client);
   await databaseSource.getCurrentProfile(USER_ID);
   await databaseSource.getProfiles(["person-0"]);
@@ -206,4 +206,6 @@ test("Supabase source selects no message content, email, LinkedIn, URLs, or unre
   assert.equal(selectedText.includes("linkedin"), false);
   assert.equal(selectedText.includes("avatar_url"), false);
   assert.equal(selectedText.includes("bio"), false);
+  assert.equal(selections.some((selection) => selection.table === "profiles"), true);
+  assert.equal(selections.some((selection) => selection.table === "attendee_profiles"), true);
 });

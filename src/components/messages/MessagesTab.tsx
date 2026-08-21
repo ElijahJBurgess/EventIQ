@@ -105,7 +105,7 @@ export default function MessagesTab({
 
     const [{ data: profiles }, { data: events }] = await Promise.all([
       otherIds.length > 0
-        ? supabase.from("profiles").select("id, full_name, avatar_url").in("id", otherIds)
+        ? supabase.from("attendee_profiles").select("id, full_name, avatar_url").in("id", otherIds)
         : Promise.resolve({ data: [] as OtherProfile[] }),
       eventIds.length > 0
         ? supabase.from("events").select("id, name").in("id", eventIds)

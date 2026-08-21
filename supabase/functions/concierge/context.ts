@@ -519,7 +519,7 @@ export function createSupabaseContextSource(client: ConciergeQueryClient): Conci
     },
     async getProfiles(profileIds) {
       if (profileIds.length === 0) return [];
-      const result = await client.from<ProfileRow>("profiles")
+      const result = await client.from<ProfileRow>("attendee_profiles")
         .select("id,full_name,title,company,role_type,secondary_role_types,matching_goal,primary_goal,secondary_goals,desired_outcomes,needs,offers,areas_of_expertise,interests,communities,who_to_meet,connection_preference,industry_focus")
         .in("id", profileIds);
       return unwrap(result, "matched profile lookup");

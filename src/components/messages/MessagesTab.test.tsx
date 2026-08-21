@@ -43,7 +43,7 @@ vi.mock("@/integrations/supabase/client", () => ({
           return query;
         }
         return {
-          in: async () => ({ data: table === "profiles" ? data.profiles : data.events, error: null }),
+          in: async () => ({ data: table === "attendee_profiles" ? data.profiles : data.events, error: null }),
         };
       },
     }),

@@ -100,6 +100,13 @@ export type Database = {
             foreignKeyName: "check_ins_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "attendee_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "check_ins_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -280,6 +287,13 @@ export type Database = {
             foreignKeyName: "event_registrations_profile_id_fkey"
             columns: ["profile_id"]
             isOneToOne: false
+            referencedRelation: "attendee_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_registrations_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -354,6 +368,13 @@ export type Database = {
             foreignKeyName: "events_organizer_id_fkey"
             columns: ["organizer_id"]
             isOneToOne: false
+            referencedRelation: "attendee_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "events_organizer_id_fkey"
+            columns: ["organizer_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -408,6 +429,13 @@ export type Database = {
             foreignKeyName: "feedback_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "attendee_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "feedback_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -441,6 +469,13 @@ export type Database = {
             columns: ["match_id"]
             isOneToOne: false
             referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "match_actions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "attendee_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -519,7 +554,21 @@ export type Database = {
             foreignKeyName: "matches_user_a_id_fkey"
             columns: ["user_a_id"]
             isOneToOne: false
+            referencedRelation: "attendee_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "matches_user_a_id_fkey"
+            columns: ["user_a_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "matches_user_b_id_fkey"
+            columns: ["user_b_id"]
+            isOneToOne: false
+            referencedRelation: "attendee_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -608,7 +657,21 @@ export type Database = {
             foreignKeyName: "meetings_recipient_id_fkey"
             columns: ["recipient_id"]
             isOneToOne: false
+            referencedRelation: "attendee_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meetings_recipient_id_fkey"
+            columns: ["recipient_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meetings_requester_id_fkey"
+            columns: ["requester_id"]
+            isOneToOne: false
+            referencedRelation: "attendee_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -673,7 +736,21 @@ export type Database = {
             foreignKeyName: "messages_recipient_id_fkey"
             columns: ["recipient_id"]
             isOneToOne: false
+            referencedRelation: "attendee_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_recipient_id_fkey"
+            columns: ["recipient_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "messages_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "attendee_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -751,6 +828,13 @@ export type Database = {
             foreignKeyName: "notifications_actor_id_fkey"
             columns: ["actor_id"]
             isOneToOne: false
+            referencedRelation: "attendee_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_actor_id_fkey"
+            columns: ["actor_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -780,6 +864,13 @@ export type Database = {
             columns: ["message_id"]
             isOneToOne: false
             referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "attendee_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -822,6 +913,13 @@ export type Database = {
             columns: ["event_id"]
             isOneToOne: false
             referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "points_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "attendee_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -1068,6 +1166,13 @@ export type Database = {
             foreignKeyName: "reports_generated_by_fkey"
             columns: ["generated_by"]
             isOneToOne: false
+            referencedRelation: "attendee_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reports_generated_by_fkey"
+            columns: ["generated_by"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -1114,6 +1219,13 @@ export type Database = {
             columns: ["sponsor_id"]
             isOneToOne: false
             referencedRelation: "sponsors"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sponsor_engagements_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "attendee_profiles"
             referencedColumns: ["id"]
           },
           {
@@ -1207,7 +1319,75 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      attendee_profiles: {
+        Row: {
+          areas_of_expertise: string[] | null
+          avatar_url: string | null
+          communities: string[] | null
+          company: string | null
+          connection_preference: string[] | null
+          desired_outcomes: string[] | null
+          full_name: string | null
+          id: string | null
+          industry_focus: string[] | null
+          interests: string[] | null
+          location: string | null
+          matching_goal: string | null
+          needs: string[] | null
+          offers: string[] | null
+          primary_goal: string | null
+          role_type: string | null
+          secondary_goals: string[] | null
+          secondary_role_types: string[] | null
+          title: string | null
+          who_to_meet: string[] | null
+        }
+        Insert: {
+          areas_of_expertise?: string[] | null
+          avatar_url?: string | null
+          communities?: string[] | null
+          company?: string | null
+          connection_preference?: string[] | null
+          desired_outcomes?: string[] | null
+          full_name?: string | null
+          id?: string | null
+          industry_focus?: string[] | null
+          interests?: string[] | null
+          location?: string | null
+          matching_goal?: string | null
+          needs?: string[] | null
+          offers?: string[] | null
+          primary_goal?: string | null
+          role_type?: string | null
+          secondary_goals?: string[] | null
+          secondary_role_types?: string[] | null
+          title?: string | null
+          who_to_meet?: string[] | null
+        }
+        Update: {
+          areas_of_expertise?: string[] | null
+          avatar_url?: string | null
+          communities?: string[] | null
+          company?: string | null
+          connection_preference?: string[] | null
+          desired_outcomes?: string[] | null
+          full_name?: string | null
+          id?: string | null
+          industry_focus?: string[] | null
+          interests?: string[] | null
+          location?: string | null
+          matching_goal?: string | null
+          needs?: string[] | null
+          offers?: string[] | null
+          primary_goal?: string | null
+          role_type?: string | null
+          secondary_goals?: string[] | null
+          secondary_role_types?: string[] | null
+          title?: string | null
+          who_to_meet?: string[] | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
       mark_message_thread_read: {

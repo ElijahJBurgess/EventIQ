@@ -40,17 +40,7 @@ const NAV_LABELS: Record<NavItem, string> = {
 
 interface Profile {
   id: string;
-  email: string;
   full_name: string | null;
-  company: string | null;
-  title: string | null;
-  location: string | null;
-  role_type: string | null;
-  bio: string | null;
-  interests: string[] | null;
-  avatar_url: string | null;
-  total_points: number | null;
-  profile_completion_score: number | null;
 }
 
 interface HomeStatsData {
@@ -149,7 +139,7 @@ export default function DashboardV2() {
 
   const loadProfile = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
+    const { data } = await supabase.from("profiles").select("id,full_name").eq("id", user.id).maybeSingle();
     setProfile(data as Profile | null);
     setLoading(false);
   }, [user]);
@@ -459,7 +449,7 @@ function HomeTab({
       ));
       const { data: meetingProfiles } = otherIds.length > 0
         ? await supabase
-          .from("profiles")
+          .from("attendee_profiles")
           .select("id,full_name,title,role_type,company,avatar_url")
           .in("id", otherIds)
         : { data: [] as Pick<Profile, "id" | "full_name" | "title" | "role_type" | "company" | "avatar_url">[] };
@@ -489,7 +479,7 @@ function HomeTab({
         .filter((profileId): profileId is string => Boolean(profileId));
       const { data: topMatchProfiles } = topMatchProfileIds.length > 0
         ? await supabase
-          .from("profiles")
+          .from("attendee_profiles")
           .select("id,full_name,title,role_type,company,avatar_url")
           .in("id", topMatchProfileIds)
         : { data: [] as Pick<Profile, "id" | "full_name" | "title" | "role_type" | "company" | "avatar_url">[] };
@@ -520,7 +510,7 @@ function HomeTab({
       ));
       const { data: connectionProfiles } = connectionProfileIds.length > 0
         ? await supabase
-          .from("profiles")
+          .from("attendee_profiles")
           .select("id,full_name,avatar_url")
           .in("id", connectionProfileIds)
         : { data: [] as Pick<Profile, "id" | "full_name" | "avatar_url">[] };
@@ -849,7 +839,7 @@ export function MyDayTab({
       const profileIds = Array.from(new Set(raw.map((meeting) => meeting.requester_id === userId ? meeting.recipient_id : meeting.requester_id)));
       const eventIds = Array.from(new Set(raw.map((meeting) => meeting.event_id).filter((id): id is string => Boolean(id))));
       const [{ data: profiles }, { data: events }] = await Promise.all([
-        profileIds.length ? supabase.from("profiles").select("id,full_name").in("id", profileIds) : Promise.resolve({ data: [] }),
+        profileIds.length ? supabase.from("attendee_profiles").select("id,full_name").in("id", profileIds) : Promise.resolve({ data: [] }),
         eventIds.length ? supabase.from("events").select("id,name").in("id", eventIds) : Promise.resolve({ data: [] }),
       ]);
       const profileMap = new Map((profiles ?? []).map((profile) => [profile.id, profile.full_name ?? "Member"]));
@@ -954,7 +944,7 @@ function ConnectionsTab({ userId }: { userId: string }) {
       const eventIds = Array.from(new Set(summary.people.map((person) => person.eventId).filter((id): id is string => Boolean(id))));
 
       const [{ data: profiles }, { data: events }] = await Promise.all([
-        otherIds.length ? supabase.from("profiles").select("id,full_name").in("id", otherIds) : Promise.resolve({ data: [] }),
+        otherIds.length ? supabase.from("attendee_profiles").select("id,full_name").in("id", otherIds) : Promise.resolve({ data: [] }),
         eventIds.length ? supabase.from("events").select("id,name").in("id", eventIds) : Promise.resolve({ data: [] }),
       ]);
       const profileMap = new Map((profiles ?? []).map((profile) => [profile.id, profile.full_name ?? "Member"]));

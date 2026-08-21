@@ -36,7 +36,11 @@ export default function EditProfileScreen({ userId, onClose, onSaved }: EditProf
     let cancelled = false;
 
     const loadProfile = async () => {
-      const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("full_name,avatar_url,title,company,location,linkedin_url,role_type,secondary_role_types,primary_function,additional_functions,seniority,primary_goal,matching_goal,secondary_goals,needs,offers,areas_of_expertise,who_to_meet,industry_preference,location_preference,career_level_preference,connection_preference,role_details")
+        .eq("id", userId)
+        .maybeSingle();
 
       if (cancelled) return;
       if (error || !data) {

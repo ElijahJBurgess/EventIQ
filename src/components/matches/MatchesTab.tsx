@@ -22,11 +22,6 @@ interface OtherProfile {
   title: string | null;
   company: string | null;
   location: string | null;
-  role_type: string | null;
-  matching_goal: string | null;
-  desired_outcomes: string[] | null;
-  areas_of_expertise: string[] | null;
-  industry_focus: string[] | null;
 }
 
 interface EnrichedMatch {
@@ -178,8 +173,8 @@ export default function MatchesTab({
     const profileMap = new Map<string, OtherProfile>();
     if (otherIds.length > 0) {
       const { data: profiles } = await supabase
-        .from("profiles")
-        .select("id, full_name, avatar_url, title, company, location, role_type, matching_goal, desired_outcomes, areas_of_expertise, industry_focus")
+        .from("attendee_profiles")
+        .select("id, full_name, avatar_url, title, company, location")
         .in("id", otherIds);
       for (const p of profiles ?? []) profileMap.set(p.id, p as OtherProfile);
     }

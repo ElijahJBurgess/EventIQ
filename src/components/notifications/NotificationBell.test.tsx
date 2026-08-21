@@ -24,7 +24,7 @@ vi.mock("@/integrations/supabase/client", () => ({
     rpc: backend.rpc,
     from: (table: string) => ({
       select: (columns: string) => {
-        if (table === "profiles") {
+        if (table === "attendee_profiles") {
           return {
             in: async () => {
               backend.profileCalls += 1;

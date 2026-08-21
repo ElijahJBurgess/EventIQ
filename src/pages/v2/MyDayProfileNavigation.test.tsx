@@ -47,7 +47,7 @@ vi.mock("@/integrations/supabase/client", () => ({
         return builder;
       }
 
-      if (table === "profiles") {
+      if (table === "attendee_profiles") {
         return {
           select: () => ({
             in: () => Promise.resolve({

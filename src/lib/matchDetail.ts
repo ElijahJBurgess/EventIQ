@@ -24,7 +24,6 @@ export interface MatchDetailProfile {
   needs: string[];
   offers: string[];
   areas_of_expertise: string[];
-  role_details: Json | null;
 }
 
 export interface MatchDetailMatch {
@@ -48,7 +47,7 @@ export interface MatchDetailResult {
 }
 
 const PROFILE_DETAIL_FIELDS =
-  "id, full_name, avatar_url, title, company, location, role_type, secondary_role_types, primary_goal, secondary_goals, needs, offers, areas_of_expertise, role_details";
+  "id, full_name, avatar_url, title, company, location, role_type, secondary_role_types, primary_goal, secondary_goals, needs, offers, areas_of_expertise";
 
 function toDetailProfile(row: unknown): MatchDetailProfile | null {
   if (!row || typeof row !== "object") return null;
@@ -67,7 +66,6 @@ function toDetailProfile(row: unknown): MatchDetailProfile | null {
     needs: (r.needs as string[] | null) ?? [],
     offers: (r.offers as string[] | null) ?? [],
     areas_of_expertise: (r.areas_of_expertise as string[] | null) ?? [],
-    role_details: (r.role_details as Json | null) ?? null,
   };
 }
 
@@ -91,9 +89,7 @@ export async function fetchMatchDetail(matchId: string, currentUserId: string): 
   const { data, error } = await supabase
     .from("matches")
     .select(
-      `id, event_id, match_score, score_breakdown, match_details, match_reason, shared_goals, shared_interests, shared_industries, shared_communities, generated_at, user_a_id, user_b_id,
-      user_a:profiles!matches_user_a_id_fkey(${PROFILE_DETAIL_FIELDS}),
-      user_b:profiles!matches_user_b_id_fkey(${PROFILE_DETAIL_FIELDS})`,
+      "id, event_id, match_score, score_breakdown, match_details, match_reason, shared_goals, shared_interests, shared_industries, shared_communities, generated_at, user_a_id, user_b_id",
     )
     .eq("id", matchId)
     .maybeSingle();
@@ -102,9 +98,17 @@ export async function fetchMatchDetail(matchId: string, currentUserId: string): 
   if (!data) return null;
   if (data.user_a_id !== currentUserId && data.user_b_id !== currentUserId) return null;
 
+  const profileIds = [data.user_a_id, data.user_b_id].filter((id): id is string => Boolean(id));
+  const { data: profileRows, error: profileError } = await supabase
+    .from("attendee_profiles")
+    .select(PROFILE_DETAIL_FIELDS)
+    .in("id", profileIds);
+  if (profileError) throw profileError;
+
+  const profileById = new Map((profileRows ?? []).map((profile) => [profile.id, profile]));
   const isCurrentUserA = data.user_a_id === currentUserId;
-  const currentUser = toDetailProfile(isCurrentUserA ? data.user_a : data.user_b);
-  const otherPerson = toDetailProfile(isCurrentUserA ? data.user_b : data.user_a);
+  const currentUser = toDetailProfile(profileById.get(isCurrentUserA ? data.user_a_id : data.user_b_id));
+  const otherPerson = toDetailProfile(profileById.get(isCurrentUserA ? data.user_b_id : data.user_a_id));
   if (!currentUser || !otherPerson) return null;
 
   return {

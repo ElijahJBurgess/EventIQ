@@ -48,7 +48,7 @@ vi.mock("@/integrations/supabase/client", () => {
             ]
           : [{ id: "match-b", event_id: "room-b", user_a_id: "current-user", user_b_id: "person-b", match_score: 70 }];
       }
-      if (table === "profiles") data = profiles;
+      if (table === "attendee_profiles") data = profiles;
       return Promise.resolve({ data, error: null }).then(resolve, reject);
     };
     return builder;

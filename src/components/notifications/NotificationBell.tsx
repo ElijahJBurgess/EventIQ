@@ -95,7 +95,7 @@ export default function NotificationBell({
 
     if (actorIds.length > 0) {
       const { data: profiles } = await supabase
-        .from("profiles")
+        .from("attendee_profiles")
         .select("id,full_name")
         .in("id", actorIds);
 
