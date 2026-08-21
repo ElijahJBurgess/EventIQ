@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/v2/AuthProvider";
 
 const PROFILES = [
   { initials: "JL", name: "Jordan Lee", role: "VP Engineering · TechCo", match: 94, color: "#69C0BE" },
@@ -11,9 +13,31 @@ const PROFILES = [
 
 export default function Landing() {
   const navigate = useNavigate();
+  const { user, loading } = useAuth();
   const [email, setEmail] = useState("");
+  const [enteringApp, setEnteringApp] = useState(false);
+
+  const enterApp = async () => {
+    if (loading || enteringApp) return;
+    if (!user) {
+      navigate("/v2/auth");
+      return;
+    }
+
+    setEnteringApp(true);
+    const { data } = await supabase
+      .from("profiles")
+      .select("profile_completed")
+      .eq("id", user.id)
+      .maybeSingle();
+    navigate(data?.profile_completed ? "/v2" : "/v2/setup");
+  };
 
   const startSignup = () => {
+    if (user) {
+      void enterApp();
+      return;
+    }
     const query = email.trim() ? `&email=${encodeURIComponent(email.trim())}` : "";
     navigate(`/v2/auth?mode=signup${query}`);
   };
@@ -25,8 +49,12 @@ export default function Landing() {
           <div className="font-display text-2xl font-black tracking-tight text-white normal-case">OFFRIP</div>
           <div className="text-[10px] text-white/50 tracking-widest font-display mt-0.5">BY OUT OF OFFICE</div>
         </div>
-        <button onClick={() => navigate("/v2/auth")} className="text-[11px] tracking-widest border border-white/30 px-4 py-2 hover:border-white text-white/70 hover:text-white transition-colors">
-          Sign in
+        <button
+          onClick={() => void enterApp()}
+          disabled={loading || enteringApp}
+          className="text-[11px] tracking-widest border border-white/30 px-4 py-2 hover:border-white text-white/70 hover:text-white transition-colors disabled:opacity-50"
+        >
+          {user ? "Enter OFFRIP" : "Sign in"}
         </button>
       </header>
 

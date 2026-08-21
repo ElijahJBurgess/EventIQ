@@ -56,7 +56,13 @@ beforeEach(() => {
   mocks.getSession.mockResolvedValue({ data: { session: null } });
   mocks.resetPasswordForEmail.mockResolvedValue({ error: null });
   mocks.updateUser.mockResolvedValue({ error: null });
-  mocks.signUp.mockResolvedValue({ data: { session: null, user: { id: "new-user" } }, error: null });
+  mocks.signUp.mockResolvedValue({
+    data: {
+      session: { access_token: "new-user-session" },
+      user: { id: "new-user" },
+    },
+    error: null,
+  });
   mocks.signInWithPassword.mockResolvedValue({ data: { session: null, user: null }, error: null });
   sessionStorage.clear();
 });
@@ -94,12 +100,12 @@ describe("AuthProvider password recovery", () => {
     });
   });
 
-  it("reports confirmation-required signup without signing in automatically", async () => {
+  it("reports an immediately authenticated signup when Supabase returns a session", async () => {
     render(<AuthProvider><Probe /></AuthProvider>);
     await screen.findByText("ready");
     screen.getByRole("button", { name: "Sign up" }).click();
 
-    expect(await screen.findByText("verify-email")).toBeInTheDocument();
+    expect(await screen.findByText("signed-in")).toBeInTheDocument();
     expect(mocks.signInWithPassword).not.toHaveBeenCalled();
   });
 

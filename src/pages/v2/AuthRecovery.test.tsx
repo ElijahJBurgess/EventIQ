@@ -61,7 +61,7 @@ beforeEach(() => {
   mocks.authState.loading = false;
   mocks.authState.isPasswordRecovery = false;
   window.history.replaceState({}, "", "/");
-  mocks.signUp.mockResolvedValue({ error: null, requiresEmailConfirmation: true });
+  mocks.signUp.mockResolvedValue({ error: null, requiresEmailConfirmation: false });
   mocks.signIn.mockResolvedValue({ error: null });
 });
 
@@ -86,7 +86,7 @@ describe("forgot password", () => {
   );
 });
 
-describe("verified-email signup", () => {
+describe("immediate signup", () => {
   it("requires eight characters and does not submit a short password", () => {
     render(<MemoryRouter initialEntries={["/v2/auth?mode=signup"]}><AuthV2 /></MemoryRouter>);
     fireEvent.change(screen.getByPlaceholderText("Full name"), { target: { value: "Avery Morgan" } });
@@ -98,14 +98,23 @@ describe("verified-email signup", () => {
     expect(mocks.signUp).not.toHaveBeenCalled();
   });
 
-  it("shows verification instructions without attempting an immediate sign-in", async () => {
-    render(<MemoryRouter initialEntries={["/v2/auth?mode=signup"]}><AuthV2 /></MemoryRouter>);
+  it("welcomes the user and proceeds without verification instructions", async () => {
+    render(
+      <MemoryRouter initialEntries={["/v2/auth?mode=signup"]}>
+        <Routes>
+          <Route path="/v2/auth" element={<AuthV2 />} />
+          <Route path="/" element={<div>OFFRIP landing</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
     fireEvent.change(screen.getByPlaceholderText("Full name"), { target: { value: "Avery Morgan" } });
     fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "avery@example.com" } });
     fireEvent.change(screen.getByPlaceholderText("Password"), { target: { value: "secure88" } });
     fireEvent.submit(screen.getByRole("button", { name: "Create account" }).closest("form")!);
 
-    expect(await screen.findByRole("status")).toHaveTextContent("Check your email to verify your address.");
+    await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith("Welcome to OFFRIP"));
+    expect(await screen.findByText("OFFRIP landing")).toBeInTheDocument();
+    expect(screen.queryByText(/Check your email to verify/i)).not.toBeInTheDocument();
     expect(mocks.signUp).toHaveBeenCalledWith("avery@example.com", "secure88", "Avery Morgan");
     expect(mocks.signIn).not.toHaveBeenCalled();
   });

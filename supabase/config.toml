@@ -15,7 +15,8 @@ additional_redirect_urls = [
 ]
 
 [auth.email]
-enable_confirmations = true
+# Temporary V1 testing behavior; restore once production SMTP is configured.
+enable_confirmations = false
 double_confirm_changes = true
 max_frequency = "1m"
 otp_length = 8
