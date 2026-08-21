@@ -184,7 +184,7 @@ export default function DashboardV2() {
       <header className="bg-white border-b border-black sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-6 h-14 flex items-center gap-10">
           <button onClick={() => selectNavigationItem("home")} className="font-display text-xl tracking-tight leading-none normal-case shrink-0">OFFRIP</button>
-          <nav aria-label="Attendee navigation" className="hidden md:flex items-center gap-6 flex-1">
+          <nav aria-label="Attendee navigation" className="hidden lg:flex items-center gap-6 flex-1">
             {NAV_ITEMS.map((t) => (
               <button
                 key={t}
@@ -198,14 +198,14 @@ export default function DashboardV2() {
               </button>
             ))}
           </nav>
-          <button onClick={() => selectNavigationItem("enterprise")} className="hidden md:flex text-[10px] tracking-widest border border-black px-3 py-1.5 hover:bg-black hover:text-white transition-colors">
+          <button onClick={() => selectNavigationItem("enterprise")} className="hidden lg:flex text-[10px] tracking-widest border border-black px-3 py-1.5 hover:bg-black hover:text-white transition-colors">
             Enterprise
           </button>
-          <div className="ml-auto flex items-center gap-3 md:ml-0">
+          <div className="ml-auto flex items-center gap-3 lg:ml-0">
             <NotificationBell userId={user!.id} onNavigate={handleNotificationNavigation} />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="rounded-full" aria-label="Open account menu">
+                <button className="flex h-11 w-11 items-center justify-center rounded-full" aria-label="Open account menu">
                   <Avatar className="h-8 w-8 rounded-full border-2 border-black">
                     <AvatarFallback className={`rounded-full font-label text-xs ${offripAvatarClasses(user!.id)}`}>
                       {profileInitials(profile?.full_name ?? null)}
@@ -230,9 +230,9 @@ export default function DashboardV2() {
             </DropdownMenu>
           </div>
         </div>
-        <nav aria-label="Mobile attendee navigation" className="md:hidden flex overflow-x-auto border-t border-black">
+        <nav aria-label="Mobile attendee navigation" className="lg:hidden flex overflow-x-auto border-t border-black">
           {NAV_ITEMS.map((t) => (
-            <button key={t} onClick={() => selectNavigationItem(t)} className={`relative shrink-0 px-4 py-2.5 text-[10px] tracking-widest ${tab === t ? "bg-black text-white" : "text-black/40"}`}>
+            <button key={t} onClick={() => selectNavigationItem(t)} className={`relative flex min-h-11 shrink-0 items-center px-4 py-2.5 text-[10px] tracking-widest ${tab === t ? "bg-black text-white" : "text-black/40"}`}>
               {NAV_LABELS[t]}
               {t === "messages" && hasUnreadMessages && (
                 <span className="absolute top-1 right-2 h-2 w-2 rounded-full bg-vermillion border border-primary" aria-label="Unread messages" />
@@ -460,7 +460,7 @@ function HomeTab({
           return {
             id: meeting.id,
             otherId: other.id,
-            otherName: other.full_name ?? "OOO member",
+            otherName: other.full_name ?? "OFFRIP member",
             otherAvatarUrl: other.avatar_url,
             otherRole: other.title ?? other.role_type ?? "Member",
             otherCompany: other.company,
@@ -489,7 +489,7 @@ function HomeTab({
           return {
             id: match.id,
             otherId: other.id,
-            name: other.full_name ?? "OOO member",
+            name: other.full_name ?? "OFFRIP member",
             avatarUrl: other.avatar_url,
             role: other.title ?? other.role_type ?? "Member",
             company: other.company,
@@ -521,7 +521,7 @@ function HomeTab({
           return {
             id: connection.id,
             otherId: other.id,
-            otherName: other.full_name ?? "OOO member",
+            otherName: other.full_name ?? "OFFRIP member",
             otherAvatarUrl: other.avatar_url,
             status: connection.status as HomeConnection["status"],
             isRequester: connection.requester_id === userId,
@@ -861,7 +861,7 @@ export function MyDayTab({
   const scheduledMinutes = meetings.reduce((total, meeting) => total + (meeting.duration_minutes ?? 30), 0);
   return (
     <div>
-      <button onClick={onBack} className="text-[10px] tracking-widest text-black/40 hover:text-black mb-8">← Back home</button>
+      <button onClick={onBack} className="mb-8 inline-flex min-h-11 items-center text-[10px] tracking-widest text-black/40 hover:text-black">← Back home</button>
       <div className="mb-8">
         <div className="text-[10px] tracking-widest font-display text-black/30 mb-2">Your OFFRIP schedule</div>
         <h1 className="font-display text-4xl">Your day</h1>

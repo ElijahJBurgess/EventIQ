@@ -28,7 +28,7 @@ export default function Page4Terms({ formData, setFormData, onBack, onSubmit, is
         <div className={cardClass}>
           <p className="font-black mb-2">AI Consent</p>
           <p className="text-sm text-muted-foreground normal-case font-sans leading-6">
-            OOO Intelligence uses artificial intelligence to power match recommendations, conversation
+            OFFRIP uses artificial intelligence to power match recommendations, conversation
             starters, and event insights.
           </p>
           {/* TODO: Replace with real terms URL when available */}
@@ -43,8 +43,7 @@ export default function Page4Terms({ formData, setFormData, onBack, onSubmit, is
             className="mt-1 h-6 w-6 shrink-0 accent-primary"
           />
           <span className="text-sm normal-case font-sans leading-6">
-            I agree to the Terms of Service and consent to the use of AI-powered features within OOO
-            Intelligence.
+            I agree to the Terms of Service and consent to the use of AI-powered features within OFFRIP.
           </span>
         </label>
       </div>

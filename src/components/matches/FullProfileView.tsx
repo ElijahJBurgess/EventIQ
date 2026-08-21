@@ -185,7 +185,7 @@ export default function FullProfileView({ matchId, currentUserId, onBack, backLa
           </div>
 
           <div>
-            <h1 className="font-offrip-display text-2xl font-black uppercase tracking-tight">{otherPerson.full_name ?? "OOO member"}</h1>
+            <h1 className="font-offrip-display text-2xl font-black uppercase tracking-tight">{otherPerson.full_name ?? "OFFRIP member"}</h1>
             {roleCompany && <p className="mt-1 font-offrip-body text-sm text-offrip-medium-gray">{roleCompany}</p>}
             {otherPerson.location && <p className="font-offrip-body text-sm text-offrip-medium-gray">{otherPerson.location}</p>}
           </div>

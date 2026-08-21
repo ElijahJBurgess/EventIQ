@@ -61,6 +61,9 @@ export default function Landing() {
             ))}
           </div>
           <div className="flex flex-wrap gap-8 mt-12 border-t border-white/10 pt-8">
+            <div className="w-full text-[9px] text-white/25 tracking-widest font-display uppercase">
+              Demo metrics · sample data
+            </div>
             {[["1,842", "People in the room", "text-white"], ["94%", "Match accuracy", "text-offrip-aqua"], ["412", "Outcomes reported", "text-white"]].map(([value, label, color]) => (
               <div key={label}>
                 <div className={`font-display font-black text-2xl ${color}`}>{value}</div>

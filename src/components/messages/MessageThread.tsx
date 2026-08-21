@@ -16,6 +16,7 @@ interface MessageRow {
   sender_id: string | null;
   content: string;
   created_at: string | null;
+  read_at: string | null;
 }
 
 interface MeetingRow {
@@ -36,6 +37,7 @@ interface EventDateRange {
 }
 
 const ACTIVE_MEETING_STATUSES = ["requested", "accepted", "scheduled"];
+export const ACTIVE_THREAD_REFRESH_INTERVAL_MS = 7_500;
 const MEETING_TIME_OPTIONS = Array.from({ length: 48 }, (_, index) => {
   const hours = Math.floor(index / 2);
   const minutes = index % 2 === 0 ? "00" : "30";
@@ -139,23 +141,31 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
   const [schedulingMeeting, setSchedulingMeeting] = useState(false);
   const [completingMeeting, setCompletingMeeting] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const refreshInFlightRef = useRef(false);
 
-  const loadMessages = useCallback(async () => {
+  const loadMessages = useCallback(async (silent = false) => {
     const { data, error } = await supabase
       .from("messages")
-      .select("id, sender_id, content, created_at")
+      .select("id, sender_id, content, created_at, read_at")
       .eq("match_id", matchId)
       .order("created_at", { ascending: true });
 
     if (error) {
-      toast.error("Couldn't load this conversation — try again.");
+      if (!silent) toast.error("Couldn't load this conversation — try again.");
       setLoading(false);
-      return false;
+      return null;
     }
-    setMessages((data as MessageRow[]) ?? []);
+    const loadedMessages = (data as MessageRow[]) ?? [];
+    setMessages(loadedMessages);
     setLoading(false);
-    return true;
+    return loadedMessages;
   }, [matchId]);
+
+  const markThreadRead = useCallback(async () => {
+    const { error } = await supabase.rpc("mark_message_thread_read", { p_match_id: matchId });
+    if (error) return;
+    await onMessagesRead();
+  }, [matchId, onMessagesRead]);
 
   const loadMeeting = useCallback(async () => {
     const { data, error } = await supabase
@@ -197,9 +207,8 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
   useEffect(() => {
     let cancelled = false;
     const loadThread = async () => {
-      const loaded = await loadMessages();
-      if (!loaded || cancelled) return;
-
+      const loadedMessages = await loadMessages();
+      if (!loadedMessages || cancelled) return;
       const { error } = await supabase.rpc("mark_message_thread_read", { p_match_id: matchId });
       if (error || cancelled) return;
       await onMessagesRead();
@@ -210,6 +219,35 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
     loadEventDateRange();
     return () => { cancelled = true; };
   }, [loadEventDateRange, loadMeeting, loadMessages, matchId, onMessagesRead]);
+
+  const refreshActiveThread = useCallback(async () => {
+    if (refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
+    try {
+      const loadedMessages = await loadMessages(true);
+      const hasUnreadIncoming = loadedMessages?.some(
+        (message) => message.sender_id !== userId && message.read_at === null,
+      );
+      if (hasUnreadIncoming) await markThreadRead();
+    } finally {
+      refreshInFlightRef.current = false;
+    }
+  }, [loadMessages, markThreadRead, userId]);
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refreshActiveThread();
+    };
+    const intervalId = window.setInterval(refreshWhenVisible, ACTIVE_THREAD_REFRESH_INTERVAL_MS);
+
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [refreshActiveThread]);
 
   useEffect(() => {
     if (meeting?.status !== "accepted" || !eventDateRange || scheduleDate) return;
@@ -359,16 +397,16 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
     const startsAt = new Date(meeting.scheduled_at);
     const durationMinutes = meeting.duration_minutes ?? 30;
     const endsAt = new Date(startsAt.getTime() + durationMinutes * 60_000);
-    const title = `Meeting with ${other.full_name ?? "OOO connection"} at ${eventName ?? "an event"}`;
-    const description = "A meeting with an OOO Intelligence connection.";
+    const title = `Meeting with ${other.full_name ?? "OFFRIP connection"} at ${eventName ?? "an event"}`;
+    const description = "A meeting with an OFFRIP connection.";
     const calendar = [
       "BEGIN:VCALENDAR",
       "VERSION:2.0",
-      "PRODID:-//OOO Intelligence//Meeting Calendar Export//EN",
+      "PRODID:-//OFFRIP//Meeting Calendar Export//EN",
       "CALSCALE:GREGORIAN",
       "METHOD:PUBLISH",
       "BEGIN:VEVENT",
-      `UID:${meeting.id}@ooo-intelligence`,
+      `UID:${meeting.id}@offrip`,
       `DTSTAMP:${formatIcsDate(new Date())}`,
       `DTSTART:${formatIcsDate(startsAt)}`,
       `DTEND:${formatIcsDate(endsAt)}`,
@@ -385,7 +423,7 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
     const link = document.createElement("a");
     const safeEventName = (eventName ?? "event").replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase();
     link.href = url;
-    link.download = `ooo-meeting-${safeEventName || "event"}.ics`;
+    link.download = `offrip-meeting-${safeEventName || "event"}.ics`;
     document.body.appendChild(link);
     link.click();
     link.remove();
