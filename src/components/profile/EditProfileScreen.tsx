@@ -8,6 +8,7 @@ import { cleanRoleDetailsForIdentities } from "@/components/profile-setup/roleDe
 import { initialProfileSetupFormData, type ProfileSetupFormData } from "@/components/profile-setup/types";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
+import { getOwnedProfilePhotoPath, PROFILE_PHOTO_BUCKET } from "@/lib/profilePhotoStorage";
 
 interface EditProfileScreenProps {
   userId: string;
@@ -31,6 +32,7 @@ export default function EditProfileScreen({ userId, onClose, onSaved }: EditProf
   const [loadError, setLoadError] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [persistedAvatarUrl, setPersistedAvatarUrl] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -75,6 +77,7 @@ export default function EditProfileScreen({ userId, onClose, onSaved }: EditProf
         connectionPreference: asStringArray(data.connection_preference),
         roleDetails: asRoleDetails(data.role_details),
       });
+      setPersistedAvatarUrl(data.avatar_url ?? "");
     };
 
     loadProfile();
@@ -130,6 +133,14 @@ export default function EditProfileScreen({ userId, onClose, onSaved }: EditProf
       return;
     }
 
+    if (persistedAvatarUrl && persistedAvatarUrl !== formData.avatarUrl) {
+      const previousOwnedPath = getOwnedProfilePhotoPath(persistedAvatarUrl, userId);
+      if (previousOwnedPath) {
+        const { error: cleanupError } = await supabase.storage.from(PROFILE_PHOTO_BUCKET).remove([previousOwnedPath]);
+        if (cleanupError) console.warn("Previous profile photo cleanup failed");
+      }
+    }
+
     await onSaved();
     onClose();
   };
@@ -165,7 +176,7 @@ export default function EditProfileScreen({ userId, onClose, onSaved }: EditProf
       <ProgressIndicator currentPage={currentPage} totalPages={4} />
       <div className="ooo-card bg-card p-6 sm:p-8">
         {currentPage === 1 && (
-          <Page1BasicInfo formData={formData} setFormData={setFormData} onNext={onNext} onBack={onBack} />
+          <Page1BasicInfo userId={userId} formData={formData} setFormData={setFormData} onNext={onNext} onBack={onBack} />
         )}
         {currentPage === 2 && (
           <Page2Goals formData={formData} setFormData={setFormData} onNext={onNext} onBack={onBack} />

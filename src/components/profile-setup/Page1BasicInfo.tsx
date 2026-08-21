@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Upload } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  createProfilePhotoPath,
+  isAllowedProfilePhotoType,
+  MAX_PROFILE_PHOTO_BYTES,
+  PROFILE_PHOTO_BUCKET,
+} from "@/lib/profilePhotoStorage";
 import PillSelect from "./PillSelect";
 import type { ProfileSetupPageProps } from "./types";
 
@@ -67,9 +73,6 @@ const SENIORITY_OPTIONS = [
 ];
 
 const LINKEDIN_PATTERN = /^(https?:\/\/)?(www\.)?linkedin\.com/i;
-const ALLOWED_PHOTO_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
-const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
-
 type StringField = "fullName" | "jobTitle" | "company" | "location" | "linkedinUrl" | "roleType";
 
 interface FieldErrors {
@@ -88,7 +91,12 @@ interface CitySearchResult {
   display_name: string;
 }
 
-export default function Page1BasicInfo({ formData, setFormData, onNext }: ProfileSetupPageProps) {
+export default function Page1BasicInfo({
+  formData,
+  setFormData,
+  onNext,
+  userId,
+}: ProfileSetupPageProps & { userId: string }) {
   const [errors, setErrors] = useState<FieldErrors>({});
   const [uploading, setUploading] = useState(false);
   const [photoError, setPhotoError] = useState("");
@@ -298,21 +306,20 @@ export default function Page1BasicInfo({ formData, setFormData, onNext }: Profil
 
     setPhotoError("");
 
-    if (!ALLOWED_PHOTO_TYPES.includes(file.type)) {
+    if (!isAllowedProfilePhotoType(file.type)) {
       setPhotoError("Please upload a JPG, PNG, or WEBP file.");
       return;
     }
-    if (file.size > MAX_PHOTO_BYTES) {
+    if (file.size > MAX_PROFILE_PHOTO_BYTES) {
       setPhotoError("Image must be 5MB or smaller.");
       return;
     }
 
     setUploading(true);
-    const extension = file.name.split(".").pop()?.toLowerCase() || "jpg";
-    const filePath = `${crypto.randomUUID()}.${extension}`;
+    const filePath = createProfilePhotoPath(userId, file.type);
     const { error } = await supabase.storage
-      .from("profile-photos")
-      .upload(filePath, file, { cacheControl: "3600", upsert: false });
+      .from(PROFILE_PHOTO_BUCKET)
+      .upload(filePath, file, { cacheControl: "3600", contentType: file.type, upsert: false });
 
     if (error) {
       setPhotoError("Upload failed. Please try another image.");
@@ -320,7 +327,7 @@ export default function Page1BasicInfo({ formData, setFormData, onNext }: Profil
       return;
     }
 
-    const { data } = supabase.storage.from("profile-photos").getPublicUrl(filePath);
+    const { data } = supabase.storage.from(PROFILE_PHOTO_BUCKET).getPublicUrl(filePath);
     setFormData((prev) => ({ ...prev, avatarUrl: data.publicUrl }));
     setUploading(false);
   };

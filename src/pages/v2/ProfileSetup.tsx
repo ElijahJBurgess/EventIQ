@@ -133,7 +133,7 @@ export default function ProfileSetup() {
         ) : (
           <div className="bg-white">
             {currentPage === 1 && (
-              <Page1BasicInfo formData={formData} setFormData={setFormData} onNext={onNext} onBack={onBack} />
+              <Page1BasicInfo userId={user!.id} formData={formData} setFormData={setFormData} onNext={onNext} onBack={onBack} />
             )}
             {currentPage === 2 && (
               <Page2Goals formData={formData} setFormData={setFormData} onNext={onNext} onBack={onBack} />

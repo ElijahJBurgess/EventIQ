@@ -61,6 +61,8 @@ beforeEach(() => {
   mocks.authState.loading = false;
   mocks.authState.isPasswordRecovery = false;
   window.history.replaceState({}, "", "/");
+  mocks.signUp.mockResolvedValue({ error: null, requiresEmailConfirmation: true });
+  mocks.signIn.mockResolvedValue({ error: null });
 });
 
 afterEach(cleanup);
@@ -84,6 +86,31 @@ describe("forgot password", () => {
   );
 });
 
+describe("verified-email signup", () => {
+  it("requires eight characters and does not submit a short password", () => {
+    render(<MemoryRouter initialEntries={["/v2/auth?mode=signup"]}><AuthV2 /></MemoryRouter>);
+    fireEvent.change(screen.getByPlaceholderText("Full name"), { target: { value: "Avery Morgan" } });
+    fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "avery@example.com" } });
+    fireEvent.change(screen.getByPlaceholderText("Password"), { target: { value: "short7" } });
+    fireEvent.submit(screen.getByRole("button", { name: "Create account" }).closest("form")!);
+
+    expect(mocks.toastError).toHaveBeenCalledWith("Password must be at least 8 characters.");
+    expect(mocks.signUp).not.toHaveBeenCalled();
+  });
+
+  it("shows verification instructions without attempting an immediate sign-in", async () => {
+    render(<MemoryRouter initialEntries={["/v2/auth?mode=signup"]}><AuthV2 /></MemoryRouter>);
+    fireEvent.change(screen.getByPlaceholderText("Full name"), { target: { value: "Avery Morgan" } });
+    fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "avery@example.com" } });
+    fireEvent.change(screen.getByPlaceholderText("Password"), { target: { value: "secure88" } });
+    fireEvent.submit(screen.getByRole("button", { name: "Create account" }).closest("form")!);
+
+    expect(await screen.findByRole("status")).toHaveTextContent("Check your email to verify your address.");
+    expect(mocks.signUp).toHaveBeenCalledWith("avery@example.com", "secure88", "Avery Morgan");
+    expect(mocks.signIn).not.toHaveBeenCalled();
+  });
+});
+
 describe("reset password", () => {
   beforeEach(() => {
     mocks.authState.session = { access_token: "recovery-session" };
@@ -103,6 +130,16 @@ describe("reset password", () => {
     fireEvent.submit(screen.getByRole("button", { name: "Update password" }).closest("form")!);
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Passwords must match.");
+    expect(mocks.updatePassword).not.toHaveBeenCalled();
+  });
+
+  it("rejects a password below the shared eight-character minimum", async () => {
+    renderReset();
+    fireEvent.change(screen.getByLabelText("New password"), { target: { value: "short7" } });
+    fireEvent.change(screen.getByLabelText("Confirm password"), { target: { value: "short7" } });
+    fireEvent.submit(screen.getByRole("button", { name: "Update password" }).closest("form")!);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Password must be at least 8 characters.");
     expect(mocks.updatePassword).not.toHaveBeenCalled();
   });
 

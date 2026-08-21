@@ -147,7 +147,7 @@ export default function MatchesTab({
         .eq("event_id", selectedEventId)
         .order("match_score", { ascending: false }),
       supabase
-        .from("event_registrations")
+        .from("matched_event_attendance")
         .select("profile_id")
         .eq("event_id", selectedEventId)
         .eq("is_checked_in", true)

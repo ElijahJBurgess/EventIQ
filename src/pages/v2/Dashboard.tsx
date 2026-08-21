@@ -373,10 +373,7 @@ function HomeTab({
       }
 
       const [registrationResult, matchResult, topMatchResult, incomingResult, unreadResult, meetingResult, connectionResult] = await Promise.all([
-        supabase
-          .from("event_registrations")
-          .select("id", { count: "exact", head: true })
-          .eq("event_id", activeEvent.id),
+        supabase.rpc("get_event_attendance_counts", { p_event_id: activeEvent.id }),
         supabase
           .from("matches")
           .select("id", { count: "exact", head: true })
@@ -540,7 +537,7 @@ function HomeTab({
           eventLocation: activeEvent.location,
           eventDate: activeEvent.date,
           eventEndDate: activeEvent.end_date,
-          registrations: registrationResult.count ?? 0,
+          registrations: Number(registrationResult.data?.[0]?.registered_count ?? 0),
           strongMatches: matchResult.count ?? 0,
           pendingRequests,
           unreadMessages: unreadResult.count ?? 0,

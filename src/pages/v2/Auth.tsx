@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/v2/AuthProvider";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { meetsPasswordMinimum, PASSWORD_MIN_LENGTH, PASSWORD_REQUIREMENT_MESSAGE } from "@/lib/authSecurity";
 
 export default function AuthV2() {
   const navigate = useNavigate();
@@ -20,6 +21,7 @@ export default function AuthV2() {
   const [fullName, setFullName] = useState("");
   const [busy, setBusy] = useState(false);
   const [resetRequested, setResetRequested] = useState(false);
+  const [verificationRequested, setVerificationRequested] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,17 +35,17 @@ export default function AuthV2() {
         }
         setResetRequested(true);
       } else if (mode === "signup") {
-        const { error } = await signUp(email, password, fullName);
+        if (!meetsPasswordMinimum(password)) {
+          toast.error(PASSWORD_REQUIREMENT_MESSAGE);
+          return;
+        }
+        const { error, requiresEmailConfirmation } = await signUp(email, password, fullName);
         if (error) return toast.error(error);
-        // Email auto-confirm is on for the demo — sign straight in.
-        const { error: signInError } = await signIn(email, password);
-        if (signInError) {
-          toast.success("Account created — you can now sign in.");
-          setMode("signin");
+        if (requiresEmailConfirmation) {
+          setVerificationRequested(true);
           return;
         }
         toast.success("Welcome to OFFRIP");
-        // New profiles are never complete yet — always start at setup.
         navigate("/v2/setup");
       } else {
         const { error } = await signIn(email, password);
@@ -95,7 +97,23 @@ export default function AuthV2() {
           </div>
         )}
 
-        {resetRequested ? (
+        {verificationRequested ? (
+          <div className="space-y-5" role="status">
+            <div className="border border-black bg-offrip-aqua px-4 py-4 text-sm normal-case font-offrip-body leading-relaxed">
+              Check your email to verify your address. After verification, return to OFFRIP and sign in.
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setVerificationRequested(false);
+                setMode("signin");
+              }}
+              className="w-full bg-black text-white py-3.5 hover:bg-offrip-aqua hover:text-black text-[11px] transition-colors"
+            >
+              Back to sign in
+            </button>
+          </div>
+        ) : resetRequested ? (
           <div className="space-y-5" role="status">
             <div className="border border-black bg-offrip-aqua px-4 py-4 text-sm normal-case font-offrip-body leading-relaxed">
               If an account exists for that email, you'll receive a password reset email shortly.
@@ -138,8 +156,11 @@ export default function AuthV2() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={mode === "signup" ? PASSWORD_MIN_LENGTH : undefined}
             />
+          )}
+          {mode === "signup" && (
+            <p className="text-xs text-black/40 normal-case font-offrip-body">Use at least {PASSWORD_MIN_LENGTH} characters.</p>
           )}
           <button
             type="submit"

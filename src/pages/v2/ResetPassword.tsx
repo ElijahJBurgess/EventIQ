@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/v2/AuthProvider";
+import { meetsPasswordMinimum, PASSWORD_MIN_LENGTH, PASSWORD_REQUIREMENT_MESSAGE } from "@/lib/authSecurity";
 
 function hasRecoveryError() {
   const query = new URLSearchParams(window.location.search);
@@ -24,6 +25,10 @@ export default function ResetPassword() {
 
     if (password !== confirmPassword) {
       setFormError("Passwords must match.");
+      return;
+    }
+    if (!meetsPasswordMinimum(password)) {
+      setFormError(PASSWORD_REQUIREMENT_MESSAGE);
       return;
     }
 
@@ -83,7 +88,7 @@ export default function ResetPassword() {
                 value={password}
                 onChange={(event) => setPassword(event.target.value)}
                 required
-                minLength={6}
+                minLength={PASSWORD_MIN_LENGTH}
               />
               <input
                 type="password"
@@ -94,7 +99,7 @@ export default function ResetPassword() {
                 value={confirmPassword}
                 onChange={(event) => setConfirmPassword(event.target.value)}
                 required
-                minLength={6}
+                minLength={PASSWORD_MIN_LENGTH}
               />
               {formError && (
                 <div className="border border-black px-4 py-3 text-sm normal-case font-offrip-body" role="alert">{formError}</div>

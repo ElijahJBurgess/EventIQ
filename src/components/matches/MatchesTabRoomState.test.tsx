@@ -37,7 +37,7 @@ vi.mock("@/integrations/supabase/client", () => {
       let data: unknown[] = [];
       if (table === "event_registrations" && columns === "event_id") data = registrations;
       if (table === "events") data = events;
-      if (table === "event_registrations" && columns === "profile_id") {
+      if (table === "matched_event_attendance" && columns === "profile_id") {
         data = eventId === "room-a" ? [{ profile_id: "person-a" }] : [{ profile_id: "person-b" }];
       }
       if (table === "matches") {

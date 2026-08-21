@@ -197,6 +197,7 @@ test("Supabase source selects no message content, email, LinkedIn, URLs, or unre
   } as unknown as ConciergeQueryClient;
   const databaseSource = createSupabaseContextSource(client);
   await databaseSource.getCurrentProfile(USER_ID);
+  await databaseSource.getCheckedInProfileIds(EVENT_ID);
   await databaseSource.getProfiles(["person-0"]);
   await databaseSource.getMessageFacts(USER_ID, EVENT_ID, ["match-0"]);
 
@@ -208,4 +209,6 @@ test("Supabase source selects no message content, email, LinkedIn, URLs, or unre
   assert.equal(selectedText.includes("bio"), false);
   assert.equal(selections.some((selection) => selection.table === "profiles"), true);
   assert.equal(selections.some((selection) => selection.table === "attendee_profiles"), true);
+  assert.equal(selections.some((selection) => selection.table === "matched_event_attendance"), true);
+  assert.equal(selections.some((selection) => selection.table === "event_registrations"), false);
 });

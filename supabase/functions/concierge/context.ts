@@ -511,7 +511,7 @@ export function createSupabaseContextSource(client: ConciergeQueryClient): Conci
       return unwrap(result, "match lookup");
     },
     async getCheckedInProfileIds(eventId) {
-      const result = await client.from<{ profile_id: string | null }>("event_registrations")
+      const result = await client.from<{ profile_id: string | null }>("matched_event_attendance")
         .select("profile_id")
         .eq("event_id", eventId)
         .eq("is_checked_in", true);

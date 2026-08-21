@@ -1,5 +1,33 @@
 project_id = "qdknsjoddmrvwjrrwwiq"
 
+[auth]
+site_url = "https://event-iq-six.vercel.app"
+minimum_password_length = 8
+additional_redirect_urls = [
+  "https://event-iq-six.vercel.app/v2",
+  "https://event-iq-six.vercel.app/v2/reset-password",
+  "http://localhost:8080",
+  "http://localhost:8080/v2",
+  "http://localhost:8080/v2/reset-password",
+  "http://127.0.0.1:8080",
+  "http://127.0.0.1:8080/v2",
+  "http://127.0.0.1:8080/v2/reset-password",
+]
+
+[auth.email]
+enable_confirmations = true
+double_confirm_changes = true
+max_frequency = "1m"
+otp_length = 8
+otp_expiry = 3600
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
+[storage.vector]
+enabled = false
+
 [functions.admin-auth]
 verify_jwt = false
 

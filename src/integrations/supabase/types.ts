@@ -1388,14 +1388,75 @@ export type Database = {
         }
         Relationships: []
       }
+      matched_event_attendance: {
+        Row: {
+          event_id: string | null
+          is_checked_in: boolean | null
+          profile_id: string | null
+        }
+        Insert: {
+          event_id?: string | null
+          is_checked_in?: boolean | null
+          profile_id?: string | null
+        }
+        Update: {
+          event_id?: string | null
+          is_checked_in?: boolean | null
+          profile_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_registrations_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_registrations_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "attendee_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_registrations_profile_id_fkey"
+            columns: ["profile_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
+      complete_meeting: { Args: { p_meeting_id: string }; Returns: boolean }
+      get_event_attendance_counts: {
+        Args: { p_event_id: string }
+        Returns: {
+          checked_in_count: number
+          registered_count: number
+        }[]
+      }
       mark_message_thread_read: {
         Args: { p_match_id: string }
         Returns: number
       }
       mark_notification_read: {
         Args: { notification_id: string }
+        Returns: boolean
+      }
+      request_meeting: { Args: { p_match_id: string }; Returns: string }
+      respond_to_meeting: {
+        Args: { p_meeting_id: string; p_response: string }
+        Returns: boolean
+      }
+      schedule_meeting: {
+        Args: {
+          p_location_note: string
+          p_meeting_id: string
+          p_scheduled_at: string
+        }
         Returns: boolean
       }
       search_us_cities: {

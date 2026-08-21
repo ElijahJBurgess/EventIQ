@@ -282,19 +282,7 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
       return;
     }
 
-    const requestedAt = new Date().toISOString();
-    const { data, error } = await supabase
-      .from("meetings")
-      .insert({
-        match_id: matchId,
-        event_id: eventId,
-        requester_id: userId,
-        recipient_id: other.id,
-        status: "requested",
-        requested_at: requestedAt,
-      })
-      .select("id, status, requester_id, recipient_id, requested_at, scheduled_at, location_note, duration_minutes, completed_at")
-      .single();
+    const { error } = await supabase.rpc("request_meeting", { p_match_id: matchId });
 
     setRequestingMeeting(false);
     if (error) {
@@ -302,7 +290,7 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
       return;
     }
 
-    setMeeting(data as MeetingRow);
+    await loadMeeting();
     toast.success(`Meeting request sent to ${other.full_name ?? "this member"}`);
   };
 
@@ -310,14 +298,10 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
     if (!meeting || meeting.status !== "requested" || meeting.recipient_id !== userId || respondingToMeeting) return;
     setRespondingToMeeting(status);
 
-    const { data, error } = await supabase
-      .from("meetings")
-      .update({ status, responded_at: new Date().toISOString() })
-      .eq("id", meeting.id)
-      .eq("status", "requested")
-      .eq("recipient_id", userId)
-      .select("id, status, requester_id, recipient_id, requested_at, scheduled_at, location_note, duration_minutes, completed_at")
-      .single();
+    const { error } = await supabase.rpc("respond_to_meeting", {
+      p_meeting_id: meeting.id,
+      p_response: status,
+    });
 
     setRespondingToMeeting(null);
     if (error) {
@@ -326,7 +310,7 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
       return;
     }
 
-    setMeeting(data as MeetingRow);
+    await loadMeeting();
     if (status === "declined") {
       setDeclinedRequesterIds((current) => [...new Set([...current, meeting.requester_id])]);
     }
@@ -352,17 +336,11 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
     }
 
     setSchedulingMeeting(true);
-    const { data, error } = await supabase
-      .from("meetings")
-      .update({
-        status: "scheduled",
-        scheduled_at: selectedDateTime.toISOString(),
-        location_note: location,
-      })
-      .eq("id", meeting.id)
-      .eq("status", "accepted")
-      .select("id, status, requester_id, recipient_id, requested_at, scheduled_at, location_note, duration_minutes, completed_at")
-      .single();
+    const { error } = await supabase.rpc("schedule_meeting", {
+      p_meeting_id: meeting.id,
+      p_scheduled_at: selectedDateTime.toISOString(),
+      p_location_note: location,
+    });
 
     setSchedulingMeeting(false);
     if (error) {
@@ -371,7 +349,7 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
       return;
     }
 
-    setMeeting(data as MeetingRow);
+    await loadMeeting();
     toast.success("Meeting scheduled");
   };
 
@@ -418,13 +396,7 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
     if (!meeting || meeting.status !== "scheduled" || completingMeeting) return;
     setCompletingMeeting(true);
 
-    const { data, error } = await supabase
-      .from("meetings")
-      .update({ status: "completed", completed_at: new Date().toISOString() })
-      .eq("id", meeting.id)
-      .eq("status", "scheduled")
-      .select("id, status, requester_id, recipient_id, requested_at, scheduled_at, location_note, duration_minutes, completed_at")
-      .single();
+    const { error } = await supabase.rpc("complete_meeting", { p_meeting_id: meeting.id });
 
     setCompletingMeeting(false);
     if (error) {
@@ -433,7 +405,7 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
       return;
     }
 
-    setMeeting(data as MeetingRow);
+    await loadMeeting();
     toast.success("Meeting marked complete");
   };
 
