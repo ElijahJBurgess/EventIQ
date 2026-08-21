@@ -1072,12 +1072,17 @@ function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (
       return;
     }
 
-    const { error } = await supabase.from("event_registrations").insert({
-      event_id: eventId,
-      profile_id: userId,
-      registration_type: "attendee",
-      status: "registered",
-    });
+    const { error } = await supabase
+      .from("event_registrations")
+      .upsert({
+        event_id: eventId,
+        profile_id: userId,
+        registration_type: "attendee",
+        status: "registered",
+      }, {
+        onConflict: "event_id,profile_id",
+        ignoreDuplicates: true,
+      });
 
     if (error) {
       setJoiningEventId(null);

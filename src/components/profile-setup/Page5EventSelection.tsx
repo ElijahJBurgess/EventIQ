@@ -53,12 +53,17 @@ export default function Page5EventSelection({ profileId, onContinue }: Page5Even
     setJoinError("");
     setJoiningEventId(eventId);
 
-    const { error } = await supabase.from("event_registrations").insert({
-      event_id: eventId,
-      profile_id: profileId,
-      registration_type: "attendee",
-      status: "registered",
-    });
+    const { error } = await supabase
+      .from("event_registrations")
+      .upsert({
+        event_id: eventId,
+        profile_id: profileId,
+        registration_type: "attendee",
+        status: "registered",
+      }, {
+        onConflict: "event_id,profile_id",
+        ignoreDuplicates: true,
+      });
 
     setJoiningEventId(null);
 
