@@ -42,7 +42,7 @@ export default function AuthV2() {
           setMode("signin");
           return;
         }
-        toast.success("Welcome to OOO Intelligence v2");
+        toast.success("Welcome to OFFRIP");
         // New profiles are never complete yet — always start at setup.
         navigate("/v2/setup");
       } else {

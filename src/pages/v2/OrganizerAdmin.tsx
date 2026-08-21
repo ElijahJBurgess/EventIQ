@@ -199,8 +199,8 @@ export default function OrganizerAdmin() {
                       </div>
                       <div className="mt-6 pt-6 border-t-2 border-primary">
                         <div className="mb-4">
-                          <p className="font-label text-xs text-muted-foreground">Key outcome</p>
-                          <h3 className="text-xl mt-1">Meeting outcomes</h3>
+                          <p className="font-label text-xs text-muted-foreground">Meeting activity</p>
+                          <h3 className="text-xl mt-1">Meeting status</h3>
                         </div>
                         <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
                           {([

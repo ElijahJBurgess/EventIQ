@@ -67,13 +67,22 @@ function getMatchLabel(score: number) {
   return { text: "Potential Match", className: "bg-muted text-muted-foreground" };
 }
 
-export default function MatchesTab({ userId, initialEventId, onViewFullProfile }: { userId: string; initialEventId?: string; onViewFullProfile: (matchId: string) => void }) {
+export default function MatchesTab({
+  userId,
+  selectedEventId,
+  onSelectedEventChange,
+  onViewFullProfile,
+}: {
+  userId: string;
+  selectedEventId?: string;
+  onSelectedEventChange: (eventId: string | undefined) => void;
+  onViewFullProfile: (matchId: string) => void;
+}) {
   const [matches, setMatches] = useState<EnrichedMatch[]>([]);
   const [loading, setLoading] = useState(true);
   const [running, setRunning] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [joinedEvents, setJoinedEvents] = useState<JoinedEvent[]>([]);
-  const [selectedEventId, setSelectedEventId] = useState("");
   const [eligibleCount, setEligibleCount] = useState(0);
 
   useEffect(() => {
@@ -99,7 +108,7 @@ export default function MatchesTab({ userId, initialEventId, onViewFullProfile }
 
       if (eventIds.length === 0) {
         setJoinedEvents([]);
-        setSelectedEventId("");
+        if (selectedEventId !== undefined) onSelectedEventChange(undefined);
         setMatches([]);
         setLoading(false);
         return;
@@ -120,17 +129,17 @@ export default function MatchesTab({ userId, initialEventId, onViewFullProfile }
 
       const nextEvents = (events as JoinedEvent[] | null) ?? [];
       setJoinedEvents(nextEvents);
-      setSelectedEventId((current) => {
-        if (initialEventId && nextEvents.some((event) => event.id === initialEventId)) return initialEventId;
-        return current && nextEvents.some((event) => event.id === current) ? current : (nextEvents[0]?.id ?? "");
-      });
+      const nextSelectedEventId = selectedEventId && nextEvents.some((event) => event.id === selectedEventId)
+        ? selectedEventId
+        : nextEvents[0]?.id;
+      if (nextSelectedEventId !== selectedEventId) onSelectedEventChange(nextSelectedEventId);
     };
 
     loadJoinedEvents();
     return () => {
       cancelled = true;
     };
-  }, [initialEventId, userId]);
+  }, [onSelectedEventChange, selectedEventId, userId]);
 
   const loadMatches = useCallback(async () => {
     if (!selectedEventId) return;
@@ -268,8 +277,8 @@ export default function MatchesTab({ userId, initialEventId, onViewFullProfile }
           <label className="mt-4 block text-xs font-label">
             Event
             <select
-              value={selectedEventId}
-              onChange={(event) => setSelectedEventId(event.target.value)}
+              value={selectedEventId ?? ""}
+              onChange={(event) => onSelectedEventChange(event.target.value)}
               className="mt-2 w-full sm:max-w-xs ooo-border bg-card px-3 py-2 normal-case font-sans"
             >
               {joinedEvents.map((event) => (

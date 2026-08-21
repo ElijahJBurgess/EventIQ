@@ -58,7 +58,10 @@ const App = () => (
             <Route path="/v2/admin" element={<OrganizerAdmin />} />
             <Route path="/v2/setup" element={<ProtectedRoute><ProfileSetupV2 /></ProtectedRoute>} />
             <Route path="/v2" element={<ProtectedRoute><DashboardV2 /></ProtectedRoute>} />
-            <Route path="/offrip-preview" element={<OffripPreview />} />
+            <Route
+              path="/offrip-preview"
+              element={import.meta.env.DEV ? <OffripPreview /> : <Navigate to="/" replace />}
+            />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
           </Routes>

@@ -2,3 +2,6 @@ project_id = "qdknsjoddmrvwjrrwwiq"
 
 [functions.admin-auth]
 verify_jwt = false
+
+[functions.concierge]
+verify_jwt = true

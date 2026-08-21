@@ -4,6 +4,8 @@ import { useAuth } from "@/v2/AuthProvider";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import FullProfileView from "@/components/matches/FullProfileView";
+import ConciergeTab from "@/components/concierge/ConciergeTab";
+import { useConciergeSession } from "@/components/concierge/useConciergeSession";
 import MatchesTab from "@/components/matches/MatchesTab";
 import MessagesTab from "@/components/messages/MessagesTab";
 import NotificationBell from "@/components/notifications/NotificationBell";
@@ -21,15 +23,16 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { buildConnectionSummary } from "@/lib/connectionSummary";
 
-type Tab = "home" | "profile" | "events" | "matches" | "connections" | "messages" | "myday";
+type Tab = "home" | "profile" | "events" | "matches" | "concierge" | "connections" | "messages" | "myday";
 type NavItem = Exclude<Tab, "profile" | "myday"> | "enterprise";
 
-const NAV_ITEMS: NavItem[] = ["home", "events", "matches", "connections", "messages"];
+const NAV_ITEMS: NavItem[] = ["home", "events", "matches", "concierge", "connections", "messages"];
 
 const NAV_LABELS: Record<NavItem, string> = {
   home: "Home",
   events: "Rooms",
   matches: "People",
+  concierge: "Concierge",
   connections: "Connections",
   messages: "Messages",
   enterprise: "Enterprise",
@@ -122,11 +125,12 @@ export default function DashboardV2() {
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("home");
-  const [peopleEventId, setPeopleEventId] = useState<string | undefined>();
+  const [selectedEventId, setSelectedEventId] = useState<string | undefined>();
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
   const [notificationMatchId, setNotificationMatchId] = useState<string | null>(null);
+  const conciergeSession = useConciergeSession({ selectedEventId });
   const [editingFullProfile, setEditingFullProfile] = useState(false);
   // Set from either Home or Matches; whichever tab was active when this was
   // set is exactly the tab the user lands back on, since `tab` itself is
@@ -190,7 +194,7 @@ export default function DashboardV2() {
       <header className="bg-white border-b border-black sticky top-0 z-20">
         <div className="max-w-7xl mx-auto px-6 h-14 flex items-center gap-10">
           <button onClick={() => selectNavigationItem("home")} className="font-display text-xl tracking-tight leading-none normal-case shrink-0">OFFRIP</button>
-          <nav className="hidden md:flex items-center gap-6 flex-1">
+          <nav aria-label="Attendee navigation" className="hidden md:flex items-center gap-6 flex-1">
             {NAV_ITEMS.map((t) => (
               <button
                 key={t}
@@ -236,7 +240,7 @@ export default function DashboardV2() {
             </DropdownMenu>
           </div>
         </div>
-        <div className="md:hidden flex overflow-x-auto border-t border-black">
+        <nav aria-label="Mobile attendee navigation" className="md:hidden flex overflow-x-auto border-t border-black">
           {NAV_ITEMS.map((t) => (
             <button key={t} onClick={() => selectNavigationItem(t)} className={`relative shrink-0 px-4 py-2.5 text-[10px] tracking-widest ${tab === t ? "bg-black text-white" : "text-black/40"}`}>
               {NAV_LABELS[t]}
@@ -245,7 +249,7 @@ export default function DashboardV2() {
               )}
             </button>
           ))}
-        </div>
+        </nav>
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-8">
@@ -254,12 +258,12 @@ export default function DashboardV2() {
             matchId={viewingMatchId}
             currentUserId={user!.id}
             onBack={() => setViewingMatchId(null)}
-            backLabel={tab === "myday" ? "Back to My Day" : undefined}
+            backLabel={tab === "myday" ? "Back to My Day" : tab === "concierge" ? "Back to Concierge" : undefined}
           />
         ) : (
           <>
             {tab === "home" && (
-              <HomeTab profile={profile} userId={user!.id} onSeeRoom={(eventId) => { setPeopleEventId(eventId); setTab("matches"); }} onSeeDay={() => setTab("myday")} onViewFullProfile={setViewingMatchId} />
+              <HomeTab profile={profile} userId={user!.id} onSeeRoom={(eventId) => { setSelectedEventId(eventId); setTab("matches"); }} onSeeDay={() => setTab("myday")} onViewFullProfile={setViewingMatchId} />
             )}
             {tab === "profile" && editingFullProfile && (
               <EditProfileScreen
@@ -271,8 +275,29 @@ export default function DashboardV2() {
                 onSaved={loadProfile}
               />
             )}
-            {tab === "events" && <EventsTab userId={user!.id} onViewMatches={(eventId) => { setPeopleEventId(eventId); setTab("matches"); }} />}
-            {tab === "matches" && <MatchesTab userId={user!.id} initialEventId={peopleEventId} onViewFullProfile={setViewingMatchId} />}
+            {tab === "events" && <EventsTab userId={user!.id} onViewMatches={(eventId) => { setSelectedEventId(eventId); setTab("matches"); }} />}
+            {tab === "matches" && (
+              <MatchesTab
+                userId={user!.id}
+                selectedEventId={selectedEventId}
+                onSelectedEventChange={setSelectedEventId}
+                onViewFullProfile={setViewingMatchId}
+              />
+            )}
+            {tab === "concierge" && (
+              <ConciergeTab
+                messages={conciergeSession.messages}
+                draft={conciergeSession.draft}
+                onDraftChange={conciergeSession.setDraft}
+                selectedEventId={selectedEventId}
+                loading={conciergeSession.loading}
+                inlineError={conciergeSession.inlineError}
+                onSubmit={conciergeSession.submit}
+                onRetry={conciergeSession.retry}
+                onViewProfile={setViewingMatchId}
+                onViewMyDay={() => setTab("myday")}
+              />
+            )}
             {tab === "connections" && <ConnectionsTab userId={user!.id} />}
             {tab === "messages" && (
               <MessagesTab
