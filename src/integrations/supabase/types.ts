@@ -489,16 +489,23 @@ export type Database = {
       }
       matches: {
         Row: {
+          a_to_b_confidence: number | null
+          a_to_b_score: number | null
           ai_explanation: string | null
+          b_to_a_confidence: number | null
+          b_to_a_score: number | null
           conversation_starters: string[] | null
           event_id: string | null
           generated_at: string | null
           id: string
           match_details: Json | null
+          match_evidence: Json
           match_reason: string | null
           match_score: number | null
           recommended_next_step: string | null
+          reciprocity_label: string | null
           score_breakdown: Json | null
+          score_version: string
           shared_communities: string[] | null
           shared_goals: string[] | null
           shared_industries: string[] | null
@@ -507,16 +514,23 @@ export type Database = {
           user_b_id: string | null
         }
         Insert: {
+          a_to_b_confidence?: number | null
+          a_to_b_score?: number | null
           ai_explanation?: string | null
+          b_to_a_confidence?: number | null
+          b_to_a_score?: number | null
           conversation_starters?: string[] | null
           event_id?: string | null
           generated_at?: string | null
           id?: string
           match_details?: Json | null
+          match_evidence?: Json
           match_reason?: string | null
           match_score?: number | null
           recommended_next_step?: string | null
+          reciprocity_label?: string | null
           score_breakdown?: Json | null
+          score_version?: string
           shared_communities?: string[] | null
           shared_goals?: string[] | null
           shared_industries?: string[] | null
@@ -525,16 +539,23 @@ export type Database = {
           user_b_id?: string | null
         }
         Update: {
+          a_to_b_confidence?: number | null
+          a_to_b_score?: number | null
           ai_explanation?: string | null
+          b_to_a_confidence?: number | null
+          b_to_a_score?: number | null
           conversation_starters?: string[] | null
           event_id?: string | null
           generated_at?: string | null
           id?: string
           match_details?: Json | null
+          match_evidence?: Json
           match_reason?: string | null
           match_score?: number | null
           recommended_next_step?: string | null
+          reciprocity_label?: string | null
           score_breakdown?: Json | null
+          score_version?: string
           shared_communities?: string[] | null
           shared_goals?: string[] | null
           shared_industries?: string[] | null

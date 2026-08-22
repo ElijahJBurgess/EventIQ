@@ -29,6 +29,7 @@ export interface MatchEngineAuthClient {
 export interface MatchEngineResult {
   matchesGenerated: number;
   matchesSaved: number;
+  matchesUpdated?: number;
   skippedDuplicates: number;
 }
 

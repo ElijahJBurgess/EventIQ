@@ -44,10 +44,15 @@ function match(index: number, score: number, overrides: Partial<MatchRow> = {}):
     event_id: EVENT_ID,
     user_a_id: USER_ID,
     user_b_id: `person-${index}`,
-    match_score: score,
+    a_to_b_score: score,
+    b_to_a_score: score,
+    a_to_b_confidence: 85,
+    b_to_a_confidence: 85,
+    reciprocity_label: "You Can Help Each Other",
     match_reason: `Persisted reason ${index}`,
     ai_explanation: `Persisted explanation ${index}`,
-    score_breakdown: { goals: score },
+    score_breakdown: { aToB: { goals: score }, bToA: { goals: score } },
+    match_evidence: { aToB: [{ side: "a" }], bToA: [{ side: "b" }] },
     match_details: { matchedGoals: [{ goalA: "Raise capital", goalB: "Meet founders" }] },
     shared_goals: ["Growth"],
     shared_interests: ["AI"],
@@ -110,6 +115,31 @@ test("keeps only the current event, current user's checked-in matches, ordered t
   assert.equal(context.checkedInMatches.some((entry) => entry.trusted.profileId === "absent-person"), false);
   assert.equal(context.checkedInMatches.some((entry) => entry.trusted.profileId === "unrelated-person"), false);
   assert.equal(context.checkedInMatches.some((entry) => entry.trusted.eventId !== EVENT_ID), false);
+});
+
+test("uses viewer-directional V2 values and filters low score or confidence", async () => {
+  const context = await buildConciergeContext(source({
+    getMatches: async () => [
+      match(0, 99, {
+        user_a_id: "person-0",
+        user_b_id: USER_ID,
+        b_to_a_score: 74,
+        b_to_a_confidence: 78,
+        reciprocity_label: "They Can Help You",
+        score_breakdown: { aToB: { goals: 99 }, bToA: { goals: 74 } },
+      }),
+      match(1, 95, { b_to_a_score: 40, a_to_b_score: 59 }),
+      match(2, 94, { a_to_b_score: 88, a_to_b_confidence: 69 }),
+    ],
+    getCheckedInProfileIds: async () => ["person-0", "person-1", "person-2"],
+  }), USER_ID, EVENT_ID);
+
+  assert.deepEqual(context.checkedInMatches.map((entry) => entry.trusted.matchId), ["match-0"]);
+  assert.equal(context.checkedInMatches[0].trusted.persistedScore, 74);
+  assert.equal(context.checkedInMatches[0].trusted.persistedConfidence, 78);
+  assert.deepEqual(context.checkedInMatches[0].persistedMatchEvidence.scoreBreakdown, { goals: 74 });
+  assert.deepEqual(context.checkedInMatches[0].persistedMatchEvidence.matchEvidence, [{ side: "b" }]);
+  assert.equal(context.checkedInMatches[0].persistedMatchEvidence.reciprocityLabel, "You Can Help Them");
 });
 
 test("includes relationship and meeting facts only for authorized exact participant pairs", async () => {

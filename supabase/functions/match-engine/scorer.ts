@@ -1,26 +1,33 @@
-// Core scoring function for the OOO Intelligence matching engine.
-//
-// Self-contained on purpose: this will eventually run inside a Supabase Edge
-// Function (Deno runtime), which can't import from the Vite `src/` app tree.
-// The Profile shape below is a trimmed, scoring-relevant subset of the real
-// `profiles` table columns (see src/integrations/supabase/types.ts).
+// OFFRIP Matching Rubric V2. Scores are directional: viewer -> candidate.
+
+export const SCORE_VERSION = "v2";
 
 export interface Profile {
   id: string;
   full_name: string | null;
   location: string | null;
+  location_city?: string | null;
+  location_state_code?: string | null;
+  location_preference?: string | null;
   role_type: string | null;
   secondary_role_types: string[];
   company: string | null;
   title: string | null;
+  primary_function?: string | null;
+  additional_functions?: string[] | null;
+  seniority?: string | null;
+  career_level_preference?: string[] | null;
   who_to_meet: string[] | null;
   desired_outcomes: string[] | null;
   areas_of_expertise: string[] | null;
+  expertise_sought?: string[] | null;
   matching_goal: string | null;
   primary_goal: string | null;
   secondary_goals: string[] | null;
   role_details: Record<string, unknown> | null;
   industry_focus: string[] | null;
+  industries?: string[] | null;
+  industry_preference?: string | null;
   needs: string[] | null;
   offers: string[] | null;
   connection_preference?: string[] | null;
@@ -29,864 +36,556 @@ export interface Profile {
   hobbies: string[] | null;
   music_interests: string[] | null;
   favorite_conferences: string[] | null;
+  profile_completed?: boolean | null;
+  profile_completion_score?: number | null;
+  updated_at?: string | null;
+  linkedin_url?: string | null;
 }
 
+export type ComponentName =
+  | "goalToValueFit"
+  | "targetPersonFit"
+  | "needToOfferFit"
+  | "expertiseFit"
+  | "opportunityCompatibility"
+  | "timingConnectionFit"
+  | "contextFit";
+
+export interface MatchEvidenceItem {
+  component: ComponentName;
+  score: number;
+  viewerField: string;
+  viewerValue: string;
+  candidateField: string;
+  candidateValue: string;
+  mapping: string;
+}
+
+export interface ComponentBreakdown {
+  score: number | null;
+  weight: number;
+  evidence: MatchEvidenceItem[];
+}
+
+export type DirectionalScoreBreakdown = Record<ComponentName, ComponentBreakdown> & {
+  applicableWeight: number;
+  weightedPoints: number;
+};
+
 export interface ScoreBreakdown {
-  eventGoalAlignment: number;
-  whoToMeetAlignment: number;
-  roleComplementarity: number;
-  expertiseAlignment: number;
-  sharedInterests: number;
-  locationRelevance: number;
-  needsOffersAToB: number;
-  needsOffersBToA: number;
-  needsOffersReciprocal: number;
-  opportunityCompatibility: number | null;
-  timingConnectionCompatibility: number | null;
+  aToB: DirectionalScoreBreakdown;
+  bToA: DirectionalScoreBreakdown;
+}
+
+export interface MatchEvidence {
+  aToB: MatchEvidenceItem[];
+  bToA: MatchEvidenceItem[];
 }
 
 export interface MatchResult {
+  aToBScore: number;
+  bToAScore: number;
+  aToBConfidence: number;
+  bToAConfidence: number;
+  reciprocityLabel: "You Can Help Each Other" | "They Can Help You" | "You Can Help Them" | "Potential Connection";
+  scoreVersion: typeof SCORE_VERSION;
+  scoreBreakdown: ScoreBreakdown;
+  matchEvidence: MatchEvidence;
+  aToBReasons: string[];
+  bToAReasons: string[];
+  // Transitional aliases for backend callers that have not switched storage yet.
   score: number;
   label: string;
-  scoreBreakdown: ScoreBreakdown;
   matchReasons: string[];
 }
 
-// ---------------------------------------------------------------------------
-// small helpers
-// ---------------------------------------------------------------------------
+const WEIGHTS: Record<ComponentName, number> = {
+  goalToValueFit: 35,
+  targetPersonFit: 20,
+  needToOfferFit: 15,
+  expertiseFit: 10,
+  opportunityCompatibility: 10,
+  timingConnectionFit: 5,
+  contextFit: 5,
+};
 
 const norm = (value: string) => value.trim().toLowerCase();
+const present = (values?: string[] | null) => (values ?? []).filter((value) => value.trim().length > 0);
+const roles = (profile: Profile) => present([profile.role_type ?? "", ...profile.secondary_role_types]);
+const functions = (profile: Profile) => present([profile.primary_function ?? "", ...(profile.additional_functions ?? [])]);
+const industries = (profile: Profile) => present(profile.industries?.length ? profile.industries : profile.industry_focus);
+const unique = (values: string[]) => [...new Map(values.map((value) => [norm(value), value])).values()];
 
-/** Items present in both arrays (case-insensitive), de-duplicated. */
 function overlap(a?: string[] | null, b?: string[] | null): string[] {
-  if (!a?.length || !b?.length) return [];
-  const bSet = new Set(b.map(norm));
-  const seen = new Set<string>();
-  const result: string[] = [];
-  for (const item of a) {
-    const key = norm(item);
-    if (bSet.has(key) && !seen.has(key)) {
-      seen.add(key);
-      result.push(item);
-    }
-  }
-  return result;
+  const bSet = new Set(present(b).map(norm));
+  return unique(present(a).filter((item) => bSet.has(norm(item))));
 }
 
-const firstName = (profile: Profile) => (profile.full_name ?? "This attendee").split(" ")[0];
-
 function roleDetailString(profile: Profile, role: string, key: string): string | null {
-  const namespace = profile.role_details?.[role];
-  const value =
-    namespace !== null && typeof namespace === "object" && !Array.isArray(namespace)
-      ? (namespace as Record<string, unknown>)[key]
-      : undefined;
-  return typeof value === "string" ? value : null;
+  const value = profile.role_details?.[role];
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const field = (value as Record<string, unknown>)[key];
+  return typeof field === "string" && field.trim() ? field : null;
 }
 
 function roleDetailArray(profile: Profile, role: string, key: string): string[] {
-  const namespace = profile.role_details?.[role];
-  const value =
-    namespace !== null && typeof namespace === "object" && !Array.isArray(namespace)
-      ? (namespace as Record<string, unknown>)[key]
-      : undefined;
-  return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+  const value = profile.role_details?.[role];
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  const field = (value as Record<string, unknown>)[key];
+  return Array.isArray(field) ? field.filter((item): item is string => typeof item === "string" && item.trim().length > 0) : [];
 }
-
-// ---------------------------------------------------------------------------
-// 1. Event Goal Alignment (30 points max)
-// ---------------------------------------------------------------------------
-
-// Pairs use only the current Page 2 goal vocabulary and are symmetric.
-const COMPLEMENTARY_GOAL_PAIRS: [string, string][] = [
-  ["Find Customers or Clients", "Take On New Clients"],
-  ["Build Business Partnerships", "Meet Collaborators"],
-  ["Meet Investors", "Raise Capital"],
-  ["Meet Investors", "Explore Investment Opportunities"],
-  ["Raise Capital", "Explore Investment Opportunities"],
-  ["Hire Talent", "Explore Career Opportunities"],
-  ["Find Brand Partners", "Gain Visibility"],
-  ["Find Sponsorship Opportunities", "Gain Visibility"],
-  ["Meet Investors", "Meet Collaborators"],
-  ["Meet Collaborators", "Collaborate on Products"],
-  ["Meet Collaborators", "Collaborate on Content"],
-  ["Find a Mentor", "Mentor Others"],
-  ["Mentor Others", "Learn From Experts"],
-  ["Build Community", "Make Social Connections"],
-  ["Build Community", "Meet Great People Without a Specific Ask"],
-  ["Find Media / Press Opportunities", "Collaborate on Content"],
-  ["Meet People in My City", "Meet People in a New City"],
-  ["Explore Opportunities Generally", "Meet Great People Without a Specific Ask"],
-];
 
 function selectedGoals(profile: Profile): string[] {
-  const modernGoals = [profile.primary_goal, ...(profile.secondary_goals ?? [])].filter(
-    (goal): goal is string => Boolean(goal),
-  );
-  const source = modernGoals.length > 0 ? modernGoals : profile.matching_goal ? [profile.matching_goal] : [];
-  const seen = new Set<string>();
-  return source.filter((goal) => {
-    const key = norm(goal);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const modern = present([profile.primary_goal ?? "", ...(profile.secondary_goals ?? [])]);
+  return unique(modern.length ? modern : present([profile.matching_goal ?? ""]));
 }
 
-function complementaryGoalPair(a: Profile, b: Profile): [string, string] | null {
-  const goalsA = selectedGoals(a);
-  const goalsB = selectedGoals(b);
-
-  for (const goalA of goalsA) {
-    for (const goalB of goalsB) {
-      const isComplementary = COMPLEMENTARY_GOAL_PAIRS.some(
-        ([left, right]) =>
-          (norm(goalA) === norm(left) && norm(goalB) === norm(right)) ||
-          (norm(goalA) === norm(right) && norm(goalB) === norm(left)),
-      );
-      if (isComplementary) return [goalA, goalB];
-    }
-  }
-
-  return null;
+function evidence(
+  component: ComponentName,
+  score: number,
+  viewerField: string,
+  viewerValue: string,
+  candidateField: string,
+  candidateValue: string,
+  mapping: string,
+): MatchEvidenceItem {
+  return { component, score, viewerField, viewerValue, candidateField, candidateValue, mapping };
 }
 
-function calculateEventGoalAlignment(a: Profile, b: Profile): number {
-  if (complementaryGoalPair(a, b)) return 30;
-  return overlap(selectedGoals(a), selectedGoals(b)).length > 0 ? 15 : 0;
-}
-
-// ---------------------------------------------------------------------------
-// 2. Who They Want To Meet Alignment (20 points max)
-// ---------------------------------------------------------------------------
-
-// `who_to_meet` uses broad plural categories while `role_type` uses the full
-// 16-value identity vocabulary. Map each identity to its intended category.
-// "Other" is deliberately unmapped because it has no meaningful category.
-const ROLE_TYPE_TO_WHO_TO_MEET_LABEL: Record<string, string> = {
+const ROLE_TYPE_TO_WHO: Record<string, string> = {
   "founder / co-founder": "founders",
+  "entrepreneur / small business owner": "founders",
   investor: "investors",
   recruiter: "recruiters",
   "hiring manager": "hiring managers",
   "corporate professional": "professionals",
-  "entrepreneur / small business owner": "founders",
+  executive: "professionals",
   "creator / influencer": "creators",
-  "consultant / service provider": "service providers",
   "brand / partnership leader": "brand partners",
+  "consultant / service provider": "service providers",
   "community builder": "community builders",
   "nonprofit leader": "community builders",
-  executive: "professionals",
   "student / recent graduate": "students",
   "press / media": "press / media",
   "speaker / thought leader": "speakers",
 };
 
-function wantsRole(
-  whoToMeet: string[] | null | undefined,
-  roleType: string | null,
-  secondaryRoleTypes: string[],
-): boolean {
-  const wantedRoles = new Set((whoToMeet ?? []).map(norm));
-  return [roleType, ...secondaryRoleTypes].some((role) => {
-    if (!role) return false;
-    const label = ROLE_TYPE_TO_WHO_TO_MEET_LABEL[norm(role)];
-    return label ? wantedRoles.has(label) : false;
-  });
-}
+const GOAL_SIGNALS: Record<string, { direct: string[]; adjacent: string[] }> = {
+  "meet investors": { direct: ["investor", "investment capital", "investor introductions"], adjacent: ["fundraising advice", "strategic advice"] },
+  "raise capital": { direct: ["investor", "investment capital", "investor introductions"], adjacent: ["fundraising advice", "financial strategy"] },
+  "explore investment opportunities": { direct: ["founder / co-founder", "raise capital"], adjacent: ["founder advice", "product feedback"] },
+  "find customers or clients": { direct: ["customer introductions", "sales expertise", "business development expertise"], adjacent: ["take on new clients", "strategic advice"] },
+  "take on new clients": { direct: ["find customers or clients", "finding customers"], adjacent: ["customer introductions", "business development expertise"] },
+  "build business partnerships": { direct: ["partnership introductions", "business development expertise", "brand / partnership leader"], adjacent: ["meet collaborators", "strategic advice"] },
+  "explore career opportunities": { direct: ["recruiter", "hiring manager", "hiring opportunities", "job referrals"], adjacent: ["career advice", "mentorship"] },
+  "hire talent": { direct: ["explore career opportunities", "actively searching"], adjacent: ["talent referrals", "recruiter"] },
+  "find brand partners": { direct: ["brand / partnership leader", "brand opportunities"], adjacent: ["brand expertise", "creator / influencer"] },
+  "find sponsorship opportunities": { direct: ["sponsorship opportunities", "brand / partnership leader"], adjacent: ["brand opportunities"] },
+  "meet collaborators": { direct: ["collaborate on products", "collaborate on content", "partnership introductions"], adjacent: ["build business partnerships", "content creation"] },
+  "find a mentor": { direct: ["mentorship", "mentor others"], adjacent: ["career advice", "founder advice", "strategic advice"] },
+  "mentor others": { direct: ["find a mentor", "mentorship"], adjacent: ["career growth"] },
+  "learn from experts": { direct: ["expertise"], adjacent: ["industry knowledge", "strategic advice"] },
+  "build community": { direct: ["community builder", "community building", "community connections"], adjacent: ["make social connections"] },
+  "find speaking opportunities": { direct: ["speaking opportunities"], adjacent: ["speaker / thought leader", "gain visibility"] },
+  "find media / press opportunities": { direct: ["press / media", "media / press opportunities"], adjacent: ["gain visibility", "content creation"] },
+  "collaborate on products": { direct: ["product expertise", "product feedback"], adjacent: ["meet collaborators"] },
+  "collaborate on content": { direct: ["content creation", "creative direction"], adjacent: ["meet collaborators", "creator / influencer"] },
+  "meet people in my city": { direct: ["local city knowledge"], adjacent: ["community connections"] },
+  "make social connections": { direct: ["social connection / friendship"], adjacent: ["build community"] },
+};
 
-function calculateWhoToMeetAlignment(a: Profile, b: Profile): number {
-  const aWantsB = wantsRole(a.who_to_meet, b.role_type, b.secondary_role_types);
-  const bWantsA = wantsRole(b.who_to_meet, a.role_type, a.secondary_role_types);
-  if (aWantsB && bWantsA) return 20;
-  if (aWantsB || bWantsA) return 10;
-  return 0;
-}
-
-// ---------------------------------------------------------------------------
-// 3. Role Complementarity (20 points max)
-// ---------------------------------------------------------------------------
-
-const pairKey = (roleA: string, roleB: string) => [norm(roleA), norm(roleB)].sort().join("|");
-
-const STRONG_PAIRS = new Set(
-  ([
-    ["Founder / Co-founder", "Investor"],
-    ["Recruiter", "Corporate Professional"],
-    ["Hiring Manager", "Corporate Professional"],
-    ["Creator / Influencer", "Brand / Partnership Leader"],
-    ["Founder / Co-founder", "Recruiter"],
-  ] as [string, string][]).map(([x, y]) => pairKey(x, y)),
-);
-
-const MODERATE_SAME_ROLE_PAIRS = new Set(
-  (["Founder / Co-founder", "Corporate Professional", "Investor", "Creator / Influencer"] as string[]).map(
-    (r) => pairKey(r, r),
-  ),
-);
-
-const WEAK_PAIRS = new Set(
-  ([
-    ["Recruiter", "Investor"],
-    ["Brand / Partnership Leader", "Investor"],
-    ["Student / Recent Graduate", "Investor"],
-  ] as [string, string][]).map(([x, y]) => pairKey(x, y)),
-);
-
-function calculateRolePairComplementarity(a: Profile, b: Profile, roleA: string, roleB: string): number {
-  const key = pairKey(roleA, roleB);
-
-  // Founder + Investor gets its own depth check instead of the flat 20.
-  const isFounderInvestor = key === pairKey("Founder / Co-founder", "Investor");
-  if (isFounderInvestor) {
-    const founder = norm(roleA) === "founder / co-founder" ? a : b;
-    const investor = norm(roleA) === "investor" ? a : b;
-    const isRaising = roleDetailString(founder, "Founder", "lookingForInvestors") === "Yes";
-    const focusOverlap = overlap(
-      founder.industry_focus,
-      roleDetailArray(investor, "Investor", "investmentFocusAreas"),
-    );
-    // Spec: "add 5 bonus points (cap total component at 20)" when aligned,
-    // otherwise "treat as moderate (10) instead of strong". Base strong is
-    // already 20, so a passing depth check just confirms the full 20 rather
-    // than literally exceeding it -- the practical effect is a binary
-    // 20-if-aligned / 10-if-not outcome, implemented directly below.
-    return isRaising && focusOverlap.length > 0 ? 20 : 10;
-  }
-
-  if (STRONG_PAIRS.has(key)) return 20;
-  if (WEAK_PAIRS.has(key)) return 0;
-  if (norm(roleA) === "community builder" || norm(roleB) === "community builder") return 10;
-  if (MODERATE_SAME_ROLE_PAIRS.has(key)) return 10;
-
-  // No explicit rule for this combination. Default to moderate rather than
-  // penalizing pairings the product owner didn't rule on either way.
-  return 10;
-}
-
-function calculateRoleComplementarity(a: Profile, b: Profile): number {
-  const rolesA = [a.role_type, ...a.secondary_role_types].filter((role): role is string => Boolean(role));
-  const rolesB = [b.role_type, ...b.secondary_role_types].filter((role): role is string => Boolean(role));
-  if (rolesA.length === 0 || rolesB.length === 0) return 0;
-
-  const pairingScores = rolesA.flatMap((roleA) =>
-    rolesB.map((roleB) => calculateRolePairComplementarity(a, b, roleA, roleB)),
-  );
-
-  return Math.max(...pairingScores);
-}
-
-// ---------------------------------------------------------------------------
-// 4. Areas of Expertise Alignment (15 points max)
-// ---------------------------------------------------------------------------
-
-function calculateExpertiseAlignment(a: Profile, b: Profile): number {
-  const shared = overlap(a.areas_of_expertise, b.areas_of_expertise).length;
-  if (shared >= 3) return 15;
-  if (shared === 2) return 10;
-  if (shared === 1) return 5;
-  return 0;
-}
-
-// ---------------------------------------------------------------------------
-// 5. Shared Interests and Communities (10 points max)
-// ---------------------------------------------------------------------------
-
-function calculateSharedInterests(a: Profile, b: Profile): number {
-  const total =
-    overlap(a.interests, b.interests).length +
-    overlap(a.communities, b.communities).length +
-    overlap(a.hobbies, b.hobbies).length +
-    overlap(a.music_interests, b.music_interests).length +
-    overlap(a.favorite_conferences, b.favorite_conferences).length;
-
-  if (total >= 3) return 10;
-  if (total === 2) return 7;
-  if (total === 1) return 3;
-  return 0;
-}
-
-// ---------------------------------------------------------------------------
-// 6. Location Relevance (5 points max)
-// ---------------------------------------------------------------------------
-
-function calculateLocationRelevance(a: Profile, b: Profile): number {
-  if (!a.location || !b.location) return 0;
-  return norm(a.location) === norm(b.location) ? 5 : 0;
-}
-
-// ---------------------------------------------------------------------------
-// Standalone needs/offers compatibility (not yet part of calculateMatchScore)
-// ---------------------------------------------------------------------------
-
-// Mirrors the approved near-match rows in needs_offers_compatibility. Exact
-// need/offer text matches are handled directly and always take precedence.
-const EXACT_NEEDS_OFFERS_MATCHES = new Set(
+function candidateSignals(profile: Profile): Array<{ field: string; value: string }> {
+  const values: Array<{ field: string; value: string }> = [];
+  roles(profile).forEach((value) => values.push({ field: "role_type", value }));
+  present(profile.offers).forEach((value) => values.push({ field: "offers", value }));
+  present(profile.areas_of_expertise).forEach((value) => values.push({ field: "areas_of_expertise", value }));
+  selectedGoals(profile).forEach((value) => values.push({ field: "goals", value }));
   [
-    "Investor Introductions",
-    "Customer Introductions",
-    "Partnership Introductions",
-    "Talent Referrals",
-    "Job Referrals",
-    "Brand Opportunities",
-    "Sponsorship Opportunities",
-    "Media / Press Opportunities",
-    "Speaking Opportunities",
-    "Mentorship",
-    "Strategic Advice",
-    "Product Feedback",
-    "Community Building",
-    "Content Creation",
-    "Creative Direction",
-    "Financial Strategy",
-    "Legal / Compliance Guidance",
-    "Event / Experience Strategy",
-    "Local City Knowledge",
-    "Accountability / Peer Support",
-    "Social Connection / Friendship",
-  ].map(norm),
-);
-
-const NEAR_NEEDS_OFFERS_MATCHES: Record<string, Set<string>> = {
-  "finding customers": new Set([
-    "customer introductions",
-    "sales expertise",
-    "business development expertise",
-  ]),
-  "raising capital": new Set(["investment capital", "fundraising advice"]),
-  "hiring talent": new Set(["hiring opportunities", "talent referrals"]),
-  "finding a new role": new Set(["hiring opportunities", "career advice"]),
-  "career growth": new Set(["career advice", "mentorship", "founder advice"]),
-  "building partnerships": new Set(["partnership introductions", "business development expertise"]),
-  "finding brand partners": new Set(["brand opportunities", "brand expertise"]),
-  "brand strategy": new Set(["brand expertise"]),
-  marketing: new Set(["marketing expertise"]),
-  "sales / business development": new Set(["sales expertise", "business development expertise"]),
-  "product development": new Set(["product expertise"]),
-  "technology / engineering": new Set(["technical expertise", "engineering expertise"]),
-  operations: new Set(["operations expertise"]),
-  recruiting: new Set(["hiring opportunities", "talent referrals"]),
-  "fundraising strategy": new Set(["fundraising advice", "investment capital"]),
-  "social media": new Set(["social media expertise"]),
-  design: new Set(["design expertise"]),
-  "data / analytics": new Set(["data / analytics expertise"]),
-  "entering a new industry": new Set(["industry knowledge"]),
-  "entering a new market": new Set(["industry knowledge", "strategic advice"]),
-  "meeting people locally": new Set(["local city knowledge", "community connections"]),
-};
-
-/**
- * Scores how well one person's offers satisfy another person's needs.
- * Directional by design: reciprocal scoring belongs in the future formula.
- */
-export function calculateNeedsOffersScore(personANeeds: string[], personBOffers: string[]): number {
-  if (personANeeds.length === 0 || personBOffers.length === 0) return 0;
-
-  const normalizedOffers = new Set(personBOffers.map(norm));
-  const totalCredit = personANeeds.reduce((sum, need) => {
-    const normalizedNeed = norm(need);
-
-    if (EXACT_NEEDS_OFFERS_MATCHES.has(normalizedNeed) && normalizedOffers.has(normalizedNeed)) {
-      return sum + 1;
-    }
-
-    const compatibleOffers = NEAR_NEEDS_OFFERS_MATCHES[normalizedNeed];
-    const hasNearMatch = compatibleOffers
-      ? [...normalizedOffers].some((offer) => compatibleOffers.has(offer))
-      : false;
-
-    return sum + (hasNearMatch ? 0.7 : 0);
-  }, 0);
-
-  return (totalCredit / personANeeds.length) * 100;
-}
-
-// ---------------------------------------------------------------------------
-// Standalone opportunity/stage compatibility (not in calculateMatchScore)
-// ---------------------------------------------------------------------------
-
-type CompatibilityTier = 0 | 1 | 2;
-
-const COMPANY_STAGE_TIERS: Record<string, CompatibilityTier> = {
-  "idea stage": 0,
-  "pre-seed": 0,
-  seed: 1,
-  "series a": 1,
-  "series b+": 2,
-  bootstrapped: 2,
-  "acquired / exited": 2,
-  "acquired-exited": 2,
-};
-
-const CHECK_SIZE_TIERS: Record<string, CompatibilityTier> = {
-  "under $25k": 0,
-  "$25k-$100k": 0,
-  "$100k-$500k": 1,
-  "$500k+": 2,
-};
-
-function normalizedTierKey(value: string): string {
-  return norm(value).replaceAll("–", "-").replaceAll("—", "-");
-}
-
-function identityIncludes(profile: Profile, identity: string): boolean {
-  return [profile.role_type, ...profile.secondary_role_types].some(
-    (role) => typeof role === "string" && norm(role) === norm(identity),
-  );
-}
-
-function tierCompatibility(tierA: CompatibilityTier, tierB: CompatibilityTier): number {
-  const difference = Math.abs(tierA - tierB);
-  if (difference === 0) return 100;
-  if (difference === 1) return 50;
-  return 10;
-}
-
-/**
- * Scores the stage fit for a Founder / Co-founder and Investor pair.
- * Returns null when the pairing or required stage/check-size data is absent.
- */
-export function calculateOpportunityCompatibility(personA: Profile, personB: Profile): number | null {
-  const founderAInvestorB =
-    identityIncludes(personA, "Founder / Co-founder") && identityIncludes(personB, "Investor");
-  const founderBInvestorA =
-    identityIncludes(personB, "Founder / Co-founder") && identityIncludes(personA, "Investor");
-  const founder = founderAInvestorB ? personA : founderBInvestorA ? personB : null;
-  const investor = founderAInvestorB ? personB : founderBInvestorA ? personA : null;
-
-  if (!founder || !investor) return null;
-
-  const companyStage = roleDetailString(founder, "Founder", "companyStage");
-  const checkSize = roleDetailString(investor, "Investor", "checkSize");
-  if (!companyStage || !checkSize) return null;
-
-  const stageTier = COMPANY_STAGE_TIERS[normalizedTierKey(companyStage)];
-  const checkSizeTier = CHECK_SIZE_TIERS[normalizedTierKey(checkSize)];
-  if (stageTier === undefined || checkSizeTier === undefined) return null;
-
-  return tierCompatibility(stageTier, checkSizeTier);
-}
-
-// ---------------------------------------------------------------------------
-// Standalone timing/connection compatibility (not in calculateMatchScore)
-// ---------------------------------------------------------------------------
-
-const TIMING_URGENCY_TIERS: Record<string, CompatibilityTier> = {
-  "exploring for the future": 0,
-  "open to building investor relationships": 0,
-  "building a future talent pipeline": 0,
-  "not currently searching": 0,
-  "preparing to raise within 6 months": 1,
-  "hiring within 3-6 months": 1,
-  "open to the right opportunity": 1,
-  "planning to explore within 6 months": 1,
-  "actively raising": 2,
-  "actively hiring": 2,
-  "actively searching": 2,
-};
-
-function connectionPreferenceOverlap(a: Profile, b: Profile): number | null {
-  const preferencesA = new Set((a.connection_preference ?? []).map(norm));
-  const preferencesB = new Set((b.connection_preference ?? []).map(norm));
-  if (preferencesA.size === 0 || preferencesB.size === 0) return null;
-
-  const allPreferences = new Set([...preferencesA, ...preferencesB]);
-  const sharedCount = [...preferencesA].filter((preference) => preferencesB.has(preference)).length;
-  return (sharedCount / allPreferences.size) * 100;
-}
-
-function timingUrgency(profile: Profile): CompatibilityTier | null {
-  const timingValues = [
     roleDetailString(profile, "Founder", "fundraisingTimeline"),
     roleDetailString(profile, "Recruiter", "hiringTimeline"),
     roleDetailString(profile, "Hiring Manager", "hiringTimeline"),
     roleDetailString(profile, "CareerSeeker", "searchStatus"),
-  ];
-  const tiers = timingValues
-    .filter((value): value is string => Boolean(value))
-    .map((value) => TIMING_URGENCY_TIERS[norm(value)])
-    .filter((tier): tier is CompatibilityTier => tier !== undefined);
-
-  return tiers.length > 0 ? (Math.max(...tiers) as CompatibilityTier) : null;
+  ].filter((value): value is string => Boolean(value)).forEach((value) => values.push({ field: "role_details", value }));
+  return values;
 }
 
-function timingUrgencyAlignment(a: Profile, b: Profile): number | null {
-  const urgencyA = timingUrgency(a);
-  const urgencyB = timingUrgency(b);
-  return urgencyA === null || urgencyB === null ? null : tierCompatibility(urgencyA, urgencyB);
+function scoreGoal(goal: string, candidate: Profile, isSecondary = false): { score: number; evidence: MatchEvidenceItem[] } {
+  const mapping = GOAL_SIGNALS[norm(goal)];
+  if (!mapping) return { score: 0, evidence: [] };
+  const signals = candidateSignals(candidate);
+  const direct = signals.find((signal) => mapping.direct.some((item) => norm(signal.value).includes(norm(item)) || norm(item).includes(norm(signal.value))));
+  if (direct) {
+    const score = isSecondary ? 80 : direct.field === "goals" ? 90 : 100;
+    const mappingName = isSecondary ? "direct secondary-goal fulfillment" : direct.field === "goals" ? "strong complementary primary goal" : "direct primary-goal fulfillment";
+    return { score, evidence: [evidence("goalToValueFit", score, isSecondary ? "secondary_goals" : "primary_goal", goal, direct.field, direct.value, mappingName)] };
+  }
+  const adjacent = signals.find((signal) => mapping.adjacent.some((item) => norm(signal.value).includes(norm(item)) || norm(item).includes(norm(signal.value))));
+  if (adjacent) return { score: 65, evidence: [evidence("goalToValueFit", 65, "goal", goal, adjacent.field, adjacent.value, "adjacent goal support")] };
+  const broad = overlap(functions(candidate), functions(candidate)).length > 0 && candidateSignals(candidate).length > 0;
+  return broad ? { score: 40, evidence: [evidence("goalToValueFit", 40, isSecondary ? "secondary_goals" : "primary_goal", goal, "professional_identity", roles(candidate)[0] ?? functions(candidate)[0], "broad professional relevance")] } : { score: 0, evidence: [] };
 }
 
-/**
- * Averages the compatibility signals that both people actually supplied.
- * Missing data is ignored; null means neither comparable signal is available.
- */
-export function calculateTimingConnectionCompatibility(personA: Profile, personB: Profile): number | null {
-  const scores = [connectionPreferenceOverlap(personA, personB), timingUrgencyAlignment(personA, personB)].filter(
-    (score): score is number => score !== null,
-  );
-
-  return scores.length > 0 ? scores.reduce((sum, score) => sum + score, 0) / scores.length : null;
+function goalToValueFit(viewer: Profile, candidate: Profile): ComponentBreakdown {
+  const primary = viewer.primary_goal ?? viewer.matching_goal;
+  if (!primary) return { score: null, weight: WEIGHTS.goalToValueFit, evidence: [] };
+  const primaryResult = scoreGoal(primary, candidate);
+  const secondaryResults = present(viewer.secondary_goals).map((goal) => scoreGoal(goal, candidate, true));
+  const strongestSecondary = secondaryResults.sort((a, b) => b.score - a.score)[0];
+  const score = strongestSecondary ? primaryResult.score * 0.7 + strongestSecondary.score * 0.3 : primaryResult.score;
+  return { score, weight: WEIGHTS.goalToValueFit, evidence: [...primaryResult.evidence, ...(strongestSecondary?.evidence ?? [])] };
 }
 
-// ---------------------------------------------------------------------------
-// final weighted formula helpers
-// ---------------------------------------------------------------------------
-
-interface WeightedCategory {
-  value: number | null;
-  weight: number;
-}
-
-function reciprocalNeedsOffers(aToB: number, bToA: number): number {
-  if (aToB <= 0 || bToA <= 0) return 0;
-  return (2 * aToB * bToA) / (aToB + bToA);
-}
-
-function normalizeIngredient(value: number, maximum: number): number {
-  return (value / maximum) * 100;
-}
-
-function weightedScoreWithRedistribution(categories: WeightedCategory[]): number {
-  const applicable = categories.filter(
-    (category): category is { value: number; weight: number } => category.value !== null,
-  );
-  const applicableWeight = applicable.reduce((sum, category) => sum + category.weight, 0);
-  if (applicableWeight === 0) return 0;
-
-  return applicable.reduce((sum, category) => sum + category.value * category.weight, 0) / applicableWeight;
-}
-
-// ---------------------------------------------------------------------------
-// match label
-// ---------------------------------------------------------------------------
-
-function getMatchLabel(score: number): string {
-  if (score >= 75) return "Strong Match";
-  if (score >= 50) return "Good Match";
-  if (score >= 25) return "Potential Match";
-  return "No Match";
-}
-
-// ---------------------------------------------------------------------------
-// match reasons
-// ---------------------------------------------------------------------------
-
-function generateMatchReasons(a: Profile, b: Profile, breakdown: ScoreBreakdown): string[] {
-  const reasons: string[] = [];
-  const nameA = firstName(a);
-  const nameB = firstName(b);
-
-  // Founder / Co-founder <-> Investor fundraising story, if that's actually the pairing.
-  const roleA = a.role_type ? norm(a.role_type) : "";
-  const roleB = b.role_type ? norm(b.role_type) : "";
-  if (
-    (roleA === "founder / co-founder" && roleB === "investor") ||
-    (roleA === "investor" && roleB === "founder / co-founder")
-  ) {
-    const founder = roleA === "founder / co-founder" ? a : b;
-    const investor = roleA === "investor" ? a : b;
-    const founderName = firstName(founder);
-    const investorName = firstName(investor);
-    const isRaising = roleDetailString(founder, "Founder", "lookingForInvestors") === "Yes";
-    const stage = roleDetailString(founder, "Founder", "companyStage");
-    const focus = roleDetailArray(investor, "Investor", "investmentFocusAreas");
-    if (isRaising) {
-      const stagePart = stage ? ` (${stage})` : "";
-      const focusPart = focus.length ? ` in ${focus.slice(0, 2).join(" and ")}` : "";
-      reasons.push(`${founderName} is actively fundraising${stagePart} and ${investorName} invests${focusPart}.`);
+function targetPersonFit(viewer: Profile, candidate: Profile): ComponentBreakdown {
+  const wanted = present(viewer.who_to_meet).filter((value) => norm(value) !== "no preference");
+  const career = present(viewer.career_level_preference).filter((value) => norm(value) !== "no preference");
+  const hasTarget = wanted.length > 0 || career.length > 0 || Boolean(viewer.primary_function);
+  if (!hasTarget) return { score: null, weight: WEIGHTS.targetPersonFit, evidence: [] };
+  for (const role of roles(candidate)) {
+    const category = ROLE_TYPE_TO_WHO[norm(role)];
+    if (category && wanted.some((value) => norm(value) === category)) {
+      return { score: 100, weight: WEIGHTS.targetPersonFit, evidence: [evidence("targetPersonFit", 100, "who_to_meet", category, "role_type", role, "exact requested identity")] };
     }
   }
-
-  // Event goal alignment
-  if (breakdown.eventGoalAlignment >= 30) {
-    const pair = complementaryGoalPair(a, b);
-    if (pair) reasons.push(`${nameA}'s goal of "${pair[0]}" complements ${nameB}'s goal of "${pair[1]}".`);
-  } else if (breakdown.eventGoalAlignment === 15) {
-    const sharedGoal = overlap(selectedGoals(a), selectedGoals(b))[0];
-    if (sharedGoal) reasons.push(`Both are focused on "${sharedGoal}" at the event.`);
+  const functionMatch = overlap(functions(viewer), functions(candidate))[0];
+  if (functionMatch || (candidate.seniority && career.some((value) => norm(value) === norm(candidate.seniority!)))) {
+    const value = functionMatch ?? candidate.seniority!;
+    return { score: 90, weight: WEIGHTS.targetPersonFit, evidence: [evidence("targetPersonFit", 90, functionMatch ? "primary_function" : "career_level_preference", value, functionMatch ? "primary_function" : "seniority", value, "exact requested function or career level")] };
   }
-
-  // Who to meet mutual interest
-  if (breakdown.whoToMeetAlignment === 20) {
-    reasons.push(`${nameA} wants to meet ${b.role_type ?? "this role"}s and ${nameB} wants to meet ${a.role_type ?? "this role"}s.`);
+  const viewerIndustries = industries(viewer);
+  const candidateIndustries = industries(candidate);
+  if (viewer.industry_preference && viewerIndustries.length && candidateIndustries.length) {
+    const shared = overlap(viewerIndustries, candidateIndustries)[0];
+    const wantsOutside = norm(viewer.industry_preference).includes("outside");
+    if ((shared && !wantsOutside) || (!shared && wantsOutside)) {
+      const candidateIndustry = shared ?? candidateIndustries[0];
+      return { score: 60, weight: WEIGHTS.targetPersonFit, evidence: [evidence("targetPersonFit", 60, "industry_preference", viewer.industry_preference, "industries", candidateIndustry, "requested industry preference")] };
+    }
   }
-
-  // Expertise overlap
-  const sharedExpertise = overlap(a.areas_of_expertise, b.areas_of_expertise);
-  if (sharedExpertise.length >= 1) {
-    reasons.push(`Shared expertise in ${sharedExpertise.slice(0, 3).join(" and ")}.`);
+  const viewerCity = viewer.location_city ?? viewer.location;
+  const candidateCity = candidate.location_city ?? candidate.location;
+  if (viewer.location_preference && viewerCity && candidateCity) {
+    const same = norm(viewerCity) === norm(candidateCity);
+    if ((viewer.location_preference === "prioritize_city" && same) || (viewer.location_preference === "prioritize_outside_city" && !same)) {
+      return { score: 60, weight: WEIGHTS.targetPersonFit, evidence: [evidence("targetPersonFit", 60, "location_preference", viewer.location_preference, "location", candidateCity, "requested location preference")] };
+    }
   }
-
-  // Shared interests/communities
-  const sharedInterestPool = [
-    ...overlap(a.interests, b.interests),
-    ...overlap(a.communities, b.communities),
-    ...overlap(a.hobbies, b.hobbies),
-    ...overlap(a.music_interests, b.music_interests),
-    ...overlap(a.favorite_conferences, b.favorite_conferences),
-  ];
-  if (sharedInterestPool.length >= 1) {
-    reasons.push(`Both share an interest in ${sharedInterestPool.slice(0, 2).join(" and ")}.`);
-  }
-
-  // Location
-  if (breakdown.locationRelevance === 5) {
-    reasons.push(`Both are based in ${a.location}.`);
-  }
-
-  // Role complementarity fallback story (only if nothing more specific fired)
-  if (reasons.length === 0 && breakdown.roleComplementarity >= 10) {
-    reasons.push(`${a.role_type ?? "This attendee"} and ${b.role_type ?? "this attendee"} are a natural pairing at this event.`);
-  }
-
-  if (reasons.length === 0) {
-    reasons.push("Attending the same event with some overlap in goals and background.");
-  }
-
-  return reasons.slice(0, 3);
+  return { score: 0, weight: WEIGHTS.targetPersonFit, evidence: [] };
 }
 
-// ---------------------------------------------------------------------------
-// main export
-// ---------------------------------------------------------------------------
+const EXACT_NEEDS_OFFERS = new Set([
+  "Investor Introductions", "Customer Introductions", "Partnership Introductions", "Talent Referrals", "Job Referrals",
+  "Brand Opportunities", "Sponsorship Opportunities", "Media / Press Opportunities", "Speaking Opportunities", "Mentorship",
+  "Strategic Advice", "Product Feedback", "Community Building", "Content Creation", "Creative Direction", "Financial Strategy",
+  "Legal / Compliance Guidance", "Event / Experience Strategy", "Local City Knowledge", "Accountability / Peer Support",
+  "Social Connection / Friendship",
+].map(norm));
+
+const NEED_OFFER_MAP: Record<string, Record<string, number>> = {
+  "finding customers": { "customer introductions": 100, "sales expertise": 80, "business development expertise": 80 },
+  "raising capital": { "investment capital": 100, "investor introductions": 100, "fundraising advice": 80 },
+  "hiring talent": { "hiring opportunities": 80, "talent referrals": 100 },
+  "finding a new role": { "hiring opportunities": 100, "job referrals": 100, "career advice": 80 },
+  "career growth": { "career advice": 80, mentorship: 80, "founder advice": 60 },
+  "building partnerships": { "partnership introductions": 100, "business development expertise": 80 },
+  "finding brand partners": { "brand opportunities": 100, "brand expertise": 80 },
+  "brand strategy": { "brand expertise": 100 }, marketing: { "marketing expertise": 100 },
+  "sales / business development": { "sales expertise": 100, "business development expertise": 100 },
+  "product development": { "product expertise": 100, "product feedback": 80 },
+  "technology / engineering": { "technical expertise": 100, "engineering expertise": 100 },
+  operations: { "operations expertise": 100 }, recruiting: { "talent referrals": 80, "hiring opportunities": 80 },
+  "fundraising strategy": { "fundraising advice": 100, "investment capital": 80 },
+  "social media": { "social media expertise": 100 }, design: { "design expertise": 100 },
+  "data / analytics": { "data / analytics expertise": 100 }, "entering a new industry": { "industry knowledge": 100 },
+  "entering a new market": { "industry knowledge": 80, "strategic advice": 60 },
+  "meeting people locally": { "local city knowledge": 100, "community connections": 80 },
+};
+
+function bestOffer(need: string, offers: string[]): { offer: string; score: number; type: "exact" | "near" } | null {
+  const needKey = norm(need);
+  const exact = offers.find((offer) => norm(offer) === needKey && EXACT_NEEDS_OFFERS.has(needKey));
+  if (exact) return { offer: exact, score: 100, type: "exact" };
+  let best: { offer: string; score: number; type: "near" } | null = null;
+  for (const offer of offers) {
+    const score = NEED_OFFER_MAP[needKey]?.[norm(offer)] ?? 0;
+    if (score > (best?.score ?? 0)) best = { offer, score, type: "near" };
+  }
+  return best;
+}
+
+export function calculateNeedsOffersScore(needs: string[], offers: string[]): number {
+  if (!needs.length || !offers.length) return 0;
+  return needs.reduce((sum, need) => sum + (bestOffer(need, offers)?.score ?? 0), 0) / needs.length;
+}
+
+function needToOfferFit(viewer: Profile, candidate: Profile): ComponentBreakdown {
+  const needs = present(viewer.needs);
+  const offers = present(candidate.offers);
+  if (!needs.length || !offers.length) return { score: null, weight: WEIGHTS.needToOfferFit, evidence: [] };
+  const matches = needs.map((need) => ({ need, match: bestOffer(need, offers) }));
+  return {
+    score: matches.reduce((sum, item) => sum + (item.match?.score ?? 0), 0) / needs.length,
+    weight: WEIGHTS.needToOfferFit,
+    evidence: matches.filter((item) => item.match).map((item) => evidence("needToOfferFit", item.match!.score, "needs", item.need, "offers", item.match!.offer, item.match!.type === "exact" ? "exact approved mapping" : "approved conceptual mapping")),
+  };
+}
+
+const EXPERTISE_NEEDS: Record<string, string[]> = {
+  marketing: ["marketing expertise"], "sales / business development": ["sales expertise", "business development expertise"],
+  "product development": ["product expertise"], "technology / engineering": ["technical expertise", "engineering expertise"],
+  operations: ["operations expertise"], "brand strategy": ["brand expertise"], "social media": ["social media expertise"],
+  design: ["design expertise", "creative direction"], "data / analytics": ["data / analytics expertise"],
+  "fundraising strategy": ["fundraising advice", "financial strategy"], recruiting: ["hiring opportunities", "talent referrals"],
+};
+
+function soughtExpertise(profile: Profile): string[] {
+  if (present(profile.expertise_sought).length) return present(profile.expertise_sought);
+  return unique(present(profile.needs).flatMap((need) => EXPERTISE_NEEDS[norm(need)] ?? []));
+}
+
+function expertiseFit(viewer: Profile, candidate: Profile): ComponentBreakdown {
+  const sought = soughtExpertise(viewer);
+  const offered = unique([...present(candidate.areas_of_expertise), ...present(candidate.offers)]);
+  if (!sought.length || !offered.length) return { score: null, weight: WEIGHTS.expertiseFit, evidence: [] };
+  const exact = overlap(sought, offered);
+  if (exact.length) {
+    const score = exact.length >= 2 ? 100 : 90;
+    return { score, weight: WEIGHTS.expertiseFit, evidence: exact.map((value) => evidence("expertiseFit", score, "expertise_sought", value, "expertise_offered", value, "exact expertise match")) };
+  }
+  const conceptual = sought.flatMap((need) => offered.filter((offer) => norm(offer).includes(norm(need)) || norm(need).includes(norm(offer))).map((offer) => ({ need, offer })))[0];
+  return conceptual
+    ? { score: 75, weight: WEIGHTS.expertiseFit, evidence: [evidence("expertiseFit", 75, "expertise_sought", conceptual.need, "expertise_offered", conceptual.offer, "conceptual expertise match")] }
+    : { score: 0, weight: WEIGHTS.expertiseFit, evidence: [] };
+}
+
+type Tier = 0 | 1 | 2;
+const STAGE_TIERS: Record<string, Tier> = { "idea stage": 0, "pre-seed": 0, seed: 1, "series a": 1, "series b+": 2, bootstrapped: 2, "acquired / exited": 2 };
+const CHECK_TIERS: Record<string, Tier> = { "under $25k": 0, "$25k-$100k": 0, "$100k-$500k": 1, "$500k+": 2 };
+const TIMING_TIERS: Record<string, Tier> = {
+  "exploring for the future": 0, "open to building investor relationships": 0, "building a future talent pipeline": 0,
+  "not currently searching": 0, "preparing to raise within 6 months": 1, "hiring within 3-6 months": 1,
+  "open to the right opportunity": 1, "planning to explore within 6 months": 1, "actively raising": 2,
+  "actively hiring": 2, "actively searching": 2,
+};
+const tierKey = (value: string) => norm(value).replaceAll("–", "-").replaceAll("—", "-");
+const tierScore = (a: Tier, b: Tier, rubric: [number, number, number] = [100, 75, 40]) => rubric[Math.abs(a - b)];
+const hasRole = (profile: Profile, role: string) => roles(profile).some((value) => norm(value) === norm(role));
+
+export function calculateOpportunityCompatibility(viewer: Profile, candidate: Profile): number | null {
+  const founderInvestor = hasRole(viewer, "Founder / Co-founder") && hasRole(candidate, "Investor");
+  const investorFounder = hasRole(viewer, "Investor") && hasRole(candidate, "Founder / Co-founder");
+  if (founderInvestor || investorFounder) {
+    const founder = founderInvestor ? viewer : candidate;
+    const investor = founderInvestor ? candidate : viewer;
+    const stage = roleDetailString(founder, "Founder", "companyStage");
+    const check = roleDetailString(investor, "Investor", "checkSize");
+    if (!stage || !check) return null;
+    const a = STAGE_TIERS[tierKey(stage)];
+    const b = CHECK_TIERS[tierKey(check)];
+    return a === undefined || b === undefined ? null : tierScore(a, b, [100, 75, 0]);
+  }
+  const careerGoal = selectedGoals(viewer).some((goal) => norm(goal) === "explore career opportunities");
+  if (careerGoal && (hasRole(candidate, "Recruiter") || hasRole(candidate, "Hiring Manager"))) {
+    const active = roleDetailString(candidate, "Recruiter", "activelyHiring") ?? roleDetailString(candidate, "Hiring Manager", "activelyHiring");
+    if (!active) return null;
+    if (norm(active) === "no") return 0;
+    const hiringFunctions = [...roleDetailArray(candidate, "Recruiter", "hiringFunctions"), ...roleDetailArray(candidate, "Hiring Manager", "hiringFunctions")];
+    const match = overlap(functions(viewer), hiringFunctions);
+    return match.length ? 100 : hiringFunctions.length ? 75 : 75;
+  }
+  const brandGoal = selectedGoals(viewer).some((goal) => ["find brand partners", "find sponsorship opportunities"].includes(norm(goal)));
+  if (brandGoal && hasRole(candidate, "Brand / Partnership Leader")) return 100;
+  if (brandGoal && hasRole(candidate, "Creator / Influencer")) {
+    const open = roleDetailString(candidate, "Creator", "openToBrandPartnerships");
+    return open ? (norm(open) === "yes" ? 100 : 0) : null;
+  }
+  return null;
+}
+
+const COMPATIBLE_CONNECTIONS = new Set([
+  "one-on-one conversation|quick introduction", "business opportunity|scheduled meeting",
+  "collaboration|ongoing professional relationship", "mentorship relationship|one-on-one conversation",
+].map((value) => value.split("|").sort().join("|")));
+
+function connectionScore(a: Profile, b: Profile): number | null {
+  const aa = present(a.connection_preference).filter((value) => norm(value) !== "no preference");
+  const bb = present(b.connection_preference).filter((value) => norm(value) !== "no preference");
+  if (!aa.length || !bb.length) return null;
+  if (overlap(aa, bb).length) return 100;
+  if (aa.some((left) => bb.some((right) => COMPATIBLE_CONNECTIONS.has([norm(left), norm(right)].sort().join("|"))))) return 75;
+  return 40;
+}
+
+function timingTier(profile: Profile): Tier | null {
+  const values = [roleDetailString(profile, "Founder", "fundraisingTimeline"), roleDetailString(profile, "Recruiter", "hiringTimeline"), roleDetailString(profile, "Hiring Manager", "hiringTimeline"), roleDetailString(profile, "CareerSeeker", "searchStatus")];
+  const tiers = values.filter((value): value is string => Boolean(value)).map((value) => TIMING_TIERS[norm(value)]).filter((value): value is Tier => value !== undefined);
+  return tiers.length ? Math.max(...tiers) as Tier : null;
+}
+
+export function calculateTimingConnectionCompatibility(a: Profile, b: Profile): number | null {
+  const timingA = timingTier(a);
+  const timingB = timingTier(b);
+  const timing = timingA === null || timingB === null ? null : tierScore(timingA, timingB);
+  const connection = connectionScore(a, b);
+  const scores = [timing, connection].filter((value): value is number => value !== null);
+  return scores.length ? scores.reduce((sum, value) => sum + value, 0) / scores.length : null;
+}
+
+function contextFit(viewer: Profile, candidate: Profile): ComponentBreakdown {
+  const parts: Array<{ score: number | null; weight: number; item?: MatchEvidenceItem }> = [];
+  const viewerIndustries = industries(viewer);
+  const candidateIndustries = industries(candidate);
+  const industryPreference = viewer.industry_preference;
+  let industryScore: number | null = null;
+  if (industryPreference && viewerIndustries.length && candidateIndustries.length) {
+    const shared = overlap(viewerIndustries, candidateIndustries).length > 0;
+    if (norm(industryPreference).includes("outside")) industryScore = shared ? 0 : 100;
+    else if (norm(industryPreference).includes("my industry")) industryScore = shared ? 100 : 0;
+    else industryScore = 100;
+  }
+  parts.push({ score: industryScore, weight: 40, item: industryScore && candidateIndustries[0] ? evidence("contextFit", industryScore, "industry_preference", industryPreference!, "industries", candidateIndustries[0], "industry preference fulfillment") : undefined });
+  let locationScore: number | null = null;
+  const viewerCity = viewer.location_city ?? viewer.location;
+  const candidateCity = candidate.location_city ?? candidate.location;
+  if (viewer.location_preference && viewerCity && candidateCity) {
+    const same = norm(viewerCity) === norm(candidateCity);
+    locationScore = viewer.location_preference === "prioritize_city" ? (same ? 100 : 0) : viewer.location_preference === "prioritize_outside_city" ? (same ? 0 : 100) : 100;
+  }
+  parts.push({ score: locationScore, weight: 30, item: locationScore && candidateCity ? evidence("contextFit", locationScore, "location_preference", viewer.location_preference!, "location", candidateCity, "location preference fulfillment") : undefined });
+  const sharedInterests = overlap(viewer.interests, candidate.interests);
+  const interestScore = present(viewer.interests).length && present(candidate.interests).length ? (sharedInterests.length ? 100 : 0) : null;
+  parts.push({ score: interestScore, weight: 20, item: sharedInterests[0] ? evidence("contextFit", 100, "interests", sharedInterests[0], "interests", sharedInterests[0], "shared interest") : undefined });
+  const sharedCommunities = overlap(viewer.communities, candidate.communities);
+  const communityScore = present(viewer.communities).length && present(candidate.communities).length ? (sharedCommunities.length ? 100 : 0) : null;
+  parts.push({ score: communityScore, weight: 10, item: sharedCommunities[0] ? evidence("contextFit", 100, "communities", sharedCommunities[0], "communities", sharedCommunities[0], "shared community") : undefined });
+  const applicable = parts.filter((part): part is { score: number; weight: number; item?: MatchEvidenceItem } => part.score !== null);
+  if (!applicable.length) return { score: null, weight: WEIGHTS.contextFit, evidence: [] };
+  return { score: applicable.reduce((sum, part) => sum + part.score * part.weight, 0) / applicable.reduce((sum, part) => sum + part.weight, 0), weight: WEIGHTS.contextFit, evidence: applicable.flatMap((part) => part.item ? [part.item] : []) };
+}
+
+function opportunityComponent(viewer: Profile, candidate: Profile): ComponentBreakdown {
+  const score = calculateOpportunityCompatibility(viewer, candidate);
+  return { score, weight: WEIGHTS.opportunityCompatibility, evidence: score && score > 0 ? [evidence("opportunityCompatibility", score, "open_opportunity", selectedGoals(viewer)[0] ?? "conditional opportunity", "role_details", roles(candidate)[0] ?? "conditional answers", "structured opportunity compatibility")] : [] };
+}
+
+function timingComponent(viewer: Profile, candidate: Profile): ComponentBreakdown {
+  const score = calculateTimingConnectionCompatibility(viewer, candidate);
+  return { score, weight: WEIGHTS.timingConnectionFit, evidence: score && score > 0 ? [evidence("timingConnectionFit", score, "timing/connection_preference", present(viewer.connection_preference)[0] ?? "conditional timeline", "timing/connection_preference", present(candidate.connection_preference)[0] ?? "conditional timeline", "compatible timing or connection format")] : [] };
+}
+
+function scoreDirection(viewer: Profile, candidate: Profile): { score: number; breakdown: DirectionalScoreBreakdown; evidence: MatchEvidenceItem[] } {
+  const components: Record<ComponentName, ComponentBreakdown> = {
+    goalToValueFit: goalToValueFit(viewer, candidate), targetPersonFit: targetPersonFit(viewer, candidate),
+    needToOfferFit: needToOfferFit(viewer, candidate), expertiseFit: expertiseFit(viewer, candidate),
+    opportunityCompatibility: opportunityComponent(viewer, candidate), timingConnectionFit: timingComponent(viewer, candidate),
+    contextFit: contextFit(viewer, candidate),
+  };
+  const applicable = Object.values(components).filter((component) => component.score !== null);
+  const applicableWeight = applicable.reduce((sum, component) => sum + component.weight, 0);
+  const weightedPoints = applicable.reduce((sum, component) => sum + component.score! * component.weight, 0);
+  const score = applicableWeight ? Math.round(weightedPoints / applicableWeight) : 0;
+  return { score, breakdown: { ...components, applicableWeight, weightedPoints }, evidence: Object.values(components).flatMap((component) => component.evidence) };
+}
+
+function coreCompletion(profile: Profile): number {
+  const checks = [Boolean(profile.primary_goal ?? profile.matching_goal), present(profile.who_to_meet).length > 0, present(profile.needs).length > 0, present(profile.offers).length > 0];
+  return checks.filter(Boolean).length / checks.length * 100;
+}
+
+function conditionalCompletion(profile: Profile): number {
+  const applicable: boolean[] = [];
+  if (hasRole(profile, "Founder / Co-founder")) applicable.push(Boolean(roleDetailString(profile, "Founder", "companyStage")), Boolean(roleDetailString(profile, "Founder", "fundraisingTimeline") ?? roleDetailString(profile, "Founder", "lookingForInvestors")));
+  if (hasRole(profile, "Investor")) applicable.push(Boolean(roleDetailString(profile, "Investor", "checkSize")), roleDetailArray(profile, "Investor", "investmentFocusAreas").length > 0);
+  if (hasRole(profile, "Recruiter") || hasRole(profile, "Hiring Manager")) applicable.push(Boolean(roleDetailString(profile, "Recruiter", "hiringTimeline") ?? roleDetailString(profile, "Hiring Manager", "hiringTimeline")));
+  if (selectedGoals(profile).some((goal) => norm(goal) === "explore career opportunities")) applicable.push(Boolean(roleDetailString(profile, "CareerSeeker", "searchStatus")));
+  return applicable.length ? applicable.filter(Boolean).length / applicable.length * 100 : 100;
+}
+
+function recencyScore(updatedAt?: string | null): number {
+  if (!updatedAt) return 0;
+  const ageDays = (Date.now() - Date.parse(updatedAt)) / 86_400_000;
+  if (!Number.isFinite(ageDays)) return 0;
+  if (ageDays <= 90) return 100;
+  if (ageDays <= 180) return 75;
+  if (ageDays <= 365) return 50;
+  return 25;
+}
+
+export function calculateMatchConfidence(viewer: Profile, candidate: Profile, breakdown: DirectionalScoreBreakdown): number {
+  const structured = Object.values(breakdown).filter((value): value is ComponentBreakdown => typeof value === "object" && value !== null && "score" in value);
+  const evaluated = structured.filter((component) => component.score !== null).length / 7 * 100;
+  const confirmation = ((viewer.profile_completed ? 1 : 0) + (candidate.profile_completed ? 1 : 0) + (viewer.linkedin_url ? 1 : 0) + (candidate.linkedin_url ? 1 : 0)) / 4 * 100;
+  const recency = (recencyScore(viewer.updated_at) + recencyScore(candidate.updated_at)) / 2;
+  return Math.round(0.3 * ((coreCompletion(viewer) + coreCompletion(candidate)) / 2) + 0.25 * evaluated + 0.2 * ((conditionalCompletion(viewer) + conditionalCompletion(candidate)) / 2) + 0.15 * recency + 0.1 * confirmation);
+}
+
+export function getReciprocityLabel(aToB: number, bToA: number): MatchResult["reciprocityLabel"] {
+  if (aToB >= 70 && bToA >= 70) return "You Can Help Each Other";
+  if (aToB >= 70 && bToA < 70) return "They Can Help You";
+  if (aToB < 70 && bToA >= 70) return "You Can Help Them";
+  return "Potential Connection";
+}
+
+function scoreLabel(score: number): string {
+  if (score >= 85) return "Don't Leave Without Meeting";
+  if (score >= 70) return "Strong Match";
+  if (score >= 60) return "Worth an Introduction";
+  return "Hidden";
+}
+
+function reasons(items: MatchEvidenceItem[]): string[] {
+  return items.sort((a, b) => WEIGHTS[b.component] - WEIGHTS[a.component] || b.score - a.score).slice(0, 3).map((item) => `${item.viewerValue} matches ${item.candidateValue} (${item.mapping}).`);
+}
 
 export function calculateMatchScore(profileA: Profile, profileB: Profile): MatchResult {
-  const needsOffersAToB = calculateNeedsOffersScore(profileA.needs ?? [], profileB.offers ?? []);
-  const needsOffersBToA = calculateNeedsOffersScore(profileB.needs ?? [], profileA.offers ?? []);
-  const opportunityCompatibility = calculateOpportunityCompatibility(profileA, profileB);
-  const timingConnectionCompatibility = calculateTimingConnectionCompatibility(profileA, profileB);
-
-  const scoreBreakdown: ScoreBreakdown = {
-    eventGoalAlignment: calculateEventGoalAlignment(profileA, profileB),
-    whoToMeetAlignment: calculateWhoToMeetAlignment(profileA, profileB),
-    roleComplementarity: calculateRoleComplementarity(profileA, profileB),
-    expertiseAlignment: calculateExpertiseAlignment(profileA, profileB),
-    sharedInterests: calculateSharedInterests(profileA, profileB),
-    locationRelevance: calculateLocationRelevance(profileA, profileB),
-    needsOffersAToB,
-    needsOffersBToA,
-    needsOffersReciprocal: reciprocalNeedsOffers(needsOffersAToB, needsOffersBToA),
-    opportunityCompatibility,
-    timingConnectionCompatibility,
-  };
-
-  const targetPersonRole =
-    (normalizeIngredient(scoreBreakdown.whoToMeetAlignment, 20) +
-      normalizeIngredient(scoreBreakdown.roleComplementarity, 20)) /
-    2;
-  const context =
-    (normalizeIngredient(scoreBreakdown.sharedInterests, 10) +
-      normalizeIngredient(scoreBreakdown.locationRelevance, 5)) /
-    2;
-
-  const weightedScore = weightedScoreWithRedistribution([
-    { value: scoreBreakdown.needsOffersReciprocal, weight: 30 },
-    { value: normalizeIngredient(scoreBreakdown.eventGoalAlignment, 30), weight: 20 },
-    { value: targetPersonRole, weight: 15 },
-    { value: normalizeIngredient(scoreBreakdown.expertiseAlignment, 15), weight: 15 },
-    { value: scoreBreakdown.opportunityCompatibility, weight: 10 },
-    { value: scoreBreakdown.timingConnectionCompatibility, weight: 5 },
-    { value: context, weight: 5 },
-  ]);
-  const score = Math.round(Math.min(100, Math.max(0, weightedScore)));
-
+  const aToB = scoreDirection(profileA, profileB);
+  const bToA = scoreDirection(profileB, profileA);
+  const aToBConfidence = calculateMatchConfidence(profileA, profileB, aToB.breakdown);
+  const bToAConfidence = calculateMatchConfidence(profileB, profileA, bToA.breakdown);
+  const aToBReasons = reasons(aToB.evidence);
+  const bToAReasons = reasons(bToA.evidence);
   return {
-    score,
-    label: getMatchLabel(score),
-    scoreBreakdown,
-    matchReasons: generateMatchReasons(profileA, profileB, scoreBreakdown),
+    aToBScore: aToB.score, bToAScore: bToA.score, aToBConfidence, bToAConfidence,
+    reciprocityLabel: getReciprocityLabel(aToB.score, bToA.score), scoreVersion: SCORE_VERSION,
+    scoreBreakdown: { aToB: aToB.breakdown, bToA: bToA.breakdown },
+    matchEvidence: { aToB: aToB.evidence, bToA: bToA.evidence },
+    aToBReasons, bToAReasons, score: aToB.score, label: scoreLabel(aToB.score), matchReasons: aToBReasons,
   };
 }
 
-// ---------------------------------------------------------------------------
-// structured match-explanation data (Full Profile View data foundation)
-//
-// Everything above computes SCORES. These functions instead expose WHICH
-// specific things matched -- the same underlying signals this file already
-// scores, decomposed into individually renderable facts instead of a single
-// number or sentence. Pure functions only: nothing here is wired into
-// calculateMatchScore, index.ts, or persisted anywhere yet.
-//
-// Shape matches the match_details column added in the
-// add_match_details_to_matches migration.
-// ---------------------------------------------------------------------------
-
-export interface MatchedGoal {
-  goalA: string;
-  goalB: string;
-  type: "complementary" | "shared";
-}
-
-export interface MatchedRole {
-  roleA: string;
-  roleB: string;
-  /**
-   * One of: "founder-investor-aligned" | "founder-investor-moderate" |
-   * "strong" | "weak" | "community-builder" | "same-role" | "unspecified".
-   * Mirrors the branches of calculateRolePairComplementarity.
-   */
-  pairType: string;
-}
-
-export interface NeedsOffersMatch {
-  need: string;
-  offer: string;
-  matchType: "exact" | "near";
-}
-
-export interface MatchDetails {
-  matchedGoals: MatchedGoal[];
-  matchedRoles: MatchedRole[];
-  matchedInterests: string[];
-  needsOffersAToB: NeedsOffersMatch[];
-  needsOffersBToA: NeedsOffersMatch[];
-}
-
-/** Same complementary-pair check as complementaryGoalPair, exposed standalone so every pair can be tested, not just the first found. */
-function isComplementaryGoalPair(goalA: string, goalB: string): boolean {
-  return COMPLEMENTARY_GOAL_PAIRS.some(
-    ([left, right]) =>
-      (norm(goalA) === norm(left) && norm(goalB) === norm(right)) ||
-      (norm(goalA) === norm(right) && norm(goalB) === norm(left)),
-  );
-}
-
-/**
- * Every complementary or shared goal pair between the two people -- not
- * just whether alignment exists (calculateEventGoalAlignment) and not just
- * the first pair found (complementaryGoalPair).
- */
-export function extractMatchedGoals(personA: Profile, personB: Profile): MatchedGoal[] {
-  const goalsA = selectedGoals(personA);
-  const goalsB = selectedGoals(personB);
+// Legacy structured detail exports remain until the explanation/UI follow-up.
+const COMPLEMENTARY_GOALS: [string, string][] = [
+  ["Find Customers or Clients", "Take On New Clients"], ["Build Business Partnerships", "Meet Collaborators"],
+  ["Meet Investors", "Raise Capital"], ["Meet Investors", "Explore Investment Opportunities"],
+  ["Hire Talent", "Explore Career Opportunities"], ["Find Brand Partners", "Gain Visibility"],
+  ["Find a Mentor", "Mentor Others"], ["Build Community", "Make Social Connections"],
+  ["Meet Collaborators", "Collaborate on Products"], ["Meet Collaborators", "Collaborate on Content"],
+];
+const isComplementary = (a: string, b: string) => COMPLEMENTARY_GOALS.some(([left, right]) => (norm(a) === norm(left) && norm(b) === norm(right)) || (norm(a) === norm(right) && norm(b) === norm(left)));
+export interface MatchedGoal { goalA: string; goalB: string; type: "complementary" | "shared"; }
+export interface MatchedRole { roleA: string; roleB: string; pairType: string; }
+export interface NeedsOffersMatch { need: string; offer: string; matchType: "exact" | "near"; }
+export interface MatchDetails { matchedGoals: MatchedGoal[]; matchedRoles: MatchedRole[]; matchedInterests: string[]; needsOffersAToB: NeedsOffersMatch[]; needsOffersBToA: NeedsOffersMatch[]; }
+export function extractMatchedGoals(a: Profile, b: Profile): MatchedGoal[] {
   const matches: MatchedGoal[] = [];
-
-  for (const goalA of goalsA) {
-    for (const goalB of goalsB) {
-      if (isComplementaryGoalPair(goalA, goalB)) {
-        matches.push({ goalA, goalB, type: "complementary" });
-      } else if (norm(goalA) === norm(goalB)) {
-        matches.push({ goalA, goalB, type: "shared" });
-      }
+  for (const goalA of selectedGoals(a)) {
+    for (const goalB of selectedGoals(b)) {
+      if (isComplementary(goalA, goalB)) matches.push({ goalA, goalB, type: "complementary" });
+      else if (norm(goalA) === norm(goalB)) matches.push({ goalA, goalB, type: "shared" });
     }
   }
-
   return matches;
 }
-
-/** Same classification as calculateRolePairComplementarity, but keeps the type label instead of collapsing to a bare score. */
-function classifyRolePairComplementarity(
-  a: Profile,
-  b: Profile,
-  roleA: string,
-  roleB: string,
-): { score: number; pairType: string } {
-  const key = pairKey(roleA, roleB);
-
-  const isFounderInvestor = key === pairKey("Founder / Co-founder", "Investor");
-  if (isFounderInvestor) {
-    const founder = norm(roleA) === "founder / co-founder" ? a : b;
-    const investor = norm(roleA) === "investor" ? a : b;
-    const isRaising = roleDetailString(founder, "Founder", "lookingForInvestors") === "Yes";
-    const focusOverlap = overlap(
-      founder.industry_focus,
-      roleDetailArray(investor, "Investor", "investmentFocusAreas"),
-    );
-    return isRaising && focusOverlap.length > 0
-      ? { score: 20, pairType: "founder-investor-aligned" }
-      : { score: 10, pairType: "founder-investor-moderate" };
-  }
-
-  if (STRONG_PAIRS.has(key)) return { score: 20, pairType: "strong" };
-  if (WEAK_PAIRS.has(key)) return { score: 0, pairType: "weak" };
-  if (norm(roleA) === "community builder" || norm(roleB) === "community builder") {
-    return { score: 10, pairType: "community-builder" };
-  }
-  if (MODERATE_SAME_ROLE_PAIRS.has(key)) return { score: 10, pairType: "same-role" };
-
-  return { score: 10, pairType: "unspecified" };
+export function extractMatchedRoles(a: Profile, b: Profile): MatchedRole[] {
+  return roles(a).flatMap((roleA) => roles(b).flatMap((roleB) => {
+    if (norm(roleA) === norm(roleB)) return [{ roleA, roleB, pairType: "same-role" }];
+    if ((hasRole(a, "Founder / Co-founder") && hasRole(b, "Investor")) || (hasRole(b, "Founder / Co-founder") && hasRole(a, "Investor"))) return [{ roleA, roleB, pairType: "founder-investor-aligned" }];
+    return [];
+  }));
 }
-
-/**
- * Which specific identity from A paired with which specific identity from
- * B to produce calculateRoleComplementarity's score. Mirrors that
- * function's "strongest pairing across every identity combo" selection
- * exactly (including ties), instead of collapsing to just the max number.
- */
-export function extractMatchedRoles(personA: Profile, personB: Profile): MatchedRole[] {
-  const rolesA = [personA.role_type, ...personA.secondary_role_types].filter((role): role is string => Boolean(role));
-  const rolesB = [personB.role_type, ...personB.secondary_role_types].filter((role): role is string => Boolean(role));
-  if (rolesA.length === 0 || rolesB.length === 0) return [];
-
-  const classified = rolesA.flatMap((roleA) =>
-    rolesB.map((roleB) => ({ roleA, roleB, ...classifyRolePairComplementarity(personA, personB, roleA, roleB) })),
-  );
-
-  const maxScore = Math.max(...classified.map((entry) => entry.score));
-  return classified
-    .filter((entry) => entry.score === maxScore)
-    .map(({ roleA, roleB, pairType }) => ({ roleA, roleB, pairType }));
+export function extractMatchedInterests(a: Profile, b: Profile): string[] { return unique([...overlap(a.interests, b.interests), ...overlap(a.communities, b.communities), ...overlap(a.hobbies, b.hobbies), ...overlap(a.music_interests, b.music_interests), ...overlap(a.favorite_conferences, b.favorite_conferences)]); }
+export function extractNeedsOffersMatches(needs: string[], offers: string[]): NeedsOffersMatch[] {
+  return needs.flatMap((need) => { const match = bestOffer(need, offers); return match ? [{ need, offer: match.offer, matchType: match.type }] : []; });
 }
-
-/** The actual overlapping items behind calculateSharedInterests's count. */
-export function extractMatchedInterests(personA: Profile, personB: Profile): string[] {
-  return [
-    ...overlap(personA.interests, personB.interests),
-    ...overlap(personA.communities, personB.communities),
-    ...overlap(personA.hobbies, personB.hobbies),
-    ...overlap(personA.music_interests, personB.music_interests),
-    ...overlap(personA.favorite_conferences, personB.favorite_conferences),
-  ];
-}
-
-/**
- * Which of personNeeds was satisfied by which of personOffers, and whether
- * it was an exact or near match. Mirrors calculateNeedsOffersScore's
- * precedence (exact checked before near) and its "one credit per need"
- * rule -- at most one match per need, no double-counting when several
- * offers would qualify.
- */
-export function extractNeedsOffersMatches(personNeeds: string[], personOffers: string[]): NeedsOffersMatch[] {
-  if (personNeeds.length === 0 || personOffers.length === 0) return [];
-
-  const matches: NeedsOffersMatch[] = [];
-
-  for (const need of personNeeds) {
-    const normalizedNeed = norm(need);
-
-    if (EXACT_NEEDS_OFFERS_MATCHES.has(normalizedNeed)) {
-      const exactOffer = personOffers.find((offer) => norm(offer) === normalizedNeed);
-      if (exactOffer) {
-        matches.push({ need, offer: exactOffer, matchType: "exact" });
-        continue;
-      }
-    }
-
-    const compatibleOffers = NEAR_NEEDS_OFFERS_MATCHES[normalizedNeed];
-    if (compatibleOffers) {
-      const nearOffer = personOffers.find((offer) => compatibleOffers.has(norm(offer)));
-      if (nearOffer) {
-        matches.push({ need, offer: nearOffer, matchType: "near" });
-      }
-    }
-  }
-
-  return matches;
-}
-
-/**
- * Assembles the structured match_details shape (see the
- * add_match_details_to_matches migration) from the four extractors above.
- * needsOffersAToB / needsOffersBToA follow calculateMatchScore's existing
- * direction convention: AToB = personA's needs satisfied by personB's
- * offers (value flowing to A), BToA = the reverse.
- */
-export function buildMatchDetails(personA: Profile, personB: Profile): MatchDetails {
-  return {
-    matchedGoals: extractMatchedGoals(personA, personB),
-    matchedRoles: extractMatchedRoles(personA, personB),
-    matchedInterests: extractMatchedInterests(personA, personB),
-    needsOffersAToB: extractNeedsOffersMatches(personA.needs ?? [], personB.offers ?? []),
-    needsOffersBToA: extractNeedsOffersMatches(personB.needs ?? [], personA.offers ?? []),
-  };
+export function buildMatchDetails(a: Profile, b: Profile): MatchDetails {
+  return { matchedGoals: extractMatchedGoals(a, b), matchedRoles: extractMatchedRoles(a, b), matchedInterests: extractMatchedInterests(a, b), needsOffersAToB: extractNeedsOffersMatches(present(a.needs), present(b.offers)), needsOffersBToA: extractNeedsOffersMatches(present(b.needs), present(a.offers)) };
 }

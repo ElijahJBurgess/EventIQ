@@ -6,6 +6,7 @@ export interface ConciergeHistoryItem {
 }
 
 export interface ConciergeRequestPayload {
+  [key: string]: unknown;
   question: string;
   eventId: string;
   requestId: string;

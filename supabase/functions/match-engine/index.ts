@@ -15,10 +15,10 @@ import {
   type MatchEngineAuthClient,
   type MatchEngineResult,
 } from "./handler.ts";
-import { buildMatchDetails, calculateMatchScore, type MatchDetails, type Profile } from "./scorer.ts";
+import { buildMatchDetails, calculateMatchScore, type MatchDetails, type MatchResult, type Profile } from "./scorer.ts";
 
 const PROFILE_SELECT =
-  "id, full_name, role_type, secondary_role_types, role_details, who_to_meet, desired_outcomes, areas_of_expertise, matching_goal, primary_goal, secondary_goals, industry_focus, needs, offers, connection_preference, interests, communities, hobbies, music_interests, favorite_conferences, location";
+  "id, full_name, role_type, secondary_role_types, role_details, who_to_meet, desired_outcomes, areas_of_expertise, expertise_sought, matching_goal, primary_goal, secondary_goals, primary_function, additional_functions, seniority, career_level_preference, industry_focus, industries, industry_preference, needs, offers, connection_preference, interests, communities, hobbies, music_interests, favorite_conferences, location, location_city, location_state_code, location_preference, profile_completed, profile_completion_score, updated_at, linkedin_url";
 
 /** DB row (fetched with PROFILE_SELECT) -> the shape scorer.ts expects. */
 function toScoringProfile(row: Record<string, unknown>): Profile {
@@ -26,6 +26,9 @@ function toScoringProfile(row: Record<string, unknown>): Profile {
     id: row.id as string,
     full_name: (row.full_name as string | null) ?? null,
     location: (row.location as string | null) ?? null,
+    location_city: (row.location_city as string | null) ?? null,
+    location_state_code: (row.location_state_code as string | null) ?? null,
+    location_preference: (row.location_preference as string | null) ?? null,
     role_type: (row.role_type as string | null) ?? null,
     secondary_role_types: (row.secondary_role_types as string[] | null) ?? [],
     // company/title aren't in this function's fetch list (per spec) and
@@ -36,11 +39,18 @@ function toScoringProfile(row: Record<string, unknown>): Profile {
     who_to_meet: (row.who_to_meet as string[] | null) ?? null,
     desired_outcomes: (row.desired_outcomes as string[] | null) ?? null,
     areas_of_expertise: (row.areas_of_expertise as string[] | null) ?? null,
+    expertise_sought: (row.expertise_sought as string[] | null) ?? null,
+    primary_function: (row.primary_function as string | null) ?? null,
+    additional_functions: (row.additional_functions as string[] | null) ?? null,
+    seniority: (row.seniority as string | null) ?? null,
+    career_level_preference: (row.career_level_preference as string[] | null) ?? null,
     matching_goal: (row.matching_goal as string | null) ?? null,
     primary_goal: (row.primary_goal as string | null) ?? null,
     secondary_goals: (row.secondary_goals as string[] | null) ?? null,
     role_details: (row.role_details as Record<string, unknown> | null) ?? null,
     industry_focus: (row.industry_focus as string[] | null) ?? null,
+    industries: (row.industries as string[] | null) ?? null,
+    industry_preference: (row.industry_preference as string | null) ?? null,
     needs: (row.needs as string[] | null) ?? null,
     offers: (row.offers as string[] | null) ?? null,
     connection_preference: (row.connection_preference as string[] | null) ?? null,
@@ -49,6 +59,10 @@ function toScoringProfile(row: Record<string, unknown>): Profile {
     hobbies: (row.hobbies as string[] | null) ?? null,
     music_interests: (row.music_interests as string[] | null) ?? null,
     favorite_conferences: (row.favorite_conferences as string[] | null) ?? null,
+    profile_completed: (row.profile_completed as boolean | null) ?? null,
+    profile_completion_score: (row.profile_completion_score as number | null) ?? null,
+    updated_at: (row.updated_at as string | null) ?? null,
+    linkedin_url: (row.linkedin_url as string | null) ?? null,
   };
 }
 
@@ -153,21 +167,19 @@ async function runMatching(profileId: string, eventId: string): Promise<MatchEng
     }
     const otherProfiles = Array.from(otherProfilesById.values());
 
-    // 4 & 5. Score every pair. There is intentionally no minimum threshold.
+    // 4 & 5. Score every pair in both directions. Eligibility is deliberately
+    // not applied here: persisted rows remain available for audit/rescoring;
+    // the later UI change will filter on directional score and confidence.
     const scoredMatches: {
       other: Profile;
-      score: number;
-      breakdown: ReturnType<typeof calculateMatchScore>["scoreBreakdown"];
-      reasons: string[];
+      result: MatchResult;
       details: MatchDetails;
     }[] = [];
     for (const other of otherProfiles) {
       const result = calculateMatchScore(requestingProfile, other);
       scoredMatches.push({
         other,
-        score: result.score,
-        breakdown: result.scoreBreakdown,
-        reasons: result.matchReasons,
+        result,
         details: buildMatchDetails(requestingProfile, other),
       });
     }
@@ -175,44 +187,95 @@ async function runMatching(profileId: string, eventId: string): Promise<MatchEng
     // 6/7. Check for existing matches (either direction) before inserting.
     const { data: existingMatches, error: existingError } = await supabase
       .from("matches")
-      .select("user_a_id, user_b_id")
+      .select("id, user_a_id, user_b_id")
       .eq("event_id", eventId);
 
     if (existingError) {
       throw new Error("Existing match lookup failed");
     }
 
-    const existingPairKeys = new Set(
-      (existingMatches ?? []).map((m) => pairKey(m.user_a_id as string, m.user_b_id as string)),
+    const existingByPair = new Map(
+      (existingMatches ?? []).map((m) => [pairKey(m.user_a_id as string, m.user_b_id as string), m]),
     );
 
-    let skippedDuplicates = 0;
+    let matchesUpdated = 0;
     const rowsToInsert: Record<string, unknown>[] = [];
     const now = new Date().toISOString();
 
+    const storedValues = (
+      result: MatchResult,
+      details: MatchDetails,
+      orientedAsCalculated: boolean,
+    ): Record<string, unknown> => {
+      const aToBScore = orientedAsCalculated ? result.aToBScore : result.bToAScore;
+      const bToAScore = orientedAsCalculated ? result.bToAScore : result.aToBScore;
+      const aToBConfidence = orientedAsCalculated ? result.aToBConfidence : result.bToAConfidence;
+      const bToAConfidence = orientedAsCalculated ? result.bToAConfidence : result.aToBConfidence;
+      const scoreBreakdown = orientedAsCalculated
+        ? result.scoreBreakdown
+        : { aToB: result.scoreBreakdown.bToA, bToA: result.scoreBreakdown.aToB };
+      const matchEvidence = orientedAsCalculated
+        ? result.matchEvidence
+        : { aToB: result.matchEvidence.bToA, bToA: result.matchEvidence.aToB };
+      const reasons = orientedAsCalculated ? result.aToBReasons : result.bToAReasons;
+      const reciprocityLabel = orientedAsCalculated
+        ? result.reciprocityLabel
+        : result.reciprocityLabel === "They Can Help You"
+          ? "You Can Help Them"
+          : result.reciprocityLabel === "You Can Help Them"
+            ? "They Can Help You"
+            : result.reciprocityLabel;
+      return {
+        a_to_b_score: aToBScore,
+        b_to_a_score: bToAScore,
+        a_to_b_confidence: aToBConfidence,
+        b_to_a_confidence: bToAConfidence,
+        reciprocity_label: reciprocityLabel,
+        score_version: result.scoreVersion,
+        score_breakdown: scoreBreakdown,
+        match_evidence: matchEvidence,
+        match_details: orientedAsCalculated
+          ? details
+          : {
+              ...details,
+              matchedGoals: details.matchedGoals.map(({ goalA, goalB, ...rest }) => ({ goalA: goalB, goalB: goalA, ...rest })),
+              matchedRoles: details.matchedRoles.map(({ roleA, roleB, ...rest }) => ({ roleA: roleB, roleB: roleA, ...rest })),
+              needsOffersAToB: details.needsOffersBToA,
+              needsOffersBToA: details.needsOffersAToB,
+            },
+        // Transitional shared values remain populated for the unchanged UI.
+        match_score: aToBScore,
+        match_reason: reasons.join(" "),
+        generated_at: now,
+      };
+    };
+
     for (const match of scoredMatches) {
       const key = pairKey(profileId, match.other.id);
-      if (existingPairKeys.has(key)) {
-        skippedDuplicates += 1;
+      const existing = existingByPair.get(key);
+      if (existing) {
+        const orientedAsCalculated = existing.user_a_id === profileId;
+        const { error: updateError } = await supabase
+          .from("matches")
+          .update(storedValues(match.result, match.details, orientedAsCalculated))
+          .eq("id", existing.id);
+        if (updateError) throw new Error("Match update failed");
+        matchesUpdated += 1;
         continue;
       }
-      existingPairKeys.add(key); // guard against duplicate pairs within this same run
+      existingByPair.set(key, { id: "pending", user_a_id: profileId, user_b_id: match.other.id });
 
       rowsToInsert.push({
         user_a_id: profileId,
         user_b_id: match.other.id,
         event_id: eventId,
-        match_score: match.score,
-        score_breakdown: match.breakdown,
-        match_details: match.details,
-        match_reason: match.reasons.join(" "),
+        ...storedValues(match.result, match.details, true),
         shared_goals: sharedGoals(requestingProfile, match.other),
         shared_industries: overlapValues(requestingProfile.industry_focus, match.other.industry_focus),
         shared_interests: sharedInterestsList(requestingProfile, match.other),
         ai_explanation: "",
         conversation_starters: [],
         recommended_next_step: "Request to Connect",
-        generated_at: now,
       });
     }
 
@@ -233,7 +296,8 @@ async function runMatching(profileId: string, eventId: string): Promise<MatchEng
     return {
       matchesGenerated: scoredMatches.length,
       matchesSaved,
-      skippedDuplicates,
+      matchesUpdated,
+      skippedDuplicates: 0,
     };
   } catch {
     throw new Error("Match engine failed");

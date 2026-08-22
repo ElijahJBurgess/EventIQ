@@ -7,6 +7,7 @@ import { sendConnectRequest } from "@/lib/connectRequest";
 import OffripButton from "@/components/offrip/Button";
 import OffripCard from "@/components/offrip/Card";
 import OffripChip from "@/components/offrip/Chip";
+import { getMatchBand } from "@/lib/matchPresentation";
 
 interface FullProfileViewProps {
   matchId: string;
@@ -134,6 +135,7 @@ export default function FullProfileView({ matchId, currentUserId, onBack, backLa
 
   const explanation = buildFullProfileExplanation(detail);
   const { otherPerson } = detail;
+  const scoreBand = detail.match.score === null ? null : getMatchBand(detail.match.score);
   const roleCompany = [otherPerson.role_type, otherPerson.company].filter(Boolean).join(" · ");
 
   const handleMakeIntro = async () => {
@@ -191,10 +193,14 @@ export default function FullProfileView({ matchId, currentUserId, onBack, backLa
           </div>
 
           <div className="border border-offrip-black bg-offrip-black p-5 text-center">
-            <p className="font-offrip-display text-5xl font-black text-offrip-white">{detail.match.score}%</p>
-            <div className="mt-3">
-              <OffripChip color="lime">Mutual Value</OffripChip>
-            </div>
+            <p className="font-offrip-display text-5xl font-black text-offrip-white">{detail.match.score === null ? "--" : `${detail.match.score}%`}</p>
+            {scoreBand && <p className="mt-2 font-offrip-display text-xs font-bold uppercase text-offrip-white">{scoreBand.text}</p>}
+            {detail.match.confidence !== null && <p className="mt-1 text-xs text-offrip-white/70">Confidence {detail.match.confidence}%</p>}
+            {detail.match.reciprocityLabel && (
+              <div className="mt-3">
+                <OffripChip color="lime">{detail.match.reciprocityLabel}</OffripChip>
+              </div>
+            )}
           </div>
 
           <OffripButton

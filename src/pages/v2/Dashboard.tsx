@@ -41,6 +41,10 @@ const NAV_LABELS: Record<NavItem, string> = {
 interface Profile {
   id: string;
   full_name: string | null;
+  avatar_url?: string | null;
+  title?: string | null;
+  role_type?: string | null;
+  company?: string | null;
 }
 
 interface HomeStatsData {

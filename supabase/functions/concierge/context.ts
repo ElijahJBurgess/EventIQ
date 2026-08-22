@@ -35,10 +35,15 @@ export interface MatchRow {
   event_id: string | null;
   user_a_id: string | null;
   user_b_id: string | null;
-  match_score: number | null;
+  a_to_b_score: number | null;
+  b_to_a_score: number | null;
+  a_to_b_confidence: number | null;
+  b_to_a_confidence: number | null;
+  reciprocity_label?: string | null;
   match_reason?: string | null;
   ai_explanation?: string | null;
   score_breakdown?: unknown;
+  match_evidence?: unknown;
   match_details?: unknown;
   shared_goals?: string[] | null;
   shared_interests?: string[] | null;
@@ -120,12 +125,15 @@ export interface ConciergeMatchContext {
     profileId: string;
     eventId: string;
     persistedScore: number;
+    persistedConfidence: number;
   };
   userAuthoredProfileData: UserAuthoredProfileData;
   persistedMatchEvidence: {
     reason: string | null;
     aiExplanation: string | null;
     scoreBreakdown: unknown;
+    matchEvidence: unknown;
+    reciprocityLabel: string | null;
     matchDetails: unknown;
     sharedGoals: string[];
     sharedInterests: string[];
@@ -226,6 +234,13 @@ function baseContext(userId: string, event: EventRow, status: ConciergeContextSt
 
 function isExactPair(userId: string, otherId: string, first: string | null, second: string | null) {
   return (first === userId && second === otherId) || (first === otherId && second === userId);
+}
+
+function viewerReciprocityLabel(label: string | null | undefined, viewerIsA: boolean): string | null {
+  if (!label || viewerIsA) return label ?? null;
+  if (label === "They Can Help You") return "You Can Help Them";
+  if (label === "You Can Help Them") return "They Can Help You";
+  return label;
 }
 
 function deriveRelationship(
@@ -355,13 +370,36 @@ export async function buildConciergeContext(
 
   const checkedIn = new Set(checkedInProfileIds.filter((profileId) => profileId !== userId));
   const eligibleMatches = authorizedMatches
-    .map((match) => ({
-      match,
-      otherId: match.user_a_id === userId ? match.user_b_id : match.user_a_id,
-    }))
-    .filter((entry): entry is { match: MatchRow; otherId: string } => Boolean(entry.otherId && checkedIn.has(entry.otherId)))
+    .map((match) => {
+      const viewerIsA = match.user_a_id === userId;
+      const score = viewerIsA ? match.a_to_b_score : match.b_to_a_score;
+      const confidence = viewerIsA ? match.a_to_b_confidence : match.b_to_a_confidence;
+      const breakdown = match.score_breakdown && typeof match.score_breakdown === "object"
+        ? (match.score_breakdown as Record<string, unknown>)[viewerIsA ? "aToB" : "bToA"] ?? null
+        : null;
+      const evidence = match.match_evidence && typeof match.match_evidence === "object"
+        ? (match.match_evidence as Record<string, unknown>)[viewerIsA ? "aToB" : "bToA"] ?? null
+        : null;
+      return {
+        match,
+        otherId: viewerIsA ? match.user_b_id : match.user_a_id,
+        score,
+        confidence,
+        breakdown,
+        evidence,
+        reciprocityLabel: viewerReciprocityLabel(match.reciprocity_label, viewerIsA),
+      };
+    })
+    .filter((entry): entry is typeof entry & { otherId: string; score: number; confidence: number } => Boolean(
+      entry.otherId
+      && checkedIn.has(entry.otherId)
+      && entry.score !== null
+      && entry.score >= 60
+      && entry.confidence !== null
+      && entry.confidence >= 70
+    ))
     .sort((left, right) => (
-      (right.match.match_score ?? 0) - (left.match.match_score ?? 0)
+      right.score - left.score
       || left.match.id.localeCompare(right.match.id)
     ))
     .slice(0, 10);
@@ -402,7 +440,7 @@ export async function buildConciergeContext(
     );
   });
 
-  context.checkedInMatches = eligibleMatches.flatMap(({ match, otherId }) => {
+  context.checkedInMatches = eligibleMatches.flatMap(({ match, otherId, score, confidence, breakdown, evidence, reciprocityLabel }) => {
     const profile = profileById.get(otherId);
     if (!profile) return [];
     const matchMessages = messageFacts.filter((message) => message.match_id === match.id);
@@ -412,13 +450,16 @@ export async function buildConciergeContext(
         matchId: match.id,
         profileId: otherId,
         eventId,
-        persistedScore: match.match_score ?? 0,
+        persistedScore: score,
+        persistedConfidence: confidence,
       },
       userAuthoredProfileData: profileData(profile),
       persistedMatchEvidence: {
         reason: match.match_reason ?? null,
         aiExplanation: match.ai_explanation ?? null,
-        scoreBreakdown: match.score_breakdown ?? null,
+        scoreBreakdown: breakdown,
+        matchEvidence: evidence,
+        reciprocityLabel,
         matchDetails: match.match_details ?? null,
         sharedGoals: match.shared_goals ?? [],
         sharedInterests: match.shared_interests ?? [],
@@ -504,10 +545,9 @@ export function createSupabaseContextSource(client: ConciergeQueryClient): Conci
     },
     async getMatches(userId, eventId) {
       const result = await client.from<MatchRow>("matches")
-        .select("id,event_id,user_a_id,user_b_id,match_score,match_reason,ai_explanation,score_breakdown,match_details,shared_goals,shared_interests,shared_industries,shared_communities")
+        .select("id,event_id,user_a_id,user_b_id,a_to_b_score,b_to_a_score,a_to_b_confidence,b_to_a_confidence,reciprocity_label,match_reason,ai_explanation,score_breakdown,match_evidence,match_details,shared_goals,shared_interests,shared_industries,shared_communities")
         .eq("event_id", eventId)
-        .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
-        .order("match_score", { ascending: false });
+        .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`);
       return unwrap(result, "match lookup");
     },
     async getCheckedInProfileIds(eventId) {

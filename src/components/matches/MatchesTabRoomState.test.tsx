@@ -44,10 +44,10 @@ vi.mock("@/integrations/supabase/client", () => {
         if (eventId) mocks.queriedMatchEvents.push(eventId);
         data = eventId === "room-a"
           ? [
-              { id: "match-absent", event_id: "room-a", user_a_id: "current-user", user_b_id: "absent-a", match_score: 99 },
-              { id: "match-a", event_id: "room-a", user_a_id: "current-user", user_b_id: "person-a", match_score: 80 },
+              { id: "match-absent", event_id: "room-a", user_a_id: "current-user", user_b_id: "absent-a", a_to_b_score: 99, b_to_a_score: 65, a_to_b_confidence: 99, b_to_a_confidence: 75, reciprocity_label: "You Can Help Each Other" },
+              { id: "match-a", event_id: "room-a", user_a_id: "current-user", user_b_id: "person-a", a_to_b_score: 86, b_to_a_score: 72, a_to_b_confidence: 80, b_to_a_confidence: 75, reciprocity_label: "You Can Help Each Other" },
             ]
-          : [{ id: "match-b", event_id: "room-b", user_a_id: "current-user", user_b_id: "person-b", match_score: 70 }];
+          : [{ id: "match-b", event_id: "room-b", user_a_id: "person-b", user_b_id: "current-user", a_to_b_score: 61, b_to_a_score: 74, a_to_b_confidence: 71, b_to_a_confidence: 78, reciprocity_label: "You Can Help Each Other" }];
       }
       if (table === "attendee_profiles") data = profiles;
       return Promise.resolve({ data, error: null }).then(resolve, reject);
@@ -89,6 +89,8 @@ describe("MatchesTab controlled Room state", () => {
     render(<ControlledPeople />);
 
     expect(await screen.findByText("Checked Person A")).toBeInTheDocument();
+    expect(screen.getByText("86%")).toBeInTheDocument();
+    expect(screen.getByText("Don't Leave Without Meeting")).toBeInTheDocument();
     expect(screen.queryByText("Absent Person")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Dashboard selected Room")).toHaveTextContent("room-a");
 
@@ -96,6 +98,10 @@ describe("MatchesTab controlled Room state", () => {
 
     await waitFor(() => expect(screen.getByLabelText("Dashboard selected Room")).toHaveTextContent("room-b"));
     expect(await screen.findByText("Checked Person B")).toBeInTheDocument();
+    expect(screen.getByText("74%")).toBeInTheDocument();
+    expect(screen.getByText("Confidence 78%")).toBeInTheDocument();
+    expect(screen.getByText("Strong Match")).toBeInTheDocument();
+    expect(screen.getByText("You Can Help Each Other")).toBeInTheDocument();
     expect(mocks.queriedMatchEvents).toContain("room-a");
     expect(mocks.queriedMatchEvents).toContain("room-b");
 

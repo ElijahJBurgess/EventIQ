@@ -9,6 +9,7 @@
 
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
+import { getViewerReciprocityLabel } from "@/lib/matchPresentation";
 
 export interface MatchDetailProfile {
   id: string;
@@ -29,7 +30,11 @@ export interface MatchDetailProfile {
 export interface MatchDetailMatch {
   id: string;
   eventId: string | null;
-  score: number;
+  score: number | null;
+  confidence: number | null;
+  reciprocityLabel: string | null;
+  directionalEvidence: DirectionalEvidenceItem[];
+  reverseEvidence: DirectionalEvidenceItem[];
   scoreBreakdown: Json | null;
   matchDetails: Json | null;
   reason: string | null;
@@ -38,6 +43,16 @@ export interface MatchDetailMatch {
   sharedIndustries: string[];
   sharedCommunities: string[];
   generatedAt: string | null;
+}
+
+export interface DirectionalEvidenceItem {
+  component: string;
+  score: number;
+  viewerField: string;
+  viewerValue: string;
+  candidateField: string;
+  candidateValue: string;
+  mapping: string;
 }
 
 export interface MatchDetailResult {
@@ -69,6 +84,73 @@ function toDetailProfile(row: unknown): MatchDetailProfile | null {
   };
 }
 
+function parseEvidence(value: Json | null, key: "aToB" | "bToA"): DirectionalEvidenceItem[] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+  const side = (value as Record<string, Json | undefined>)[key];
+  if (!Array.isArray(side)) return [];
+  const parsed: DirectionalEvidenceItem[] = [];
+  for (const item of side) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const record = item as Record<string, unknown>;
+    if (
+      typeof record.component === "string" &&
+      typeof record.score === "number" &&
+      record.score > 0 &&
+      typeof record.viewerField === "string" &&
+      typeof record.viewerValue === "string" &&
+      typeof record.candidateField === "string" &&
+      typeof record.candidateValue === "string" &&
+      typeof record.mapping === "string"
+    ) {
+      parsed.push({
+        component: record.component,
+        score: record.score,
+        viewerField: record.viewerField,
+        viewerValue: record.viewerValue,
+        candidateField: record.candidateField,
+        candidateValue: record.candidateValue,
+        mapping: record.mapping,
+      });
+    }
+  }
+  return parsed;
+}
+
+function directionalBreakdown(value: Json | null, key: "aToB" | "bToA"): Json | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return ((value as Record<string, Json | undefined>)[key] ?? null) as Json | null;
+}
+
+interface StoredDirectionalMatch {
+  user_a_id: string | null;
+  user_b_id: string | null;
+  a_to_b_score: number | null;
+  b_to_a_score: number | null;
+  a_to_b_confidence: number | null;
+  b_to_a_confidence: number | null;
+  reciprocity_label: string | null;
+  score_breakdown: Json | null;
+  match_evidence: Json;
+}
+
+export function orientStoredMatch(
+  data: StoredDirectionalMatch,
+  currentUserId: string,
+): Pick<MatchDetailMatch, "score" | "confidence" | "reciprocityLabel" | "directionalEvidence" | "reverseEvidence" | "scoreBreakdown"> | null {
+  if (data.user_a_id !== currentUserId && data.user_b_id !== currentUserId) return null;
+  const isCurrentUserA = data.user_a_id === currentUserId;
+  const viewerKey = isCurrentUserA ? "aToB" : "bToA";
+  const reverseKey = isCurrentUserA ? "bToA" : "aToB";
+  return {
+    score: isCurrentUserA ? data.a_to_b_score : data.b_to_a_score,
+    confidence: isCurrentUserA ? data.a_to_b_confidence : data.b_to_a_confidence,
+    reciprocityLabel: getViewerReciprocityLabel(data.reciprocity_label, isCurrentUserA),
+    directionalEvidence: parseEvidence(data.match_evidence, viewerKey),
+    reverseEvidence: parseEvidence(data.match_evidence, reverseKey),
+    scoreBreakdown: directionalBreakdown(data.score_breakdown, viewerKey),
+  };
+}
+
 /**
  * Everything Full Profile View needs for one match, in a single round
  * trip: the full matches row (including match_details) plus both people's
@@ -89,14 +171,15 @@ export async function fetchMatchDetail(matchId: string, currentUserId: string): 
   const { data, error } = await supabase
     .from("matches")
     .select(
-      "id, event_id, match_score, score_breakdown, match_details, match_reason, shared_goals, shared_interests, shared_industries, shared_communities, generated_at, user_a_id, user_b_id",
+      "id, event_id, a_to_b_score, b_to_a_score, a_to_b_confidence, b_to_a_confidence, reciprocity_label, score_breakdown, match_evidence, match_details, match_reason, shared_goals, shared_interests, shared_industries, shared_communities, generated_at, user_a_id, user_b_id",
     )
     .eq("id", matchId)
     .maybeSingle();
 
   if (error) throw error;
   if (!data) return null;
-  if (data.user_a_id !== currentUserId && data.user_b_id !== currentUserId) return null;
+  const directional = orientStoredMatch(data, currentUserId);
+  if (!directional) return null;
 
   const profileIds = [data.user_a_id, data.user_b_id].filter((id): id is string => Boolean(id));
   const { data: profileRows, error: profileError } = await supabase
@@ -115,8 +198,7 @@ export async function fetchMatchDetail(matchId: string, currentUserId: string): 
     match: {
       id: data.id,
       eventId: data.event_id,
-      score: data.match_score ?? 0,
-      scoreBreakdown: data.score_breakdown,
+      ...directional,
       matchDetails: data.match_details,
       reason: data.match_reason,
       sharedGoals: data.shared_goals ?? [],

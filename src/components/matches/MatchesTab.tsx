@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { sendConnectRequest } from "@/lib/connectRequest";
 import { selectTopCheckedInMatches } from "@/lib/checkedInMatches";
+import { getMatchBand, getViewerReciprocityLabel } from "@/lib/matchPresentation";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -28,6 +29,8 @@ interface EnrichedMatch {
   id: string;
   eventId: string;
   score: number;
+  confidence: number;
+  reciprocityLabel: string | null;
   reason: string | null;
   sharedIndustries: string[];
   sharedInterests: string[];
@@ -54,12 +57,6 @@ function initials(name: string | null) {
   const first = parts[0]?.[0] ?? "";
   const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
   return (first + last).toUpperCase() || "?";
-}
-
-function getMatchLabel(score: number) {
-  if (score >= 75) return { text: "Strong Match", className: "bg-success text-white" };
-  if (score >= 50) return { text: "Good Match", className: "bg-blue-500 text-white" };
-  return { text: "Potential Match", className: "bg-muted text-muted-foreground" };
 }
 
 export default function MatchesTab({
@@ -142,10 +139,9 @@ export default function MatchesTab({
     const [{ data: matchRows, error }, { data: checkedInRegistrations, error: checkInError }] = await Promise.all([
       supabase
         .from("matches")
-        .select("id, event_id, user_a_id, user_b_id, match_score, match_reason, shared_industries, shared_interests")
+        .select("id, event_id, user_a_id, user_b_id, a_to_b_score, b_to_a_score, a_to_b_confidence, b_to_a_confidence, reciprocity_label, match_reason, shared_industries, shared_interests")
         .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
-        .eq("event_id", selectedEventId)
-        .order("match_score", { ascending: false }),
+        .eq("event_id", selectedEventId),
       supabase
         .from("matched_event_attendance")
         .select("profile_id")
@@ -198,7 +194,9 @@ export default function MatchesTab({
         return {
           id: m.id,
           eventId: m.event_id ?? selectedEventId,
-          score: m.match_score ?? 0,
+          score: m.viewerScore,
+          confidence: m.viewerConfidence,
+          reciprocityLabel: getViewerReciprocityLabel(m.reciprocity_label, m.user_a_id === userId),
           reason: m.match_reason,
           sharedIndustries: m.shared_industries ?? [],
           sharedInterests: m.shared_interests ?? [],
@@ -338,7 +336,7 @@ function MatchCard({
   const [status, setStatus] = useState<"idle" | "composing" | "sending" | "sent">(
     match.alreadyConnected ? "sent" : "idle",
   );
-  const label = getMatchLabel(match.score);
+  const label = getMatchBand(match.score);
   const { other } = match;
   const subtitle = [other.title, other.company].filter(Boolean).join(" · ");
 
@@ -407,7 +405,8 @@ function MatchCard({
           </div>
           <div className="flex flex-col items-end gap-1 shrink-0">
             <span className={`font-label text-[10px] px-2 py-1 ooo-border ${label.className}`}>{label.text}</span>
-            <span className="font-label text-xs text-muted-foreground">{match.score}</span>
+            <span className="font-label text-xs text-muted-foreground">{match.score}%</span>
+            <span className="text-[10px] text-muted-foreground normal-case font-sans">Confidence {match.confidence}%</span>
           </div>
         </div>
 
@@ -415,6 +414,10 @@ function MatchCard({
 
         {match.reason && (
           <p className="text-sm leading-relaxed normal-case font-sans break-words">{match.reason}</p>
+        )}
+
+        {match.reciprocityLabel && (
+          <p className="text-xs font-label text-primary">{match.reciprocityLabel}</p>
         )}
 
         {(match.sharedIndustries.length > 0 || match.sharedInterests.length > 0) && (

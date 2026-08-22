@@ -134,7 +134,7 @@ export function useConciergeSession({
         : message));
 
     const result = await invoke(payload);
-    if (result.ok) {
+    if (result.ok === true) {
       const status = result.response.context.status;
       const isReady = status === "ready";
       setMessages((current) => [
