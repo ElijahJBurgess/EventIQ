@@ -11,6 +11,7 @@ const mocks = vi.hoisted(() => ({
   requestPasswordReset: vi.fn(),
   updatePassword: vi.fn(),
   getUser: vi.fn(),
+  maybeSingle: vi.fn(),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
   authState: {
@@ -35,7 +36,11 @@ vi.mock("@/v2/AuthProvider", () => ({
 vi.mock("@/integrations/supabase/client", () => ({
   supabase: {
     auth: { getUser: mocks.getUser },
-    from: vi.fn(),
+    from: () => ({
+      select: () => ({
+        eq: () => ({ maybeSingle: mocks.maybeSingle }),
+      }),
+    }),
   },
 }));
 
@@ -63,6 +68,8 @@ beforeEach(() => {
   window.history.replaceState({}, "", "/");
   mocks.signUp.mockResolvedValue({ error: null, requiresEmailConfirmation: false });
   mocks.signIn.mockResolvedValue({ error: null });
+  mocks.getUser.mockResolvedValue({ data: { user: { id: "returning-user" } } });
+  mocks.maybeSingle.mockResolvedValue({ data: { profile_completed: false }, error: null });
 });
 
 afterEach(cleanup);
@@ -98,12 +105,12 @@ describe("immediate signup", () => {
     expect(mocks.signUp).not.toHaveBeenCalled();
   });
 
-  it("welcomes the user and proceeds without verification instructions", async () => {
+  it("sends a newly authenticated signup directly to profile setup", async () => {
     render(
       <MemoryRouter initialEntries={["/v2/auth?mode=signup"]}>
         <Routes>
           <Route path="/v2/auth" element={<AuthV2 />} />
-          <Route path="/" element={<div>OFFRIP landing</div>} />
+          <Route path="/v2/setup" element={<div>OFFRIP onboarding</div>} />
         </Routes>
       </MemoryRouter>,
     );
@@ -113,10 +120,46 @@ describe("immediate signup", () => {
     fireEvent.submit(screen.getByRole("button", { name: "Create account" }).closest("form")!);
 
     await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith("Welcome to OFFRIP"));
-    expect(await screen.findByText("OFFRIP landing")).toBeInTheDocument();
+    expect(await screen.findByText("OFFRIP onboarding")).toBeInTheDocument();
     expect(screen.queryByText(/Check your email to verify/i)).not.toBeInTheDocument();
     expect(mocks.signUp).toHaveBeenCalledWith("avery@example.com", "secure88", "Avery Morgan");
     expect(mocks.signIn).not.toHaveBeenCalled();
+  });
+});
+
+describe("returning user routing", () => {
+  function renderSignIn() {
+    return render(
+      <MemoryRouter initialEntries={["/v2/auth"]}>
+        <Routes>
+          <Route path="/v2/auth" element={<AuthV2 />} />
+          <Route path="/v2/setup" element={<div>OFFRIP onboarding</div>} />
+          <Route path="/v2" element={<div>OFFRIP dashboard</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+  }
+
+  async function signIn() {
+    fireEvent.change(screen.getByPlaceholderText("Email"), { target: { value: "avery@example.com" } });
+    fireEvent.change(screen.getByPlaceholderText("Password"), { target: { value: "secure88" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+  }
+
+  it("sends an incomplete returning user to profile setup", async () => {
+    mocks.maybeSingle.mockResolvedValue({ data: { profile_completed: false }, error: null });
+    renderSignIn();
+    await signIn();
+
+    expect(await screen.findByText("OFFRIP onboarding")).toBeInTheDocument();
+  });
+
+  it("sends a completed returning user to the dashboard", async () => {
+    mocks.maybeSingle.mockResolvedValue({ data: { profile_completed: true }, error: null });
+    renderSignIn();
+    await signIn();
+
+    expect(await screen.findByText("OFFRIP dashboard")).toBeInTheDocument();
   });
 });
 

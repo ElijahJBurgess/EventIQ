@@ -107,6 +107,11 @@ describe("AuthProvider password recovery", () => {
 
     expect(await screen.findByText("signed-in")).toBeInTheDocument();
     expect(mocks.signInWithPassword).not.toHaveBeenCalled();
+    expect(mocks.signUp).toHaveBeenCalledWith(expect.objectContaining({
+      options: expect.objectContaining({
+        emailRedirectTo: `${window.location.origin}/v2/setup`,
+      }),
+    }));
   });
 
   it("maps provider sign-in details to a generic UI-safe error", async () => {

@@ -58,6 +58,17 @@ describe("Landing intentional app entry", () => {
     expect(screen.getByText("OFFRIP auth")).toBeInTheDocument();
   });
 
+  it("keeps a direct visit and refresh of / on the public landing page", () => {
+    mocks.auth.user = { id: "complete-user" };
+    const firstVisit = renderLanding();
+    expect(screen.getByRole("heading", { level: 1, name: /Know.*Off rip/i })).toBeInTheDocument();
+    firstVisit.unmount();
+
+    renderLanding();
+    expect(screen.getByRole("heading", { level: 1, name: /Know.*Off rip/i })).toBeInTheDocument();
+    expect(mocks.maybeSingle).not.toHaveBeenCalled();
+  });
+
   it("keeps an incomplete authenticated user on the homepage and sends deliberate entry to onboarding", async () => {
     mocks.auth.user = { id: "incomplete-user" };
     mocks.maybeSingle.mockResolvedValue({ data: { profile_completed: false }, error: null });

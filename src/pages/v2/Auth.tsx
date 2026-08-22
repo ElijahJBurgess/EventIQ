@@ -46,7 +46,7 @@ export default function AuthV2() {
           return;
         }
         toast.success("Welcome to OFFRIP");
-        navigate("/");
+        navigate("/v2/setup");
       } else {
         const { error } = await signIn(email, password);
         if (error) return toast.error(error);
