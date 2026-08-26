@@ -93,7 +93,7 @@ export default function Page3WhoAndFilters({ formData, setFormData, onNext, onBa
     <div>
       <h1 className="text-3xl sm:text-4xl font-black">Who should we introduce you to?</h1>
       <p className="text-sm text-muted-foreground normal-case font-sans mt-2 mb-8">
-        Set the preferences that shape your matches
+        Set the preferences that shape your matches.
       </p>
 
       <div className="space-y-8">

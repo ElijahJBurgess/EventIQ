@@ -48,7 +48,7 @@ function match(index: number, score: number, overrides: Partial<MatchRow> = {}):
     b_to_a_score: score,
     a_to_b_confidence: 85,
     b_to_a_confidence: 85,
-    reciprocity_label: "You Can Help Each Other",
+    reciprocity_label: "Mutual Value",
     match_reason: `Persisted reason ${index}`,
     ai_explanation: `Persisted explanation ${index}`,
     score_breakdown: { aToB: { goals: score }, bToA: { goals: score } },
@@ -140,6 +140,22 @@ test("uses viewer-directional V2 values and filters low score or confidence", as
   assert.deepEqual(context.checkedInMatches[0].persistedMatchEvidence.scoreBreakdown, { goals: 74 });
   assert.deepEqual(context.checkedInMatches[0].persistedMatchEvidence.matchEvidence, [{ side: "b" }]);
   assert.equal(context.checkedInMatches[0].persistedMatchEvidence.reciprocityLabel, "You Can Help Them");
+});
+
+test("carries profile location into the context so Concierge can answer city-based questions", async () => {
+  const context = await buildConciergeContext(source({
+    getCurrentProfile: async () => ({ ...profile(USER_ID, "Avery Morgan"), location: "Los Angeles, CA" }),
+    getProfiles: async () => [
+      { ...profile("person-0", "Person 0"), location: "Los Angeles, CA" },
+      { ...profile("person-1", "Person 1"), location: "New York, NY" },
+    ],
+  }), USER_ID, EVENT_ID);
+
+  assert.equal(context.currentUser?.userAuthoredProfileData.location, "Los Angeles, CA");
+  const person0 = context.checkedInMatches.find((entry) => entry.trusted.profileId === "person-0");
+  const person1 = context.checkedInMatches.find((entry) => entry.trusted.profileId === "person-1");
+  assert.equal(person0?.userAuthoredProfileData.location, "Los Angeles, CA");
+  assert.equal(person1?.userAuthoredProfileData.location, "New York, NY");
 });
 
 test("includes relationship and meeting facts only for authorized exact participant pairs", async () => {
@@ -239,6 +255,14 @@ test("Supabase source selects no message content, email, LinkedIn, URLs, or unre
   assert.equal(selectedText.includes("bio"), false);
   assert.equal(selections.some((selection) => selection.table === "profiles"), true);
   assert.equal(selections.some((selection) => selection.table === "attendee_profiles"), true);
+  assert.equal(
+    selections.some((selection) => selection.table === "profiles" && selection.columns.includes("location")),
+    true,
+  );
+  assert.equal(
+    selections.some((selection) => selection.table === "attendee_profiles" && selection.columns.includes("location")),
+    true,
+  );
   assert.equal(selections.some((selection) => selection.table === "matched_event_attendance"), true);
   assert.equal(selections.some((selection) => selection.table === "event_registrations"), false);
 });

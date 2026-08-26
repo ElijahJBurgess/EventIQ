@@ -46,7 +46,7 @@ export default function Landing() {
     <div className="min-h-screen bg-black text-white flex flex-col">
       <header className="px-6 sm:px-8 py-5 flex items-center justify-between border-b border-white/10">
         <div>
-          <div className="font-display text-2xl font-black tracking-tight text-white normal-case">OFFRIP</div>
+          <div className="font-display text-2xl font-black italic tracking-tight text-white normal-case">OFFRIP</div>
           <div className="text-[10px] text-white/50 tracking-widest font-display mt-0.5">BY OUT OF OFFICE</div>
         </div>
         <button
@@ -61,7 +61,7 @@ export default function Landing() {
       <div className="flex-1 grid md:grid-cols-2">
         <div className="flex flex-col justify-center px-8 md:px-16 py-16 md:py-20">
           <div className="text-[11px] tracking-widest font-display text-offrip-aqua mb-6">
-            Relationship intelligence for the rooms that matter
+            Relationship intelligence for the rooms that matter.
           </div>
           <h1 className="font-display font-black text-5xl md:text-7xl leading-[0.92] tracking-tight uppercase text-white mb-6">
             Know<br />who to<br /><span className="text-offrip-orange">know.</span><br />Off rip.

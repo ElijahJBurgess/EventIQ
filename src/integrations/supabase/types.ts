@@ -12,31 +12,6 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.5"
   }
-  graphql_public: {
-    Tables: {
-      [_ in never]: never
-    }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      graphql: {
-        Args: {
-          extensions?: Json
-          operationName?: string
-          query?: string
-          variables?: Json
-        }
-        Returns: Json
-      }
-    }
-    Enums: {
-      [_ in never]: never
-    }
-    CompositeTypes: {
-      [_ in never]: never
-    }
-  }
   public: {
     Tables: {
       admin_actions: {
@@ -387,6 +362,7 @@ export type Database = {
           id: string
           improvements: string | null
           matching_rating: number | null
+          meeting_id: string | null
           networking_quality: number | null
           overall_rating: number | null
           submitted_at: string | null
@@ -399,6 +375,7 @@ export type Database = {
           id?: string
           improvements?: string | null
           matching_rating?: number | null
+          meeting_id?: string | null
           networking_quality?: number | null
           overall_rating?: number | null
           submitted_at?: string | null
@@ -411,6 +388,7 @@ export type Database = {
           id?: string
           improvements?: string | null
           matching_rating?: number | null
+          meeting_id?: string | null
           networking_quality?: number | null
           overall_rating?: number | null
           submitted_at?: string | null
@@ -423,6 +401,13 @@ export type Database = {
             columns: ["event_id"]
             isOneToOne: false
             referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "feedback_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meetings"
             referencedColumns: ["id"]
           },
           {
@@ -502,8 +487,8 @@ export type Database = {
           match_evidence: Json
           match_reason: string | null
           match_score: number | null
-          recommended_next_step: string | null
           reciprocity_label: string | null
+          recommended_next_step: string | null
           score_breakdown: Json | null
           score_version: string
           shared_communities: string[] | null
@@ -527,8 +512,8 @@ export type Database = {
           match_evidence?: Json
           match_reason?: string | null
           match_score?: number | null
-          recommended_next_step?: string | null
           reciprocity_label?: string | null
+          recommended_next_step?: string | null
           score_breakdown?: Json | null
           score_version?: string
           shared_communities?: string[] | null
@@ -552,8 +537,8 @@ export type Database = {
           match_evidence?: Json
           match_reason?: string | null
           match_score?: number | null
-          recommended_next_step?: string | null
           reciprocity_label?: string | null
+          recommended_next_step?: string | null
           score_breakdown?: Json | null
           score_version?: string
           shared_communities?: string[] | null
@@ -1621,9 +1606,6 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
-  graphql_public: {
-    Enums: {},
-  },
   public: {
     Enums: {},
   },

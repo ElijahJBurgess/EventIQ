@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Upload } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import {
   createProfilePhotoPath,
@@ -73,11 +74,14 @@ const SENIORITY_OPTIONS = [
 ];
 
 const LINKEDIN_PATTERN = /^(https?:\/\/)?(www\.)?linkedin\.com/i;
-type StringField = "fullName" | "jobTitle" | "company" | "location" | "linkedinUrl" | "roleType";
+type StringField = "fullName" | "jobTitle" | "company" | "location" | "linkedinUrl" | "roleType" | "customRoleType";
 
 interface FieldErrors {
   fullName?: string;
+  jobTitle?: string;
+  company?: string;
   roleType?: string;
+  customRoleType?: string;
   primaryFunction?: string;
   seniority?: string;
   location?: string;
@@ -97,6 +101,7 @@ export default function Page1BasicInfo({
   onNext,
   userId,
 }: ProfileSetupPageProps & { userId: string }) {
+  const navigate = useNavigate();
   const [errors, setErrors] = useState<FieldErrors>({});
   const [uploading, setUploading] = useState(false);
   const [photoError, setPhotoError] = useState("");
@@ -271,8 +276,18 @@ export default function Page1BasicInfo({
       next.fullName = "Full name must be at least 2 characters";
     }
 
+    if (!formData.jobTitle.trim()) {
+      next.jobTitle = "Job title is required";
+    }
+
+    if (!formData.company.trim()) {
+      next.company = "Company or organization is required";
+    }
+
     if (!formData.roleType) {
       next.roleType = "Select at least 1 identity";
+    } else if (selectedIdentities.includes("Other") && !formData.customRoleType.trim()) {
+      next.customRoleType = "Tell us what best describes you";
     }
 
     if (!formData.primaryFunction) {
@@ -283,7 +298,9 @@ export default function Page1BasicInfo({
       next.seniority = "Select your current level of seniority";
     }
 
-    if (formData.location.trim() && !formData.locationSelectionType) {
+    if (!formData.location.trim()) {
+      next.location = "Location is required";
+    } else if (!formData.locationSelectionType) {
       next.location = "Select a city from the results or use the custom location option";
     }
 
@@ -336,7 +353,7 @@ export default function Page1BasicInfo({
     <div>
       <h1 className="text-4xl font-black">Start with you.</h1>
       <p className="text-sm text-black/50 normal-case font-offrip-body mt-2 mb-8">
-        Give the room a little context on who they're meeting.
+        Help the room get to know you.
       </p>
 
       <div className="space-y-5">
@@ -389,8 +406,7 @@ export default function Page1BasicInfo({
 
         <div>
           <label className={labelClass}>
-            Job title{" "}
-            <span className="text-muted-foreground font-normal normal-case">(optional)</span>
+            Job title <span className="text-destructive">*</span>
           </label>
           <input
             className={inputClass}
@@ -399,12 +415,12 @@ export default function Page1BasicInfo({
             value={formData.jobTitle}
             onChange={(e) => update("jobTitle")(e.target.value)}
           />
+          {errors.jobTitle && <p className={errorClass}>{errors.jobTitle}</p>}
         </div>
 
         <div>
           <label className={labelClass}>
-            Company or organization{" "}
-            <span className="text-muted-foreground font-normal normal-case">(optional)</span>
+            Company or organization <span className="text-destructive">*</span>
           </label>
           <input
             className={inputClass}
@@ -413,12 +429,12 @@ export default function Page1BasicInfo({
             value={formData.company}
             onChange={(e) => update("company")(e.target.value)}
           />
+          {errors.company && <p className={errorClass}>{errors.company}</p>}
         </div>
 
         <div ref={locationSearchRef} className="relative">
           <label className={labelClass}>
-            Location{" "}
-            <span className="text-muted-foreground font-normal normal-case">(optional)</span>
+            Location <span className="text-destructive">*</span>
           </label>
           <input
             className={inputClass}
@@ -501,6 +517,21 @@ export default function Page1BasicInfo({
             max={3}
             onMaxAttempt={() => setIdentityLimitReached(true)}
           />
+          {selectedIdentities.includes("Other") && (
+            <div className="mt-3">
+              <label className={labelClass}>
+                What best describes you? <span className="text-destructive">*</span>
+              </label>
+              <input
+                className={inputClass}
+                placeholder="Tell us your role"
+                maxLength={100}
+                value={formData.customRoleType}
+                onChange={(e) => update("customRoleType")(e.target.value)}
+              />
+              {errors.customRoleType && <p className={errorClass}>{errors.customRoleType}</p>}
+            </div>
+          )}
           {selectedIdentities.length > 0 && (
             <div className="mt-3 space-y-2 ooo-border bg-warm p-3">
               <p className="text-xs font-bold normal-case font-sans">Choose your primary identity:</p>
@@ -575,7 +606,13 @@ export default function Page1BasicInfo({
         </div>
       </div>
 
-      <div className="mt-8 flex justify-end">
+      <div className="mt-8 flex flex-col-reverse sm:flex-row sm:justify-between gap-3">
+        <button
+          onClick={() => navigate("/v2/auth")}
+          className="w-full sm:w-auto bg-card text-foreground ooo-border px-8 py-3 shadow-card hover-lift font-label"
+        >
+          Back
+        </button>
         <button
           onClick={handleContinue}
           className="w-full sm:w-auto bg-primary text-primary-foreground px-8 py-3 shadow-card hover-lift font-label"

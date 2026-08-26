@@ -1,6 +1,6 @@
 // OFFRIP Matching Rubric V2. Scores are directional: viewer -> candidate.
 
-export const SCORE_VERSION = "v2";
+export const SCORE_VERSION = "v2.1";
 
 export interface Profile {
   id: string;
@@ -82,12 +82,16 @@ export interface MatchEvidence {
   bToA: MatchEvidenceItem[];
 }
 
+export type ConfidenceBand = "High Confidence" | "Medium Confidence" | "Low Confidence";
+
 export interface MatchResult {
   aToBScore: number;
   bToAScore: number;
   aToBConfidence: number;
   bToAConfidence: number;
-  reciprocityLabel: "You Can Help Each Other" | "They Can Help You" | "You Can Help Them" | "Potential Connection";
+  aToBConfidenceBand: ConfidenceBand;
+  bToAConfidenceBand: ConfidenceBand;
+  reciprocityLabel: "Mutual Value" | "They Can Help You" | "You Can Help Them" | "Potential Connection";
   scoreVersion: typeof SCORE_VERSION;
   scoreBreakdown: ScoreBreakdown;
   matchEvidence: MatchEvidence;
@@ -312,11 +316,6 @@ function bestOffer(need: string, offers: string[]): { offer: string; score: numb
   return best;
 }
 
-export function calculateNeedsOffersScore(needs: string[], offers: string[]): number {
-  if (!needs.length || !offers.length) return 0;
-  return needs.reduce((sum, need) => sum + (bestOffer(need, offers)?.score ?? 0), 0) / needs.length;
-}
-
 function needToOfferFit(viewer: Profile, candidate: Profile): ComponentBreakdown {
   const needs = present(viewer.needs);
   const offers = present(candidate.offers);
@@ -337,6 +336,22 @@ const EXPERTISE_NEEDS: Record<string, string[]> = {
   "fundraising strategy": ["fundraising advice", "financial strategy"], recruiting: ["hiring opportunities", "talent referrals"],
 };
 
+const EXPERTISE_ADJACENCY: Record<string, string[]> = {
+  "technical expertise": ["engineering expertise", "product expertise", "data / analytics expertise"],
+  "engineering expertise": ["technical expertise", "product expertise"],
+  "marketing expertise": ["brand expertise", "social media expertise", "content creation"],
+  "sales expertise": ["business development expertise", "customer introductions"],
+  "business development expertise": ["sales expertise", "partnership introductions"],
+  "financial strategy": ["fundraising advice", "investment capital"],
+  "fundraising advice": ["financial strategy", "investment capital"],
+  "operations expertise": ["strategic advice"],
+  "design expertise": ["creative direction", "product feedback"],
+  "data / analytics expertise": ["technical expertise", "product expertise"],
+  "legal / compliance guidance": ["strategic advice"],
+  "community building": ["local city knowledge", "social connection / friendship"],
+  "product expertise": ["product feedback", "technical expertise"],
+};
+
 function soughtExpertise(profile: Profile): string[] {
   if (present(profile.expertise_sought).length) return present(profile.expertise_sought);
   return unique(present(profile.needs).flatMap((need) => EXPERTISE_NEEDS[norm(need)] ?? []));
@@ -352,8 +367,15 @@ function expertiseFit(viewer: Profile, candidate: Profile): ComponentBreakdown {
     return { score, weight: WEIGHTS.expertiseFit, evidence: exact.map((value) => evidence("expertiseFit", score, "expertise_sought", value, "expertise_offered", value, "exact expertise match")) };
   }
   const conceptual = sought.flatMap((need) => offered.filter((offer) => norm(offer).includes(norm(need)) || norm(need).includes(norm(offer))).map((offer) => ({ need, offer })))[0];
-  return conceptual
-    ? { score: 75, weight: WEIGHTS.expertiseFit, evidence: [evidence("expertiseFit", 75, "expertise_sought", conceptual.need, "expertise_offered", conceptual.offer, "conceptual expertise match")] }
+  if (conceptual) {
+    return { score: 75, weight: WEIGHTS.expertiseFit, evidence: [evidence("expertiseFit", 75, "expertise_sought", conceptual.need, "expertise_offered", conceptual.offer, "conceptual expertise match")] };
+  }
+  const adjacent = sought.flatMap((need) => {
+    const adjacentTerms = EXPERTISE_ADJACENCY[norm(need)] ?? [];
+    return offered.filter((offer) => adjacentTerms.some((term) => norm(term) === norm(offer))).map((offer) => ({ need, offer }));
+  })[0];
+  return adjacent
+    ? { score: 50, weight: WEIGHTS.expertiseFit, evidence: [evidence("expertiseFit", 50, "expertise_sought", adjacent.need, "expertise_offered", adjacent.offer, "useful adjacent expertise match")] }
     : { score: 0, weight: WEIGHTS.expertiseFit, evidence: [] };
 }
 
@@ -361,10 +383,14 @@ type Tier = 0 | 1 | 2;
 const STAGE_TIERS: Record<string, Tier> = { "idea stage": 0, "pre-seed": 0, seed: 1, "series a": 1, "series b+": 2, bootstrapped: 2, "acquired / exited": 2 };
 const CHECK_TIERS: Record<string, Tier> = { "under $25k": 0, "$25k-$100k": 0, "$100k-$500k": 1, "$500k+": 2 };
 const TIMING_TIERS: Record<string, Tier> = {
-  "exploring for the future": 0, "open to building investor relationships": 0, "building a future talent pipeline": 0,
-  "not currently searching": 0, "preparing to raise within 6 months": 1, "hiring within 3-6 months": 1,
+  "exploring for the future": 0, "open to building investor relationships": 0,
+  "not currently searching": 0, "preparing to raise within 6 months": 1,
   "open to the right opportunity": 1, "planning to explore within 6 months": 1, "actively raising": 2,
-  "actively hiring": 2, "actively searching": 2,
+  "actively searching": 2,
+  // Recruiter hiring timeline (Page3RoleQuestions.tsx HIRING_TIMELINE_OPTIONS) -- must stay in sync.
+  "hiring now": 2, "within the next 3 months": 2,
+  "3–6 months": 1, "6–12 months": 1,
+  "more than 12 months": 0, "not currently hiring": 0,
 };
 const tierKey = (value: string) => norm(value).replaceAll("–", "-").replaceAll("—", "-");
 const tierScore = (a: Tier, b: Tier, rubric: [number, number, number] = [100, 75, 40]) => rubric[Math.abs(a - b)];
@@ -519,10 +545,16 @@ export function calculateMatchConfidence(viewer: Profile, candidate: Profile, br
 }
 
 export function getReciprocityLabel(aToB: number, bToA: number): MatchResult["reciprocityLabel"] {
-  if (aToB >= 70 && bToA >= 70) return "You Can Help Each Other";
-  if (aToB >= 70 && bToA < 70) return "They Can Help You";
-  if (aToB < 70 && bToA >= 70) return "You Can Help Them";
+  if (aToB >= 60 && bToA >= 60) return "Mutual Value";
+  if (aToB >= 70 && bToA < 60) return "They Can Help You";
+  if (bToA >= 70 && aToB < 60) return "You Can Help Them";
   return "Potential Connection";
+}
+
+export function getConfidenceBand(confidence: number): ConfidenceBand {
+  if (confidence >= 85) return "High Confidence";
+  if (confidence >= 70) return "Medium Confidence";
+  return "Low Confidence";
 }
 
 function scoreLabel(score: number): string {
@@ -545,6 +577,7 @@ export function calculateMatchScore(profileA: Profile, profileB: Profile): Match
   const bToAReasons = reasons(bToA.evidence);
   return {
     aToBScore: aToB.score, bToAScore: bToA.score, aToBConfidence, bToAConfidence,
+    aToBConfidenceBand: getConfidenceBand(aToBConfidence), bToAConfidenceBand: getConfidenceBand(bToAConfidence),
     reciprocityLabel: getReciprocityLabel(aToB.score, bToA.score), scoreVersion: SCORE_VERSION,
     scoreBreakdown: { aToB: aToB.breakdown, bToA: bToA.breakdown },
     matchEvidence: { aToB: aToB.evidence, bToA: bToA.evidence },

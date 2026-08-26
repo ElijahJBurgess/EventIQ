@@ -63,9 +63,12 @@ const FUNDRAISING_TIMELINE_OPTIONS = [
   "Exploring for the Future",
 ];
 const HIRING_TIMELINE_OPTIONS = [
-  "Actively Hiring",
-  "Hiring Within 3-6 Months",
-  "Building a Future Talent Pipeline",
+  "Hiring now",
+  "Within the next 3 months",
+  "3–6 months",
+  "6–12 months",
+  "More than 12 months",
+  "Not currently hiring",
 ];
 const CAREER_SEARCH_STATUS_OPTIONS = [
   "Actively Searching",
@@ -254,7 +257,7 @@ export default function Page3RoleQuestions({
     <>
       <h1 className="text-3xl sm:text-4xl font-black">A few more details</h1>
       <p className="text-sm text-muted-foreground normal-case font-sans mt-2 mb-8">
-        These help us find even better matches for you
+        These help us find even better matches for you.
       </p>
     </>
   );

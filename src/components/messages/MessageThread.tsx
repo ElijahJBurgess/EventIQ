@@ -122,10 +122,11 @@ interface MessageThreadProps {
   other: OtherProfile;
   onBack: () => void;
   onMessagesRead: () => void | Promise<void>;
+  onViewFullProfile?: (matchId: string) => void;
   embedded?: boolean;
 }
 
-export default function MessageThread({ userId, matchId, eventId, eventName, other, onBack, onMessagesRead, embedded = false }: MessageThreadProps) {
+export default function MessageThread({ userId, matchId, eventId, eventName, other, onBack, onMessagesRead, onViewFullProfile, embedded = false }: MessageThreadProps) {
   const [messages, setMessages] = useState<MessageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState("");
@@ -140,6 +141,8 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
   const [scheduleLocation, setScheduleLocation] = useState("");
   const [schedulingMeeting, setSchedulingMeeting] = useState(false);
   const [completingMeeting, setCompletingMeeting] = useState(false);
+  const [showValuablePrompt, setShowValuablePrompt] = useState(false);
+  const [submittingValuableFeedback, setSubmittingValuableFeedback] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const refreshInFlightRef = useRef(false);
 
@@ -445,6 +448,28 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
 
     await loadMeeting();
     toast.success("Meeting marked complete");
+    setShowValuablePrompt(true);
+  };
+
+  const submitValuableFeedback = async (wasValuable: boolean) => {
+    if (!meeting || submittingValuableFeedback) return;
+    setSubmittingValuableFeedback(true);
+
+    const { error } = await supabase.from("feedback").insert({
+      meeting_id: meeting.id,
+      event_id: eventId,
+      user_id: userId,
+      overall_rating: wasValuable ? 5 : 1,
+    });
+
+    setSubmittingValuableFeedback(false);
+    if (error) {
+      toast.error("Couldn't save your feedback — try again.");
+      return;
+    }
+
+    setShowValuablePrompt(false);
+    toast.success("Thanks for the feedback");
   };
 
   return (
@@ -460,7 +485,17 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
           </AvatarFallback>
         </Avatar>
         <div className="min-w-0">
-          <p className="font-bold normal-case font-sans truncate">{other.full_name ?? "Member"}</p>
+          {onViewFullProfile ? (
+            <button
+              type="button"
+              onClick={() => onViewFullProfile(matchId)}
+              className="font-bold normal-case font-sans truncate text-left hover:underline focus-visible:underline focus-visible:outline-none"
+            >
+              {other.full_name ?? "Member"}
+            </button>
+          ) : (
+            <p className="font-bold normal-case font-sans truncate">{other.full_name ?? "Member"}</p>
+          )}
           <p className="text-[11px] text-muted-foreground normal-case font-sans truncate">
             {eventName ?? "General"}
           </p>
@@ -583,6 +618,20 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
                 <p className="text-sm text-muted-foreground mt-1">
                   Marked complete {formatScheduledDateTime(meeting.completed_at)}
                 </p>
+              </div>
+            )}
+
+            {showValuablePrompt && (
+              <div className="ooo-border bg-offrip-lime px-4 py-3 normal-case font-sans flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="font-bold">Was this connection valuable?</p>
+                <div className="flex gap-2 shrink-0">
+                  <Button onClick={() => submitValuableFeedback(true)} disabled={submittingValuableFeedback} size="sm">
+                    Yes
+                  </Button>
+                  <Button onClick={() => submitValuableFeedback(false)} disabled={submittingValuableFeedback} variant="outline" size="sm">
+                    No
+                  </Button>
+                </div>
               </div>
             )}
           </div>

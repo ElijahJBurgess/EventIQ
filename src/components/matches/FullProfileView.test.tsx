@@ -36,6 +36,7 @@ describe("FullProfileView V2 presentation", () => {
       match: {
         id: "match-id",
         eventId: "event-id",
+        eventName: "Test Event",
         score: 87,
         confidence: 91,
         reciprocityLabel: "They Can Help You",

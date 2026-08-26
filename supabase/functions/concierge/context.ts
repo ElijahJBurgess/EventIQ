@@ -19,6 +19,7 @@ export interface ProfileRow {
   who_to_meet?: string[] | null;
   connection_preference?: string[] | null;
   industry_focus?: string[] | null;
+  location?: string | null;
 }
 
 export interface EventRow {
@@ -102,6 +103,7 @@ interface UserAuthoredProfileData {
   expertise: string[];
   interests: string[];
   communities: string[];
+  location: string | null;
   matchingPreferences: {
     whoToMeet: string[];
     connectionPreference: string[];
@@ -204,6 +206,11 @@ function profileData(profile: ProfileRow): UserAuthoredProfileData {
     expertise: profile.areas_of_expertise ?? [],
     interests: profile.interests ?? [],
     communities: profile.communities ?? [],
+    // attendee_profiles (the view used for matched candidates) only exposes
+    // the free-text `location` column, not location_city/location_state_code
+    // -- using the same field for both the current user and candidates keeps
+    // this consistent rather than richer for one side and missing for the other.
+    location: profile.location ?? null,
     matchingPreferences: {
       whoToMeet: profile.who_to_meet ?? [],
       connectionPreference: profile.connection_preference ?? [],
@@ -529,7 +536,7 @@ export function createSupabaseContextSource(client: ConciergeQueryClient): Conci
   return {
     async getCurrentProfile(userId) {
       const result = await client.from<ProfileRow>("profiles")
-        .select("id,full_name,title,company,role_type,secondary_role_types,matching_goal,primary_goal,secondary_goals,desired_outcomes,needs,offers,areas_of_expertise,interests,communities,who_to_meet,connection_preference,industry_focus")
+        .select("id,full_name,title,company,role_type,secondary_role_types,matching_goal,primary_goal,secondary_goals,desired_outcomes,needs,offers,areas_of_expertise,interests,communities,who_to_meet,connection_preference,industry_focus,location")
         .eq("id", userId)
         .maybeSingle();
       if (result.error) throw new Error("Concierge context profile lookup failed");
@@ -560,7 +567,7 @@ export function createSupabaseContextSource(client: ConciergeQueryClient): Conci
     async getProfiles(profileIds) {
       if (profileIds.length === 0) return [];
       const result = await client.from<ProfileRow>("attendee_profiles")
-        .select("id,full_name,title,company,role_type,secondary_role_types,matching_goal,primary_goal,secondary_goals,desired_outcomes,needs,offers,areas_of_expertise,interests,communities,who_to_meet,connection_preference,industry_focus")
+        .select("id,full_name,title,company,role_type,secondary_role_types,matching_goal,primary_goal,secondary_goals,desired_outcomes,needs,offers,areas_of_expertise,interests,communities,who_to_meet,connection_preference,industry_focus,location")
         .in("id", profileIds);
       return unwrap(result, "matched profile lookup");
     },

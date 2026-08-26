@@ -55,11 +55,13 @@ export default function MessagesTab({
   onMessagesRead,
   targetMatchId,
   onTargetHandled,
+  onViewFullProfile,
 }: {
   userId: string;
   onMessagesRead: () => void | Promise<void>;
   targetMatchId?: string | null;
   onTargetHandled?: (opened: boolean) => void;
+  onViewFullProfile?: (matchId: string) => void;
 }) {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -215,6 +217,7 @@ export default function MessagesTab({
             eventName={openConversation.eventName}
             other={openConversation.other}
             onMessagesRead={onMessagesRead}
+            onViewFullProfile={onViewFullProfile}
             onBack={() => {
               setOpenConversation(null);
               loadConversations();

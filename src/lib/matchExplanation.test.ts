@@ -34,6 +34,7 @@ function detail(directionalEvidence: DirectionalEvidenceItem[], reverseEvidence:
     match: {
       id: "match-1",
       eventId: "event-1",
+      eventName: "Test Event",
       score: 82,
       confidence: 88,
       reciprocityLabel: "They Can Help You",

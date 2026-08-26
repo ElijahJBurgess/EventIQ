@@ -4,6 +4,12 @@ export function getMatchBand(score: number): { text: string; className: string }
   return { text: "Worth an Introduction", className: "bg-muted text-muted-foreground" };
 }
 
+export function getConfidenceBand(confidence: number): "High Confidence" | "Medium Confidence" | "Low Confidence" {
+  if (confidence >= 85) return "High Confidence";
+  if (confidence >= 70) return "Medium Confidence";
+  return "Low Confidence";
+}
+
 export function getViewerReciprocityLabel(
   storedLabel: string | null,
   viewerIsUserA: boolean,

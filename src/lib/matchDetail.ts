@@ -30,6 +30,7 @@ export interface MatchDetailProfile {
 export interface MatchDetailMatch {
   id: string;
   eventId: string | null;
+  eventName: string | null;
   score: number | null;
   confidence: number | null;
   reciprocityLabel: string | null;
@@ -194,10 +195,17 @@ export async function fetchMatchDetail(matchId: string, currentUserId: string): 
   const otherPerson = toDetailProfile(profileById.get(isCurrentUserA ? data.user_b_id : data.user_a_id));
   if (!currentUser || !otherPerson) return null;
 
+  let eventName: string | null = null;
+  if (data.event_id) {
+    const { data: eventRow } = await supabase.from("events").select("name").eq("id", data.event_id).maybeSingle();
+    eventName = eventRow?.name ?? null;
+  }
+
   return {
     match: {
       id: data.id,
       eventId: data.event_id,
+      eventName,
       ...directional,
       matchDetails: data.match_details,
       reason: data.match_reason,

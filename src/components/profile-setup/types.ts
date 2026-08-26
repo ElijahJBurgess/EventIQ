@@ -13,6 +13,7 @@ export interface ProfileSetupFormData {
   linkedinUrl: string;
   roleType: string;
   secondaryRoleTypes: string[];
+  customRoleType: string;
   primaryFunction: string;
   additionalFunctions: string[];
   seniority: string;
@@ -50,6 +51,7 @@ export const initialProfileSetupFormData: ProfileSetupFormData = {
   linkedinUrl: "",
   roleType: "",
   secondaryRoleTypes: [],
+  customRoleType: "",
   primaryFunction: "",
   additionalFunctions: [],
   seniority: "",

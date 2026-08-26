@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { MapPin, Loader2, RefreshCw, Check, X } from "lucide-react";
+import { MapPin, Loader2, RefreshCw, Check, X, Bookmark } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { sendConnectRequest } from "@/lib/connectRequest";
 import { selectTopCheckedInMatches } from "@/lib/checkedInMatches";
+import { fetchSavedMatchIds, saveMatch, unsaveMatch } from "@/lib/savedMatches";
 import { getMatchBand, getViewerReciprocityLabel } from "@/lib/matchPresentation";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
@@ -64,11 +65,15 @@ export default function MatchesTab({
   selectedEventId,
   onSelectedEventChange,
   onViewFullProfile,
+  onGoHome,
+  onExploreRooms,
 }: {
   userId: string;
   selectedEventId?: string;
   onSelectedEventChange: (eventId: string | undefined) => void;
   onViewFullProfile: (matchId: string) => void;
+  onGoHome?: () => void;
+  onExploreRooms?: () => void;
 }) {
   const [matches, setMatches] = useState<EnrichedMatch[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,6 +81,37 @@ export default function MatchesTab({
   const [refreshing, setRefreshing] = useState(false);
   const [joinedEvents, setJoinedEvents] = useState<JoinedEvent[]>([]);
   const [eligibleCount, setEligibleCount] = useState(0);
+  const [savedMatchIds, setSavedMatchIds] = useState<Set<string>>(new Set());
+  const [showSavedOnly, setShowSavedOnly] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchSavedMatchIds(userId).then((ids) => {
+      if (!cancelled) setSavedMatchIds(ids);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  const toggleSaved = useCallback(async (matchId: string) => {
+    const isSaved = savedMatchIds.has(matchId);
+    setSavedMatchIds((current) => {
+      const next = new Set(current);
+      if (isSaved) next.delete(matchId); else next.add(matchId);
+      return next;
+    });
+    const ok = isSaved ? await unsaveMatch(matchId, userId) : await saveMatch(matchId, userId);
+    if (!ok) {
+      // Revert on failure.
+      setSavedMatchIds((current) => {
+        const next = new Set(current);
+        if (isSaved) next.add(matchId); else next.delete(matchId);
+        return next;
+      });
+      toast.error(isSaved ? "Couldn't remove from saved — try again." : "Couldn't save — try again.");
+    }
+  }, [savedMatchIds, userId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -248,13 +284,21 @@ export default function MatchesTab({
       <div className="mb-8">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="font-display text-4xl">People worth knowing</h1>
+            <h1 className="font-display text-4xl">Matches worth knowing</h1>
             <p className="text-sm text-black/40 normal-case font-offrip-body mt-1 max-w-2xl">
-              {selectedEvent ? `People you should meet at ${selectedEvent.name}` : "Join an event to discover people you should meet"}
+              {selectedEvent ? `Matches you should meet at ${selectedEvent.name}` : "Join an event to discover matches you should meet"}
             </p>
           </div>
           {selectedEvent && (
             <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() => setShowSavedOnly((current) => !current)}
+                variant={showSavedOnly ? "default" : "outline"}
+                size="sm"
+              >
+                <Bookmark className="h-4 w-4" />
+                {showSavedOnly ? "Showing Saved" : "Saved"}
+              </Button>
               <Button onClick={refreshRoom} disabled={refreshing || running} variant="outline" size="sm">
                 {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
                 {refreshing ? "Refreshing…" : "Refresh Room"}
@@ -305,21 +349,58 @@ export default function MatchesTab({
             </div>
           ))}
         </div>
-      ) : matches.length === 0 ? (
-        <div className="border border-black/10 bg-white p-8 text-center">
-          <p className="text-sm text-muted-foreground normal-case font-sans">
-            {selectedEvent
-              ? `No checked-in matches yet in ${selectedEvent.name}.`
-              : "You haven't joined any events yet. Join an event to start finding matches."}
-          </p>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {matches.map((m) => (
-            <MatchCard key={m.id} match={m} eventName={selectedEvent?.name ?? "this event"} onViewFullProfile={onViewFullProfile} />
-          ))}
-        </div>
-      )}
+      ) : (() => {
+        const visibleMatches = showSavedOnly ? matches.filter((m) => savedMatchIds.has(m.id)) : matches;
+        if (visibleMatches.length === 0) {
+          if (showSavedOnly) {
+            return (
+              <div className="border border-black/10 bg-white p-8 text-center">
+                <p className="text-sm text-muted-foreground normal-case font-sans">
+                  No saved matches yet — tap the bookmark on a match to save it for later.
+                </p>
+              </div>
+            );
+          }
+          if (!selectedEvent) {
+            return (
+              <div className="border border-black/10 bg-white p-8 text-center">
+                <p className="text-sm text-muted-foreground normal-case font-sans">
+                  You haven't joined any events yet. Join an event to start finding matches.
+                </p>
+              </div>
+            );
+          }
+          return (
+            <div className="border border-black/10 bg-white p-8 text-center">
+              <p className="text-sm normal-case font-offrip-body">
+                We're still curating your personalized matches. Stay tuned.
+              </p>
+              <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+                {onGoHome && (
+                  <Button onClick={onGoHome} variant="outline" size="sm">Back to Home</Button>
+                )}
+                {onExploreRooms && (
+                  <Button onClick={onExploreRooms} variant="secondary" size="sm">Explore Rooms</Button>
+                )}
+              </div>
+            </div>
+          );
+        }
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {visibleMatches.map((m) => (
+              <MatchCard
+                key={m.id}
+                match={m}
+                eventName={selectedEvent?.name ?? "this event"}
+                onViewFullProfile={onViewFullProfile}
+                isSaved={savedMatchIds.has(m.id)}
+                onToggleSaved={toggleSaved}
+              />
+            ))}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -328,10 +409,14 @@ function MatchCard({
   match,
   eventName,
   onViewFullProfile,
+  isSaved,
+  onToggleSaved,
 }: {
   match: EnrichedMatch;
   eventName: string;
   onViewFullProfile: (matchId: string) => void;
+  isSaved: boolean;
+  onToggleSaved: (matchId: string) => void;
 }) {
   const [status, setStatus] = useState<"idle" | "composing" | "sending" | "sent">(
     match.alreadyConnected ? "sent" : "idle",
@@ -378,13 +463,22 @@ function MatchCard({
   };
 
   return (
-    <div className="border border-black/10 bg-white p-5 flex flex-col gap-3 hover:border-black hover:shadow-offrip-hard transition-all">
+    <div className="relative border border-black/10 bg-white p-5 flex flex-col gap-3 hover:border-black hover:shadow-offrip-hard transition-all">
+      <button
+        type="button"
+        onClick={() => onToggleSaved(match.id)}
+        aria-label={isSaved ? `Remove ${other.full_name ?? "this match"} from saved` : `Save ${other.full_name ?? "this match"} for later`}
+        aria-pressed={isSaved}
+        className="absolute right-4 top-4 z-10 rounded-full border border-black/10 bg-white p-1.5 text-muted-foreground hover:border-black hover:text-black transition-colors"
+      >
+        <Bookmark className={`h-4 w-4 ${isSaved ? "fill-current text-primary" : ""}`} />
+      </button>
       <button
         type="button"
         onClick={() => onViewFullProfile(match.id)}
         className="flex flex-col gap-3 text-left"
       >
-        <div className="flex items-start justify-between gap-3">
+        <div className="flex items-start justify-between gap-3 pr-8">
           <div className="flex items-center gap-3 min-w-0">
             <Avatar className="h-12 w-12 border-2 border-primary shrink-0">
               {other.avatar_url && <AvatarImage src={other.avatar_url} alt={other.full_name ?? "Profile photo"} />}
@@ -393,27 +487,29 @@ function MatchCard({
               </AvatarFallback>
             </Avatar>
             <div className="min-w-0">
-              <p className="font-bold normal-case font-sans truncate">{other.full_name ?? "Member"}</p>
-              {subtitle && <p className="text-xs text-muted-foreground normal-case font-sans truncate">{subtitle}</p>}
+              <p className="normal-case font-offrip-body font-normal truncate">{other.full_name ?? "Member"}</p>
+              {subtitle && <p className="text-xs text-muted-foreground normal-case font-offrip-body font-normal truncate">{subtitle}</p>}
               {other.location && (
-                <p className="text-[11px] text-muted-foreground normal-case font-sans flex items-center gap-1 mt-0.5">
+                <p className="text-[11px] text-muted-foreground normal-case font-offrip-body font-normal flex items-center gap-1 mt-0.5">
                   <MapPin className="h-3 w-3 shrink-0" />
                   <span className="truncate">{other.location}</span>
                 </p>
               )}
+              <p className="text-[10px] font-label uppercase tracking-widest text-muted-foreground mt-1 truncate">
+                {eventName}
+              </p>
             </div>
           </div>
           <div className="flex flex-col items-end gap-1 shrink-0">
             <span className={`font-label text-[10px] px-2 py-1 ooo-border ${label.className}`}>{label.text}</span>
             <span className="font-label text-xs text-muted-foreground">{match.score}%</span>
-            <span className="text-[10px] text-muted-foreground normal-case font-sans">Confidence {match.confidence}%</span>
           </div>
         </div>
 
         <Separator className="bg-primary/20" />
 
         {match.reason && (
-          <p className="text-sm leading-relaxed normal-case font-sans break-words">{match.reason}</p>
+          <p className="text-sm leading-relaxed normal-case font-offrip-body font-normal break-words">{match.reason}</p>
         )}
 
         {match.reciprocityLabel && (

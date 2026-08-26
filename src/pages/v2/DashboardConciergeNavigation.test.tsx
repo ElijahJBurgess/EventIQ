@@ -151,7 +151,7 @@ describe("Dashboard Concierge navigation", () => {
     );
   });
 
-  it("uses one canonical Room for Rooms, People, and Concierge across tab changes", async () => {
+  it("uses one canonical Room for Rooms, Matches, and Concierge across tab changes", async () => {
     render(
       <MemoryRouter>
         <DashboardV2 />
@@ -194,7 +194,7 @@ describe("Dashboard Concierge navigation", () => {
     expect(screen.getByText("Marcus is your strongest checked-in match.")).toBeInTheDocument();
 
     fireEvent.click(within(desktopNav).getByRole("button", { name: "Home" }));
-    fireEvent.click(within(desktopNav).getByRole("button", { name: "People" }));
+    fireEvent.click(within(desktopNav).getByRole("button", { name: "Matches" }));
     expect(screen.getByText("People event: room-b")).toBeInTheDocument();
     fireEvent.click(within(mobileNav).getByRole("button", { name: "Concierge" }));
     expect(screen.getByText("Who is in Room B?")).toBeInTheDocument();

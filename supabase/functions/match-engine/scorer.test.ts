@@ -3,9 +3,9 @@ import {
   SCORE_VERSION,
   buildMatchDetails,
   calculateMatchScore,
-  calculateNeedsOffersScore,
   calculateOpportunityCompatibility,
   calculateTimingConnectionCompatibility,
+  getConfidenceBand,
   getReciprocityLabel,
   type Profile,
 } from "./scorer.ts";
@@ -126,6 +126,14 @@ describe("Matching Rubric V2", () => {
     expect(noSeek.scoreBreakdown.aToB.expertiseFit.score).toBeNull();
   });
 
+  it("awards the useful-adjacent expertise tier (50) between conceptual (75) and no match (0)", () => {
+    const result = calculateMatchScore(
+      profile({ id: "viewer", expertise_sought: ["Technical Expertise"] }),
+      profile({ id: "candidate", areas_of_expertise: ["Product Expertise"] }),
+    );
+    expect(result.scoreBreakdown.aToB.expertiseFit.score).toBe(50);
+  });
+
   it("keeps confidence separate from compatibility", () => {
     const { founder, investor } = oneWayPair();
     const result = calculateMatchScore(founder, investor);
@@ -134,18 +142,46 @@ describe("Matching Rubric V2", () => {
   });
 
   it("implements the selected reciprocity thresholds", () => {
-    expect(getReciprocityLabel(70, 70)).toBe("You Can Help Each Other");
-    expect(getReciprocityLabel(100, 70)).toBe("You Can Help Each Other");
-    expect(getReciprocityLabel(70, 69)).toBe("They Can Help You");
-    expect(getReciprocityLabel(69, 70)).toBe("You Can Help Them");
-    expect(getReciprocityLabel(69, 69)).toBe("Potential Connection");
-    expect(getReciprocityLabel(60, 60)).toBe("Potential Connection");
+    expect(getReciprocityLabel(60, 60)).toBe("Mutual Value");
+    expect(getReciprocityLabel(100, 60)).toBe("Mutual Value");
+    expect(getReciprocityLabel(70, 59)).toBe("They Can Help You");
+    expect(getReciprocityLabel(59, 70)).toBe("You Can Help Them");
+    expect(getReciprocityLabel(70, 65)).toBe("Mutual Value");
+    expect(getReciprocityLabel(59, 59)).toBe("Potential Connection");
+    expect(getReciprocityLabel(69, 59)).toBe("Potential Connection");
   });
 
-  it("uses approved need/offer credits without a harmonic mean", () => {
-    expect(calculateNeedsOffersScore(["Raising Capital"], ["Investment Capital"])).toBe(100);
-    expect(calculateNeedsOffersScore(["Finding Customers"], ["Sales Expertise"])).toBe(80);
-    expect(calculateNeedsOffersScore(["Finding Customers", "Marketing"], ["Sales Expertise"])).toBe(40);
+  it("bands confidence per spec (85/70 cutoffs) and exposes it on the match result", () => {
+    expect(getConfidenceBand(85)).toBe("High Confidence");
+    expect(getConfidenceBand(70)).toBe("Medium Confidence");
+    expect(getConfidenceBand(69)).toBe("Low Confidence");
+    const { founder, investor } = oneWayPair();
+    const result = calculateMatchScore(founder, investor);
+    expect(result.aToBConfidenceBand).toBe(getConfidenceBand(result.aToBConfidence));
+    expect(result.bToAConfidenceBand).toBe(getConfidenceBand(result.bToAConfidence));
+  });
+
+  it("uses approved need/offer credits without a harmonic mean, and treats empty needs/offers as null not zero", () => {
+    const exactMatch = calculateMatchScore(
+      profile({ id: "seeker", needs: ["Raising Capital"] }),
+      profile({ id: "backer", offers: ["Investment Capital"] }),
+    );
+    expect(exactMatch.scoreBreakdown.aToB.needToOfferFit.score).toBe(100);
+
+    const nearMatch = calculateMatchScore(
+      profile({ id: "seeker2", needs: ["Finding Customers"] }),
+      profile({ id: "backer2", offers: ["Sales Expertise"] }),
+    );
+    expect(nearMatch.scoreBreakdown.aToB.needToOfferFit.score).toBe(80);
+
+    const averagedDown = calculateMatchScore(
+      profile({ id: "seeker3", needs: ["Finding Customers", "Marketing"] }),
+      profile({ id: "backer3", offers: ["Sales Expertise"] }),
+    );
+    expect(averagedDown.scoreBreakdown.aToB.needToOfferFit.score).toBe(40);
+
+    const noData = calculateMatchScore(profile({ id: "seeker4" }), profile({ id: "backer4" }));
+    expect(noData.scoreBreakdown.aToB.needToOfferFit.score).toBeNull();
   });
 
   it("distinguishes missing opportunity data from explicit incompatibility", () => {
@@ -161,6 +197,22 @@ describe("Matching Rubric V2", () => {
     const b = profile({ id: "b", connection_preference: ["One-on-One Conversation"], offers: ["Investment Capital"] });
     expect(calculateTimingConnectionCompatibility(a, b)).toBe(75);
     expect(buildMatchDetails(a, b).needsOffersAToB).toEqual([{ need: "Raising Capital", offer: "Investment Capital", matchType: "near" }]);
+  });
+
+  it("maps the current recruiter hiring-timeline options to timing tiers (must stay in sync with Page3RoleQuestions.tsx HIRING_TIMELINE_OPTIONS)", () => {
+    const recruiter = (hiringTimeline: string) => profile({
+      id: `recruiter-${hiringTimeline}`,
+      role_type: "Recruiter",
+      role_details: { Recruiter: { hiringTimeline } },
+    });
+    // "Hiring now" (tier 2) and "Within the next 3 months" (tier 2) -> same tier -> 100.
+    expect(calculateTimingConnectionCompatibility(recruiter("Hiring now"), recruiter("Within the next 3 months"))).toBe(100);
+    // "Hiring now" (tier 2) vs "3–6 months" (tier 1) -> one tier apart -> 75.
+    expect(calculateTimingConnectionCompatibility(recruiter("Hiring now"), recruiter("3–6 months"))).toBe(75);
+    // "Hiring now" (tier 2) vs "Not currently hiring" (tier 0) -> two tiers apart -> 40.
+    expect(calculateTimingConnectionCompatibility(recruiter("Hiring now"), recruiter("Not currently hiring"))).toBe(40);
+    // An unrecognized/missing timeline yields no timing signal at all -> null (not zero).
+    expect(calculateTimingConnectionCompatibility(recruiter("Hiring now"), profile({ id: "no-timing" }))).toBeNull();
   });
 
   it("records only point-contributing evidence", () => {

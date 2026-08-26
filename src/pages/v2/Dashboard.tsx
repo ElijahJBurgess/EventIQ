@@ -22,6 +22,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { buildConnectionSummary } from "@/lib/connectionSummary";
+import { getViewerMatchMetrics } from "@/lib/checkedInMatches";
+import { getMatchBand } from "@/lib/matchPresentation";
 
 type Tab = "home" | "profile" | "events" | "matches" | "concierge" | "connections" | "messages" | "myday";
 type NavItem = Exclude<Tab, "profile" | "myday"> | "enterprise";
@@ -31,7 +33,7 @@ const NAV_ITEMS: NavItem[] = ["home", "events", "matches", "concierge", "connect
 const NAV_LABELS: Record<NavItem, string> = {
   home: "Home",
   events: "Rooms",
-  matches: "People",
+  matches: "Matches",
   concierge: "Concierge",
   connections: "Connections",
   messages: "Messages",
@@ -58,7 +60,6 @@ interface HomeStatsData {
   strongMatches: number;
   pendingRequests: number;
   unreadMessages: number;
-  scheduledMeetings: HomeMeeting[];
   topMatches: HomeMatch[];
   connectionsInMotion: HomeConnection[];
 }
@@ -276,6 +277,8 @@ export default function DashboardV2() {
                 selectedEventId={selectedEventId}
                 onSelectedEventChange={setSelectedEventId}
                 onViewFullProfile={setViewingMatchId}
+                onGoHome={() => setTab("home")}
+                onExploreRooms={() => setTab("events")}
               />
             )}
             {tab === "concierge" && (
@@ -299,6 +302,7 @@ export default function DashboardV2() {
                 onMessagesRead={refreshUnreadMessages}
                 targetMatchId={notificationMatchId}
                 onTargetHandled={handleNotificationTarget}
+                onViewFullProfile={setViewingMatchId}
               />
             )}
             {tab === "myday" && <MyDayTab userId={user!.id} onBack={() => setTab("home")} onViewFullProfile={setViewingMatchId} />}
@@ -323,6 +327,62 @@ function HomeTab({
   onViewFullProfile: (matchId: string) => void;
 }) {
   const [stats, setStats] = useState<HomeStatsData | null | undefined>(undefined);
+  const [homeMeetings, setHomeMeetings] = useState<HomeMeeting[] | undefined>(undefined);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadMeetings = async () => {
+      const { data: meetingRows, error } = await supabase
+        .from("meetings")
+        .select("id,requester_id,recipient_id,scheduled_at,location_note")
+        .eq("status", "scheduled")
+        .or(`requester_id.eq.${userId},recipient_id.eq.${userId}`)
+        .not("scheduled_at", "is", null)
+        .order("scheduled_at", { ascending: true });
+
+      if (error) {
+        toast.error("Couldn't load your meetings — try refreshing.");
+        if (!cancelled) setHomeMeetings([]);
+        return;
+      }
+
+      const rows = meetingRows ?? [];
+      const otherIds = Array.from(new Set(
+        rows.map((meeting) => meeting.requester_id === userId ? meeting.recipient_id : meeting.requester_id).filter(Boolean),
+      ));
+      const { data: meetingProfiles } = otherIds.length > 0
+        ? await supabase
+          .from("attendee_profiles")
+          .select("id,full_name,title,role_type,company,avatar_url")
+          .in("id", otherIds)
+        : { data: [] as Pick<Profile, "id" | "full_name" | "title" | "role_type" | "company" | "avatar_url">[] };
+      const profileById = new Map((meetingProfiles ?? []).map((meetingProfile) => [meetingProfile.id, meetingProfile]));
+      const scheduledMeetings: HomeMeeting[] = rows
+        .map((meeting) => {
+          if (!meeting.scheduled_at) return null;
+          const otherId = meeting.requester_id === userId ? meeting.recipient_id : meeting.requester_id;
+          const other = profileById.get(otherId);
+          if (!other) return null;
+          return {
+            id: meeting.id,
+            otherId: other.id,
+            otherName: other.full_name ?? "OFFRIP member",
+            otherAvatarUrl: other.avatar_url,
+            otherRole: other.title ?? other.role_type ?? "Member",
+            otherCompany: other.company,
+            scheduledAt: meeting.scheduled_at,
+            location: meeting.location_note,
+          };
+        })
+        .filter((meeting): meeting is HomeMeeting => meeting !== null);
+
+      if (!cancelled) setHomeMeetings(scheduledMeetings);
+    };
+
+    loadMeetings();
+    return () => { cancelled = true; };
+  }, [userId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -376,21 +436,13 @@ function HomeTab({
         return;
       }
 
-      const [registrationResult, matchResult, topMatchResult, incomingResult, unreadResult, meetingResult, connectionResult] = await Promise.all([
+      const [registrationResult, scoredMatchResult, incomingResult, unreadResult, connectionResult] = await Promise.all([
         supabase.rpc("get_event_attendance_counts", { p_event_id: activeEvent.id }),
         supabase
           .from("matches")
-          .select("id", { count: "exact", head: true })
+          .select("id,user_a_id,user_b_id,a_to_b_score,b_to_a_score,a_to_b_confidence,b_to_a_confidence,match_reason")
           .eq("event_id", activeEvent.id)
-          .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
-          .gte("match_score", 75),
-        supabase
-          .from("matches")
-          .select("id,user_a_id,user_b_id,match_score,match_reason")
-          .eq("event_id", activeEvent.id)
-          .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`)
-          .order("match_score", { ascending: false })
-          .limit(5),
+          .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`),
         supabase
           .from("messages")
           .select("match_id,created_at")
@@ -403,14 +455,6 @@ function HomeTab({
           .eq("event_id", activeEvent.id)
           .eq("recipient_id", userId)
           .is("read_at", null),
-        supabase
-          .from("meetings")
-          .select("id,requester_id,recipient_id,scheduled_at,location_note")
-          .eq("event_id", activeEvent.id)
-          .eq("status", "scheduled")
-          .or(`requester_id.eq.${userId},recipient_id.eq.${userId}`)
-          .not("scheduled_at", "is", null)
-          .order("scheduled_at", { ascending: true }),
         supabase
           .from("meetings")
           .select("id,requester_id,recipient_id,status,requested_at")
@@ -442,42 +486,20 @@ function HomeTab({
           .filter((matchId): matchId is string => Boolean(matchId)),
       ).size;
 
-      const meetingRows = meetingResult.data ?? [];
-      const otherIds = Array.from(new Set(
-        meetingRows
-          .map((meeting) => meeting.requester_id === userId ? meeting.recipient_id : meeting.requester_id)
-          .filter(Boolean),
-      ));
-      const { data: meetingProfiles } = otherIds.length > 0
-        ? await supabase
-          .from("attendee_profiles")
-          .select("id,full_name,title,role_type,company,avatar_url")
-          .in("id", otherIds)
-        : { data: [] as Pick<Profile, "id" | "full_name" | "title" | "role_type" | "company" | "avatar_url">[] };
-      const profileById = new Map((meetingProfiles ?? []).map((meetingProfile) => [meetingProfile.id, meetingProfile]));
-      const scheduledMeetings: HomeMeeting[] = meetingRows
-        .map((meeting) => {
-          if (!meeting.scheduled_at) return null;
-          const otherId = meeting.requester_id === userId ? meeting.recipient_id : meeting.requester_id;
-          const other = profileById.get(otherId);
-          if (!other) return null;
-          return {
-            id: meeting.id,
-            otherId: other.id,
-            otherName: other.full_name ?? "OFFRIP member",
-            otherAvatarUrl: other.avatar_url,
-            otherRole: other.title ?? other.role_type ?? "Member",
-            otherCompany: other.company,
-            scheduledAt: meeting.scheduled_at,
-            location: meeting.location_note,
-          };
+      const viewerScoredMatches = (scoredMatchResult.data ?? [])
+        .flatMap((match) => {
+          const metrics = getViewerMatchMetrics(match, userId);
+          if (!metrics || metrics.score === null) return [];
+          const otherId = match.user_a_id === userId ? match.user_b_id : match.user_a_id;
+          if (!otherId) return [];
+          return [{ ...match, otherId, viewerScore: metrics.score }];
         })
-        .filter((meeting): meeting is HomeMeeting => meeting !== null);
+        .sort((a, b) => b.viewerScore - a.viewerScore);
 
-      const topMatchRows = topMatchResult.data ?? [];
-      const topMatchProfileIds = topMatchRows
-        .map((match) => match.user_a_id === userId ? match.user_b_id : match.user_a_id)
-        .filter((profileId): profileId is string => Boolean(profileId));
+      const strongMatchCount = viewerScoredMatches.filter((match) => match.viewerScore >= 75).length;
+
+      const topMatchRows = viewerScoredMatches.slice(0, 5);
+      const topMatchProfileIds = topMatchRows.map((match) => match.otherId);
       const { data: topMatchProfiles } = topMatchProfileIds.length > 0
         ? await supabase
           .from("attendee_profiles")
@@ -487,8 +509,7 @@ function HomeTab({
       const topMatchProfileById = new Map((topMatchProfiles ?? []).map((matchProfile) => [matchProfile.id, matchProfile]));
       const topMatches: HomeMatch[] = topMatchRows
         .map((match) => {
-          const otherId = match.user_a_id === userId ? match.user_b_id : match.user_a_id;
-          const other = otherId ? topMatchProfileById.get(otherId) : undefined;
+          const other = topMatchProfileById.get(match.otherId);
           if (!other) return null;
           return {
             id: match.id,
@@ -497,7 +518,7 @@ function HomeTab({
             avatarUrl: other.avatar_url,
             role: other.title ?? other.role_type ?? "Member",
             company: other.company,
-            score: match.match_score ?? 0,
+            score: match.viewerScore,
             reason: match.match_reason,
           };
         })
@@ -542,10 +563,9 @@ function HomeTab({
           eventDate: activeEvent.date,
           eventEndDate: activeEvent.end_date,
           registrations: Number(registrationResult.data?.[0]?.registered_count ?? 0),
-          strongMatches: matchResult.count ?? 0,
+          strongMatches: strongMatchCount,
           pendingRequests,
           unreadMessages: unreadResult.count ?? 0,
-          scheduledMeetings,
           topMatches,
           connectionsInMotion,
         });
@@ -566,11 +586,10 @@ function HomeTab({
     hour: "numeric",
     minute: "2-digit",
   });
-  const matchLabel = (score: number) => score >= 75
-    ? "Strong Match"
-    : score >= 50
-      ? "Good Match"
-      : "Potential Match";
+  // Must stay in sync with the shared band logic in scorer.ts's scoreLabel —
+  // this calls the same client-side helper MatchesTab/FullProfileView use so
+  // the band never drifts out of sync across screens again.
+  const matchLabel = (score: number) => getMatchBand(score).text;
   const connectionLabel = (connection: HomeConnection) => {
     if (connection.status === "requested") return connection.isRequester ? "Awaiting Response" : "Meeting Requested";
     if (connection.status === "accepted") return "Meeting Accepted";
@@ -594,6 +613,47 @@ function HomeTab({
       <h1 className="font-offrip-display text-3xl font-black uppercase tracking-tight sm:text-4xl">
         Good to see you, <span className="text-offrip-orange">{firstName}</span>.
       </h1>
+      <div className="mt-6">
+        <div className="flex items-center justify-between gap-4">
+          <h2 className="font-offrip-display text-2xl font-black uppercase tracking-tight">Your Day</h2>
+          <OffripButton variant="tertiary" onClick={onSeeDay}>See full day</OffripButton>
+        </div>
+        {homeMeetings === undefined ? (
+          <OffripCard className="mt-3 bg-offrip-light-gray p-5">
+            <p className="font-offrip-body text-sm text-offrip-medium-gray">Loading your meetings…</p>
+          </OffripCard>
+        ) : homeMeetings.length === 0 ? (
+          <OffripCard className="mt-3 bg-offrip-light-gray p-5">
+            <p className="font-offrip-body text-sm text-offrip-medium-gray">Nothing scheduled yet.</p>
+          </OffripCard>
+        ) : (
+          <div className="mt-3 space-y-3">
+            {homeMeetings.map((meeting) => (
+              <OffripCard key={meeting.id} className="flex items-start justify-between gap-4 p-4">
+                <div className="flex min-w-0 items-start gap-3">
+                  <Avatar className="h-12 w-12 shrink-0 rounded-full border-2 border-offrip-black">
+                    {meeting.otherAvatarUrl && <AvatarImage src={meeting.otherAvatarUrl} alt={meeting.otherName} />}
+                    <AvatarFallback className={`rounded-full font-offrip-display text-sm font-bold ${offripAvatarClasses(meeting.otherId)}`}>
+                      {profileInitials(meeting.otherName)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0">
+                    <p className="font-offrip-display font-bold uppercase">{meeting.otherName}</p>
+                    <p className="mt-1 font-offrip-body text-sm text-offrip-medium-gray">
+                      {meeting.otherRole}{meeting.otherCompany ? ` · ${meeting.otherCompany}` : ""}
+                    </p>
+                    <p className="mt-2 font-offrip-body text-sm">{meeting.location ?? "Location to be decided"}</p>
+                  </div>
+                </div>
+                <div className="flex shrink-0 flex-col items-end gap-2">
+                  <span className="font-offrip-display text-sm font-bold uppercase tracking-wide">{formatMeetingTime(meeting.scheduledAt)}</span>
+                  <OffripChip color="blue">Scheduled</OffripChip>
+                </div>
+              </OffripCard>
+            ))}
+          </div>
+        )}
+      </div>
       {stats === undefined ? (
         <p className="mt-3 font-offrip-body text-offrip-medium-gray">Your day is loading.</p>
       ) : stats === null ? (
@@ -638,43 +698,6 @@ function HomeTab({
             <OffripButton onClick={() => onSeeRoom(stats.eventId)} className="shrink-0 !bg-offrip-white !text-offrip-black hover:!bg-offrip-aqua">
               See the Room
             </OffripButton>
-          </div>
-          <div className="mt-8">
-            <div className="flex items-center justify-between gap-4">
-              <h2 className="font-offrip-display text-2xl font-black uppercase tracking-tight">Your Day</h2>
-              <OffripButton variant="tertiary" onClick={onSeeDay}>See full day</OffripButton>
-            </div>
-            {stats.scheduledMeetings.length === 0 ? (
-              <OffripCard className="mt-3 bg-offrip-light-gray p-5">
-                <p className="font-offrip-body text-sm text-offrip-medium-gray">Nothing scheduled yet.</p>
-              </OffripCard>
-            ) : (
-              <div className="mt-3 space-y-3">
-                {stats.scheduledMeetings.map((meeting) => (
-                  <OffripCard key={meeting.id} className="flex items-start justify-between gap-4 p-4">
-                    <div className="flex min-w-0 items-start gap-3">
-                      <Avatar className="h-12 w-12 shrink-0 rounded-full border-2 border-offrip-black">
-                        {meeting.otherAvatarUrl && <AvatarImage src={meeting.otherAvatarUrl} alt={meeting.otherName} />}
-                        <AvatarFallback className={`rounded-full font-offrip-display text-sm font-bold ${offripAvatarClasses(meeting.otherId)}`}>
-                          {profileInitials(meeting.otherName)}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0">
-                        <p className="font-offrip-display font-bold uppercase">{meeting.otherName}</p>
-                        <p className="mt-1 font-offrip-body text-sm text-offrip-medium-gray">
-                          {meeting.otherRole}{meeting.otherCompany ? ` · ${meeting.otherCompany}` : ""}
-                        </p>
-                        <p className="mt-2 font-offrip-body text-sm">{meeting.location ?? "Location to be decided"}</p>
-                      </div>
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-2">
-                      <span className="font-offrip-display text-sm font-bold uppercase tracking-wide">{formatMeetingTime(meeting.scheduledAt)}</span>
-                      <OffripChip color="blue">Scheduled</OffripChip>
-                    </div>
-                  </OffripCard>
-                ))}
-              </div>
-            )}
           </div>
           <div className="mt-8">
             <div className="flex items-center justify-between gap-3">
@@ -976,11 +999,11 @@ function ConnectionsTab({ userId }: { userId: string }) {
   return (
     <div>
       <div className="mb-8">
-        <h1 className="font-display text-4xl tracking-tight">Your people</h1>
-        <p className="mt-1 text-sm text-black/40 normal-case font-offrip-body">The connections you've made—and the ones already in motion.</p>
+        <h1 className="font-display text-4xl tracking-tight">Your matches</h1>
+        <p className="mt-1 text-sm text-black/40 normal-case font-offrip-body">The connections you've made and the ones already in motion.</p>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8">
-        {[[peopleMetCount, "People You Met"], [inMotionCount, "In Motion"], [conversationCount, "Conversations"]].map(([value, label]) => (
+        {[[peopleMetCount, "Matches You Met"], [inMotionCount, "In Motion"], [conversationCount, "Conversations"]].map(([value, label]) => (
           <div key={String(label)} className="border border-black/10 p-5">
             <div className="font-display text-4xl">{value}</div>
             <div className="text-[10px] tracking-widest font-display text-black/40 mt-1">{label}</div>
@@ -1011,6 +1034,7 @@ function ConnectionsTab({ userId }: { userId: string }) {
 }
 
 interface EventRow { id: string; name: string; venue: string | null; location: string | null; date: string | null; end_date: string | null; is_demo: boolean | null; }
+interface RoomAttendeePreview { id: string; full_name: string | null; avatar_url: string | null; }
 
 function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (eventId: string) => void }) {
   const [events, setEvents] = useState<EventRow[]>([]);
@@ -1018,10 +1042,12 @@ function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (
   const [checkedIn, setCheckedIn] = useState<Set<string>>(new Set());
   const [joiningEventId, setJoiningEventId] = useState<string | null>(null);
   const [checkingInEventId, setCheckingInEventId] = useState<string | null>(null);
+  const [attendeesByEvent, setAttendeesByEvent] = useState<Map<string, RoomAttendeePreview[]>>(new Map());
 
   const load = useCallback(async () => {
     const { data } = await supabase.from("events").select("id,name,venue,location,date,end_date,is_demo").eq("is_published", true).order("date");
-    setEvents((data as EventRow[]) ?? []);
+    const eventRows = (data as EventRow[]) ?? [];
+    setEvents(eventRows);
     const { data: regs } = await supabase.from("event_registrations").select("event_id,is_checked_in").eq("profile_id", userId);
     setJoined(new Set((regs ?? []).map((r: { event_id: string | null }) => r.event_id).filter(Boolean) as string[]));
     setCheckedIn(new Set(
@@ -1030,6 +1056,39 @@ function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (
         .map((r: { event_id: string | null }) => r.event_id)
         .filter(Boolean) as string[],
     ));
+
+    const eventIds = eventRows.map((event) => event.id);
+    if (eventIds.length === 0) {
+      setAttendeesByEvent(new Map());
+      return;
+    }
+    const { data: matchRows } = await supabase
+      .from("matches")
+      .select("event_id,user_a_id,user_b_id")
+      .in("event_id", eventIds)
+      .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`);
+    const otherIdsByEvent = new Map<string, string[]>();
+    for (const match of matchRows ?? []) {
+      if (!match.event_id) continue;
+      const otherId = match.user_a_id === userId ? match.user_b_id : match.user_a_id;
+      if (!otherId) continue;
+      const existing = otherIdsByEvent.get(match.event_id) ?? [];
+      if (existing.length < 4 && !existing.includes(otherId)) existing.push(otherId);
+      otherIdsByEvent.set(match.event_id, existing);
+    }
+    const allOtherIds = Array.from(new Set(Array.from(otherIdsByEvent.values()).flat()));
+    const { data: attendeeProfiles } = allOtherIds.length > 0
+      ? await supabase.from("attendee_profiles").select("id,full_name,avatar_url").in("id", allOtherIds)
+      : { data: [] as RoomAttendeePreview[] };
+    const attendeeById = new Map((attendeeProfiles ?? []).map((attendee) => [attendee.id, attendee]));
+    const nextAttendeesByEvent = new Map<string, RoomAttendeePreview[]>();
+    for (const [eventId, otherIds] of otherIdsByEvent.entries()) {
+      nextAttendeesByEvent.set(
+        eventId,
+        otherIds.map((id) => attendeeById.get(id)).filter((attendee): attendee is RoomAttendeePreview => Boolean(attendee)),
+      );
+    }
+    setAttendeesByEvent(nextAttendeesByEvent);
   }, [userId]);
 
   useEffect(() => { load(); }, [load]);
@@ -1131,11 +1190,27 @@ function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (
     toast.success("You're checked in");
   };
 
-  const renderEvent = (ev: EventRow) => (
+  const renderEvent = (ev: EventRow) => {
+    const previewAttendees = attendeesByEvent.get(ev.id) ?? [];
+    return (
     <div key={ev.id} className="border border-black/10 bg-white p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-black transition-colors">
-      <div>
-        <p className="font-display text-lg">{ev.name}</p>
-        <p className="text-xs text-black/40 normal-case font-offrip-body mt-1">{ev.venue} · {ev.location} · {ev.date}</p>
+      <div className="flex items-center gap-4 min-w-0">
+        {previewAttendees.length > 0 && (
+          <div className="flex shrink-0 -space-x-3">
+            {previewAttendees.map((attendee) => (
+              <Avatar key={attendee.id} className="h-10 w-10 rounded-full border-2 border-white ring-1 ring-black/10">
+                {attendee.avatar_url && <AvatarImage src={attendee.avatar_url} alt={attendee.full_name ?? "Member"} />}
+                <AvatarFallback className={`rounded-full font-offrip-display text-xs font-bold ${offripAvatarClasses(attendee.id)}`}>
+                  {profileInitials(attendee.full_name)}
+                </AvatarFallback>
+              </Avatar>
+            ))}
+          </div>
+        )}
+        <div className="min-w-0">
+          <p className="font-display text-lg">{ev.name}</p>
+          <p className="text-xs text-black/40 normal-case font-offrip-body mt-1">{ev.venue} · {ev.location} · {ev.date}</p>
+        </div>
       </div>
       {joined.has(ev.id) ? (
         <div className="flex flex-wrap items-center justify-end gap-2">
@@ -1167,18 +1242,19 @@ function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (
         </button>
       )}
     </div>
-  );
+    );
+  };
 
   return (
     <div>
       <div className="mb-8">
-        <h1 className="font-display text-4xl">Your rooms</h1>
-        <p className="mt-1 text-sm text-black/40 normal-case font-offrip-body">Where you're showing up—and who you should know when you get there.</p>
+        <h1 className="font-offrip-display text-3xl font-black uppercase tracking-tight sm:text-4xl">Your rooms</h1>
+        <p className="mt-1 text-sm text-black/40 normal-case font-offrip-body">Where you're showing up and who you should know when you get there.</p>
       </div>
       {events.length === 0 && <p className="text-sm text-muted-foreground normal-case font-sans">No published events yet. Check back soon.</p>}
       {upcomingEvents.length > 0 && (
         <div>
-          <h3 className="font-label text-sm mb-3">Upcoming</h3>
+          <h3 className="font-offrip-display text-xs font-bold uppercase tracking-widest text-offrip-medium-gray mb-3">Upcoming</h3>
           <div className="space-y-3">{upcomingEvents.map(renderEvent)}</div>
         </div>
       )}

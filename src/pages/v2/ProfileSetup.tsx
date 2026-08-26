@@ -99,7 +99,11 @@ export default function ProfileSetup() {
         location_preference: formData.locationPreference,
         career_level_preference: formData.careerLevelPreference,
         connection_preference: formData.connectionPreference,
-        role_details: formData.roleDetails as Json,
+        role_details: (
+          [formData.roleType, ...formData.secondaryRoleTypes].includes("Other") && formData.customRoleType.trim()
+            ? { ...formData.roleDetails, Other: { customTitle: formData.customRoleType.trim() } }
+            : formData.roleDetails
+        ) as Json,
         profile_completed: true,
         profile_completion_score: calculateCompletionScore(formData),
       })
@@ -127,7 +131,7 @@ export default function ProfileSetup() {
         <div className="font-display text-xl tracking-tight normal-case">OFFRIP</div>
       </header>
       <div className="w-full max-w-xl mx-auto px-6 py-10">
-        {!isComplete && currentPage <= 4 && <ProgressIndicator currentPage={currentPage} totalPages={4} />}
+        {!isComplete && currentPage <= 5 && <ProgressIndicator currentPage={currentPage} totalPages={5} />}
         {isComplete ? (
           <SuccessScreen />
         ) : (

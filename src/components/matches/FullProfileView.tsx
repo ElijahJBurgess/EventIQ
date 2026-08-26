@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ArrowLeftRight, Check } from "lucide-react";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 import { fetchMatchDetail, type MatchDetailResult } from "@/lib/matchDetail";
 import { buildFullProfileExplanation, type ClickPair } from "@/lib/matchExplanation";
 import { sendConnectRequest } from "@/lib/connectRequest";
@@ -8,6 +9,11 @@ import OffripButton from "@/components/offrip/Button";
 import OffripCard from "@/components/offrip/Card";
 import OffripChip from "@/components/offrip/Chip";
 import { getMatchBand } from "@/lib/matchPresentation";
+
+interface PendingMeetingRequest {
+  id: string;
+  requesterId: string;
+}
 
 interface FullProfileViewProps {
   matchId: string;
@@ -110,11 +116,14 @@ export default function FullProfileView({ matchId, currentUserId, onBack, backLa
   // undefined = loading, null = not found (or an error -- both render the same honest "couldn't load" state)
   const [detail, setDetail] = useState<MatchDetailResult | null | undefined>(undefined);
   const [introStatus, setIntroStatus] = useState<"idle" | "sending" | "sent">("idle");
+  const [pendingMeeting, setPendingMeeting] = useState<PendingMeetingRequest | null>(null);
+  const [respondingToMeeting, setRespondingToMeeting] = useState<"accepted" | "declined" | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setDetail(undefined);
     setIntroStatus("idle");
+    setPendingMeeting(null);
 
     fetchMatchDetail(matchId, currentUserId)
       .then((result) => {
@@ -125,6 +134,34 @@ export default function FullProfileView({ matchId, currentUserId, onBack, backLa
         if (!cancelled) setDetail(null);
       });
 
+    return () => {
+      cancelled = true;
+    };
+  }, [matchId, currentUserId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadPendingMeeting = async () => {
+      const { data, error } = await supabase
+        .from("meetings")
+        .select("id, requester_id, recipient_id, status")
+        .eq("match_id", matchId)
+        .eq("status", "requested")
+        .eq("recipient_id", currentUserId)
+        .order("requested_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (cancelled) return;
+      if (error) {
+        console.error("loadPendingMeeting failed:", error);
+        return;
+      }
+      setPendingMeeting(data ? { id: data.id, requesterId: data.requester_id } : null);
+    };
+
+    loadPendingMeeting();
     return () => {
       cancelled = true;
     };
@@ -166,6 +203,25 @@ export default function FullProfileView({ matchId, currentUserId, onBack, backLa
     }
   };
 
+  const respondToMeetingRequest = async (response: "accepted" | "declined") => {
+    if (!pendingMeeting || respondingToMeeting) return;
+    setRespondingToMeeting(response);
+
+    const { error } = await supabase.rpc("respond_to_meeting", {
+      p_meeting_id: pendingMeeting.id,
+      p_response: response,
+    });
+
+    setRespondingToMeeting(null);
+    if (error) {
+      toast.error("Couldn't respond to this meeting — try again.");
+      return;
+    }
+
+    setPendingMeeting(null);
+    toast.success(response === "accepted" ? "Meeting accepted" : "Meeting declined");
+  };
+
   return (
     <div className="bg-offrip-white font-offrip-body text-offrip-black">
       <button
@@ -174,6 +230,30 @@ export default function FullProfileView({ matchId, currentUserId, onBack, backLa
       >
         ← {backLabel}
       </button>
+
+      {pendingMeeting && (
+        <div className="mt-4 flex flex-col gap-3 border-2 border-offrip-black bg-offrip-lime p-5 sm:flex-row sm:items-center sm:justify-between">
+          <p className="font-offrip-display text-sm font-bold uppercase tracking-tight">
+            {firstName(otherPerson.full_name)} asked to meet — do you want to meet them?
+          </p>
+          <div className="flex shrink-0 gap-2">
+            <OffripButton
+              onClick={() => respondToMeetingRequest("accepted")}
+              disabled={respondingToMeeting !== null}
+              className="!bg-offrip-black !text-offrip-white"
+            >
+              {respondingToMeeting === "accepted" ? "Accepting…" : "Yes"}
+            </OffripButton>
+            <OffripButton
+              variant="secondary"
+              onClick={() => respondToMeetingRequest("declined")}
+              disabled={respondingToMeeting !== null}
+            >
+              {respondingToMeeting === "declined" ? "Declining…" : "No"}
+            </OffripButton>
+          </div>
+        </div>
+      )}
 
       <div className="mt-6 grid grid-cols-1 gap-8 lg:grid-cols-[320px_1fr]">
         {/* Left column */}
@@ -190,6 +270,11 @@ export default function FullProfileView({ matchId, currentUserId, onBack, backLa
             <h1 className="font-offrip-display text-2xl font-black uppercase tracking-tight">{otherPerson.full_name ?? "OFFRIP member"}</h1>
             {roleCompany && <p className="mt-1 font-offrip-body text-sm text-offrip-medium-gray">{roleCompany}</p>}
             {otherPerson.location && <p className="font-offrip-body text-sm text-offrip-medium-gray">{otherPerson.location}</p>}
+            {detail.match.eventName && (
+              <p className="mt-2 font-offrip-display text-[10px] font-bold uppercase tracking-widest text-offrip-medium-gray">
+                Matched at {detail.match.eventName}
+              </p>
+            )}
           </div>
 
           <div className="border border-offrip-black bg-offrip-black p-5 text-center">
