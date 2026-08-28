@@ -8,6 +8,8 @@ import ConciergeTab from "@/components/concierge/ConciergeTab";
 import { useConciergeSession } from "@/components/concierge/useConciergeSession";
 import MatchesTab from "@/components/matches/MatchesTab";
 import MessagesTab from "@/components/messages/MessagesTab";
+import MessageThread from "@/components/messages/MessageThread";
+import ConnectionSelfReportPrompt from "@/components/connections/ConnectionSelfReportPrompt";
 import NotificationBell from "@/components/notifications/NotificationBell";
 import type { NotificationDestination } from "@/components/notifications/notificationNavigation";
 import OffripButton from "@/components/offrip/Button";
@@ -15,6 +17,8 @@ import OffripCard from "@/components/offrip/Card";
 import OffripChip from "@/components/offrip/Chip";
 import EditProfileScreen from "@/components/profile/EditProfileScreen";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { CheckCircle } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -66,6 +70,7 @@ interface HomeStatsData {
 
 interface HomeMeeting {
   id: string;
+  matchId: string;
   otherId: string;
   otherName: string;
   otherAvatarUrl: string | null;
@@ -258,7 +263,16 @@ export default function DashboardV2() {
         ) : (
           <>
             {tab === "home" && (
-              <HomeTab profile={profile} userId={user!.id} onSeeRoom={(eventId) => { setSelectedEventId(eventId); setTab("matches"); }} onSeeDay={() => setTab("myday")} onViewFullProfile={setViewingMatchId} />
+              <HomeTab
+                profile={profile}
+                userId={user!.id}
+                onSeeRoom={(eventId) => { setSelectedEventId(eventId); setTab("matches"); }}
+                onSeeRooms={() => setTab("events")}
+                onSeeDay={() => setTab("myday")}
+                onSeeMessages={() => setTab("messages")}
+                onSeeConnections={() => setTab("connections")}
+                onViewFullProfile={setViewingMatchId}
+              />
             )}
             {tab === "profile" && editingFullProfile && (
               <EditProfileScreen
@@ -295,7 +309,9 @@ export default function DashboardV2() {
                 onViewMyDay={() => setTab("myday")}
               />
             )}
-            {tab === "connections" && <ConnectionsTab userId={user!.id} />}
+            {tab === "connections" && (
+              <ConnectionsTab userId={user!.id} onViewFullProfile={setViewingMatchId} onMessagesRead={refreshUnreadMessages} />
+            )}
             {tab === "messages" && (
               <MessagesTab
                 userId={user!.id}
@@ -309,6 +325,7 @@ export default function DashboardV2() {
           </>
         )}
       </main>
+      {user && <ConnectionSelfReportPrompt userId={user.id} />}
     </div>
   );
 }
@@ -317,13 +334,19 @@ function HomeTab({
   profile,
   userId,
   onSeeRoom,
+  onSeeRooms,
   onSeeDay,
+  onSeeMessages,
+  onSeeConnections,
   onViewFullProfile,
 }: {
   profile: Profile | null;
   userId: string;
   onSeeRoom: (eventId?: string) => void;
+  onSeeRooms: () => void;
   onSeeDay: () => void;
+  onSeeMessages: () => void;
+  onSeeConnections: () => void;
   onViewFullProfile: (matchId: string) => void;
 }) {
   const [stats, setStats] = useState<HomeStatsData | null | undefined>(undefined);
@@ -335,7 +358,7 @@ function HomeTab({
     const loadMeetings = async () => {
       const { data: meetingRows, error } = await supabase
         .from("meetings")
-        .select("id,requester_id,recipient_id,scheduled_at,location_note")
+        .select("id,match_id,requester_id,recipient_id,scheduled_at,location_note")
         .eq("status", "scheduled")
         .or(`requester_id.eq.${userId},recipient_id.eq.${userId}`)
         .not("scheduled_at", "is", null)
@@ -360,12 +383,13 @@ function HomeTab({
       const profileById = new Map((meetingProfiles ?? []).map((meetingProfile) => [meetingProfile.id, meetingProfile]));
       const scheduledMeetings: HomeMeeting[] = rows
         .map((meeting) => {
-          if (!meeting.scheduled_at) return null;
+          if (!meeting.scheduled_at || !meeting.match_id) return null;
           const otherId = meeting.requester_id === userId ? meeting.recipient_id : meeting.requester_id;
           const other = profileById.get(otherId);
           if (!other) return null;
           return {
             id: meeting.id,
+            matchId: meeting.match_id,
             otherId: other.id,
             otherName: other.full_name ?? "OFFRIP member",
             otherAvatarUrl: other.avatar_url,
@@ -629,7 +653,12 @@ function HomeTab({
         ) : (
           <div className="mt-3 space-y-3">
             {homeMeetings.map((meeting) => (
-              <OffripCard key={meeting.id} className="flex items-start justify-between gap-4 p-4">
+              <OffripCard
+                key={meeting.id}
+                interactive
+                onClick={() => onViewFullProfile(meeting.matchId)}
+                className="flex items-start justify-between gap-4 p-4"
+              >
                 <div className="flex min-w-0 items-start gap-3">
                   <Avatar className="h-12 w-12 shrink-0 rounded-full border-2 border-offrip-black">
                     {meeting.otherAvatarUrl && <AvatarImage src={meeting.otherAvatarUrl} alt={meeting.otherName} />}
@@ -670,15 +699,20 @@ function HomeTab({
           <p className="mb-3 font-offrip-display text-xs font-bold uppercase tracking-widest text-offrip-medium-gray">Today at {stats.eventName}</p>
           <div className="grid grid-cols-2 gap-3 bg-offrip-aqua p-4 lg:grid-cols-4">
             {[
-              ["People registered", stats.registrations],
-              ["Strong matches", stats.strongMatches],
-              ["Pending requests", stats.pendingRequests],
-              ["Unread messages", stats.unreadMessages],
-            ].map(([label, value]) => (
-              <div key={label} className="border-2 border-offrip-black bg-offrip-white p-4">
+              { label: "People registered", value: stats.registrations, onClick: onSeeRooms },
+              { label: "Strong matches", value: stats.strongMatches, onClick: () => onSeeRoom(stats.eventId) },
+              { label: "Pending requests", value: stats.pendingRequests, onClick: onSeeConnections },
+              { label: "Unread messages", value: stats.unreadMessages, onClick: onSeeMessages },
+            ].map(({ label, value, onClick }) => (
+              <button
+                key={label}
+                type="button"
+                onClick={onClick}
+                className="border-2 border-offrip-black bg-offrip-white p-4 text-left transition-colors hover:bg-offrip-lime"
+              >
                 <p className="font-offrip-display text-3xl font-black">{value}</p>
                 <p className="mt-1 font-offrip-display text-[10px] font-bold uppercase tracking-widest text-offrip-dark-gray">{label}</p>
-              </div>
+              </button>
             ))}
           </div>
           <div className="mt-5 flex flex-col gap-4 border-2 border-offrip-black bg-offrip-black p-6 text-offrip-white sm:flex-row sm:items-center sm:justify-between">
@@ -790,7 +824,12 @@ function HomeTab({
             ) : (
               <div className="mt-3 space-y-3">
                 {stats.connectionsInMotion.map((connection) => (
-                  <OffripCard key={connection.id} className="flex items-center justify-between gap-4 p-4">
+                  <OffripCard
+                    key={connection.id}
+                    interactive
+                    onClick={onSeeConnections}
+                    className="flex items-center justify-between gap-4 p-4"
+                  >
                     <div className="flex min-w-0 items-center gap-3">
                       <Avatar className="h-10 w-10 shrink-0 rounded-full border-2 border-offrip-black">
                         {connection.otherAvatarUrl && <AvatarImage src={connection.otherAvatarUrl} alt={connection.otherName} />}
@@ -932,80 +971,175 @@ export function MyDayTab({
 
 interface ConnectionRow {
   id: string;
+  matchId: string | null;
   otherName: string;
+  otherAvatarUrl: string | null;
   otherInitials: string;
+  eventId: string | null;
   eventName: string;
   status: string;
   statusColor: string;
+  isPendingOnMe: boolean;
+  hasCompletedMeeting: boolean;
+  upcomingMeeting: { scheduledAt: string; location: string | null } | null;
 }
 
-function ConnectionsTab({ userId }: { userId: string }) {
+function ConnectionsTab({
+  userId,
+  onViewFullProfile,
+  onMessagesRead,
+}: {
+  userId: string;
+  onViewFullProfile: (matchId: string) => void;
+  onMessagesRead: () => void | Promise<void>;
+}) {
   const [connections, setConnections] = useState<ConnectionRow[]>([]);
   const [conversationCount, setConversationCount] = useState(0);
   const [peopleMetCount, setPeopleMetCount] = useState(0);
   const [inMotionCount, setInMotionCount] = useState(0);
   const [loadingConnections, setLoadingConnections] = useState(true);
+  const [respondingMatchId, setRespondingMatchId] = useState<string | null>(null);
+  const [openThread, setOpenThread] = useState<{ matchId: string; eventId: string | null; eventName: string | null; other: { id: string; full_name: string | null; avatar_url: string | null } } | null>(null);
+  const [notesOpenFor, setNotesOpenFor] = useState<string | null>(null);
+  const [notesByMatch, setNotesByMatch] = useState<Record<string, string>>({});
+  const [savingNotes, setSavingNotes] = useState<string | null>(null);
+
+  const loadConnections = useCallback(async () => {
+    const [{ data: messages }, { data: meetings }] = await Promise.all([
+      supabase
+        .from("messages")
+        .select("id,match_id,event_id,sender_id,recipient_id,message_type,created_at")
+        .or(`sender_id.eq.${userId},recipient_id.eq.${userId}`)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("meetings")
+        .select("id,match_id,event_id,requester_id,recipient_id,status,requested_at,completed_at,scheduled_at,location_note")
+        .or(`requester_id.eq.${userId},recipient_id.eq.${userId}`)
+        .order("requested_at", { ascending: false }),
+    ]);
+
+    const meetingRows = meetings ?? [];
+    const matchIdsFromRows = Array.from(new Set([
+      ...(messages ?? []).map((m) => m.match_id),
+      ...meetingRows.map((m) => m.match_id),
+    ].filter((id): id is string => Boolean(id))));
+
+    const { data: matchRows } = matchIdsFromRows.length
+      ? await supabase.from("matches").select("id,connection_status,connection_requested_by").in("id", matchIdsFromRows)
+      : { data: [] as { id: string; connection_status: string; connection_requested_by: string | null }[] };
+    const connectionStatuses = new Map(
+      (matchRows ?? []).map((row) => [row.id, { status: row.connection_status, requestedBy: row.connection_requested_by }]),
+    );
+
+    const summary = buildConnectionSummary(userId, messages ?? [], meetingRows, connectionStatuses);
+
+    const otherIds = summary.people.map((person) => person.personId);
+    const eventIds = Array.from(new Set(summary.people.map((person) => person.eventId).filter((id): id is string => Boolean(id))));
+
+    const [{ data: profiles }, { data: events }, { data: notes }] = await Promise.all([
+      otherIds.length ? supabase.from("attendee_profiles").select("id,full_name,avatar_url").in("id", otherIds) : Promise.resolve({ data: [] }),
+      eventIds.length ? supabase.from("events").select("id,name").in("id", eventIds) : Promise.resolve({ data: [] }),
+      supabase.from("connection_notes").select("match_id,note").eq("user_id", userId),
+    ]);
+    const profileMap = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
+    const eventMap = new Map((events ?? []).map((event) => [event.id, event.name]));
+    const meetingsByMatch = new Map(meetingRows.map((m) => [m.match_id, m]));
+
+    const rows: ConnectionRow[] = summary.people.map((person) => {
+      const profile = profileMap.get(person.personId);
+      const name = profile?.full_name ?? "Member";
+      const scheduledMeeting = person.matchId ? meetingsByMatch.get(person.matchId) : undefined;
+      return {
+        id: person.personId,
+        matchId: person.matchId,
+        otherName: name,
+        otherAvatarUrl: profile?.avatar_url ?? null,
+        otherInitials: profileInitials(name),
+        eventId: person.eventId,
+        eventName: eventMap.get(person.eventId ?? "") ?? "OFFRIP connection",
+        status: person.status,
+        statusColor: person.statusColor,
+        isPendingOnMe: person.isPendingOnMe,
+        hasCompletedMeeting: person.hasCompletedMeeting,
+        upcomingMeeting: scheduledMeeting?.status === "scheduled" && scheduledMeeting.scheduled_at
+          ? { scheduledAt: scheduledMeeting.scheduled_at, location: scheduledMeeting.location_note }
+          : null,
+      };
+    });
+
+    setConnections(rows);
+    setConversationCount(summary.conversationCount);
+    setPeopleMetCount(summary.peopleMetCount);
+    setInMotionCount(summary.inMotionCount);
+    setNotesByMatch(Object.fromEntries((notes ?? []).map((n) => [n.match_id, n.note])));
+    setLoadingConnections(false);
+  }, [userId]);
 
   useEffect(() => {
     let cancelled = false;
-    const loadConnections = async () => {
-      const [{ data: messages }, { data: meetings }] = await Promise.all([
-        supabase
-          .from("messages")
-          .select("id,match_id,event_id,sender_id,recipient_id,message_type,created_at")
-          .or(`sender_id.eq.${userId},recipient_id.eq.${userId}`)
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("meetings")
-          .select("id,event_id,requester_id,recipient_id,status,requested_at,completed_at")
-          .or(`requester_id.eq.${userId},recipient_id.eq.${userId}`)
-          .order("requested_at", { ascending: false }),
-      ]);
-
-      const summary = buildConnectionSummary(userId, messages ?? [], meetings ?? []);
-
-      const otherIds = summary.people.map((person) => person.personId);
-      const eventIds = Array.from(new Set(summary.people.map((person) => person.eventId).filter((id): id is string => Boolean(id))));
-
-      const [{ data: profiles }, { data: events }] = await Promise.all([
-        otherIds.length ? supabase.from("attendee_profiles").select("id,full_name").in("id", otherIds) : Promise.resolve({ data: [] }),
-        eventIds.length ? supabase.from("events").select("id,name").in("id", eventIds) : Promise.resolve({ data: [] }),
-      ]);
-      const profileMap = new Map((profiles ?? []).map((profile) => [profile.id, profile.full_name ?? "Member"]));
-      const eventMap = new Map((events ?? []).map((event) => [event.id, event.name]));
-      const rows = summary.people.map((person) => {
-        const name = profileMap.get(person.personId) ?? "Member";
-        return {
-          id: person.personId,
-          otherName: name,
-          otherInitials: profileInitials(name),
-          eventName: eventMap.get(person.eventId ?? "") ?? "OFFRIP connection",
-          status: person.status,
-          statusColor: person.statusColor,
-        };
-      });
-      if (!cancelled) {
-        setConnections(rows);
-        setConversationCount(summary.conversationCount);
-        setPeopleMetCount(summary.peopleMetCount);
-        setInMotionCount(summary.inMotionCount);
-        setLoadingConnections(false);
-      }
-    };
-    loadConnections();
+    loadConnections().catch(() => { if (!cancelled) setLoadingConnections(false); });
     return () => { cancelled = true; };
-  }, [userId]);
+  }, [loadConnections]);
+
+  const respondToConnection = async (matchId: string, response: "accepted" | "declined") => {
+    if (respondingMatchId) return;
+    setRespondingMatchId(matchId);
+    const { error } = await supabase.rpc("respond_to_connection", { p_match_id: matchId, p_response: response });
+    setRespondingMatchId(null);
+    if (error) {
+      toast.error("Couldn't respond to this connection — try again.");
+      return;
+    }
+    toast.success(response === "accepted" ? "Connection accepted" : "Connection declined");
+    await loadConnections();
+  };
+
+  const saveNote = async (matchId: string) => {
+    if (savingNotes) return;
+    setSavingNotes(matchId);
+    const note = notesByMatch[matchId] ?? "";
+    const { error } = await supabase
+      .from("connection_notes")
+      .upsert({ match_id: matchId, user_id: userId, note, updated_at: new Date().toISOString() }, { onConflict: "match_id,user_id" });
+    setSavingNotes(null);
+    if (error) {
+      toast.error("Couldn't save your note — try again.");
+      return;
+    }
+    toast.success("Note saved");
+  };
+
+  if (openThread) {
+    return (
+      <div className="-mx-6 -my-8">
+        <MessageThread
+          embedded
+          userId={userId}
+          matchId={openThread.matchId}
+          eventId={openThread.eventId}
+          eventName={openThread.eventName}
+          other={openThread.other}
+          onViewFullProfile={onViewFullProfile}
+          onMessagesRead={onMessagesRead}
+          onBack={() => {
+            setOpenThread(null);
+            loadConnections();
+          }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div>
       <div className="mb-8">
-        <h1 className="font-display text-4xl tracking-tight">Your matches</h1>
+        <h1 className="font-display text-4xl tracking-tight">Your connections</h1>
         <p className="mt-1 text-sm text-black/40 normal-case font-offrip-body">The connections you've made and the ones already in motion.</p>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-8">
         {[[peopleMetCount, "Matches You Met"], [inMotionCount, "In Motion"], [conversationCount, "Conversations"]].map(([value, label]) => (
-          <div key={String(label)} className="border border-black/10 p-5">
-            <div className="font-display text-4xl">{value}</div>
+          <div key={String(label)} className="border border-black/10 p-4 sm:p-5">
+            <div className="font-display text-3xl sm:text-4xl">{value}</div>
             <div className="text-[10px] tracking-widest font-display text-black/40 mt-1">{label}</div>
           </div>
         ))}
@@ -1018,13 +1152,114 @@ function ConnectionsTab({ userId }: { userId: string }) {
       ) : (
         <div className="space-y-3">
           {connections.map((connection) => (
-            <div key={connection.id} className="flex items-center gap-4 border border-black/10 p-4 hover:border-black transition-colors">
-              <div className="h-11 w-11 rounded-full flex items-center justify-center border-2 border-black font-display text-xs" style={{ backgroundColor: connection.statusColor }}>{connection.otherInitials}</div>
-              <div className="flex-1 min-w-0">
-                <div className="font-display text-sm truncate">{connection.otherName}</div>
-                <div className="text-xs text-black/40 normal-case font-offrip-body truncate">{connection.eventName}</div>
+            <div key={connection.id} className="border border-black/10 p-4 hover:border-black transition-colors">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                <button
+                  type="button"
+                  onClick={() => connection.matchId && onViewFullProfile(connection.matchId)}
+                  disabled={!connection.matchId}
+                  className="flex min-w-0 items-center gap-3 text-left sm:flex-1"
+                >
+                  <Avatar className="h-11 w-11 border-2 border-black shrink-0">
+                    {connection.otherAvatarUrl && <AvatarImage src={connection.otherAvatarUrl} alt={connection.otherName} />}
+                    <AvatarFallback className="font-display text-xs" style={{ backgroundColor: connection.statusColor }}>
+                      {connection.otherInitials}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-display text-sm truncate">{connection.otherName}</div>
+                    <div className="text-xs text-black/40 normal-case font-offrip-body truncate">{connection.eventName}</div>
+                  </div>
+                </button>
+                <div className="flex shrink-0 items-center justify-between gap-2 sm:justify-end">
+                  <span
+                    className="text-[10px] tracking-widest font-display text-right"
+                    style={{ color: connection.statusColor === "#DCE86A" ? "#000" : connection.statusColor }}
+                  >
+                    {connection.status}
+                  </span>
+                  {connection.matchId && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setOpenThread({
+                        matchId: connection.matchId!,
+                        eventId: connection.eventId,
+                        eventName: connection.eventName,
+                        other: { id: connection.id, full_name: connection.otherName, avatar_url: connection.otherAvatarUrl },
+                      })}
+                    >
+                      Message
+                    </Button>
+                  )}
+                </div>
               </div>
-              <div className="text-[10px] tracking-widest font-display text-right" style={{ color: connection.statusColor === "#DCE86A" ? "#000" : connection.statusColor }}>{connection.status}</div>
+
+              {connection.isPendingOnMe && connection.matchId && (
+                <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-black/10 pt-3">
+                  <p className="text-xs text-black/50 normal-case font-offrip-body flex-1 min-w-[160px]">
+                    {connection.otherName} wants to connect.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={respondingMatchId !== null}
+                    onClick={() => respondToConnection(connection.matchId!, "declined")}
+                  >
+                    Decline
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={respondingMatchId !== null}
+                    onClick={() => respondToConnection(connection.matchId!, "accepted")}
+                  >
+                    Accept
+                  </Button>
+                </div>
+              )}
+
+              {connection.upcomingMeeting && (
+                <div className="mt-3 border-t border-black/10 pt-3 text-xs normal-case font-offrip-body text-black/60">
+                  Meeting {new Date(connection.upcomingMeeting.scheduledAt).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+                  {connection.upcomingMeeting.location ? ` · ${connection.upcomingMeeting.location}` : ""}
+                </div>
+              )}
+
+              {connection.hasCompletedMeeting && (
+                <div className="mt-3 border-t border-black/10 pt-3 text-xs normal-case font-offrip-body text-black/60 flex items-center gap-1">
+                  <CheckCircle className="h-3.5 w-3.5" /> You met
+                </div>
+              )}
+
+              {connection.matchId && (
+                <div className="mt-3 border-t border-black/10 pt-3">
+                  {notesOpenFor === connection.matchId ? (
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+                      <textarea
+                        className="flex-1 ooo-border bg-card px-3 py-2 text-sm normal-case font-sans resize-none"
+                        rows={2}
+                        placeholder="Private note (only you can see this)"
+                        value={notesByMatch[connection.matchId] ?? ""}
+                        onChange={(e) => setNotesByMatch((prev) => ({ ...prev, [connection.matchId!]: e.target.value }))}
+                      />
+                      <div className="flex gap-2 shrink-0">
+                        <Button size="sm" disabled={savingNotes !== null} onClick={() => saveNote(connection.matchId!)}>
+                          {savingNotes === connection.matchId ? "Saving…" : "Save"}
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => setNotesOpenFor(null)}>Close</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setNotesOpenFor(connection.matchId)}
+                      className="text-xs text-black/40 normal-case font-offrip-body hover:text-black hover:underline"
+                    >
+                      {notesByMatch[connection.matchId]?.trim() ? "Edit private note" : "Add a private note"}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>

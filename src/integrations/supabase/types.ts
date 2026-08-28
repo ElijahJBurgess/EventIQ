@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
+    PostgrestVersion: "14.17"
   }
   public: {
     Tables: {
@@ -137,6 +137,101 @@ export type Database = {
           match_name?: string
         }
         Relationships: []
+      }
+      connection_notes: {
+        Row: {
+          id: string
+          match_id: string
+          note: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          id?: string
+          match_id: string
+          note?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          id?: string
+          match_id?: string
+          note?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "connection_notes_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "connection_notes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "attendee_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "connection_notes_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      connection_self_reports: {
+        Row: {
+          created_at: string
+          id: string
+          match_id: string
+          response: string
+          user_id: string
+          was_valuable: boolean | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          match_id: string
+          response: string
+          user_id: string
+          was_valuable?: boolean | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          match_id?: string
+          response?: string
+          user_id?: string
+          was_valuable?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "connection_self_reports_match_id_fkey"
+            columns: ["match_id"]
+            isOneToOne: false
+            referencedRelation: "matches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "connection_self_reports_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "attendee_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "connection_self_reports_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       event_analytics: {
         Row: {
@@ -479,6 +574,9 @@ export type Database = {
           ai_explanation: string | null
           b_to_a_confidence: number | null
           b_to_a_score: number | null
+          connection_requested_by: string | null
+          connection_status: string
+          connection_status_updated_at: string | null
           conversation_starters: string[] | null
           event_id: string | null
           generated_at: string | null
@@ -504,6 +602,9 @@ export type Database = {
           ai_explanation?: string | null
           b_to_a_confidence?: number | null
           b_to_a_score?: number | null
+          connection_requested_by?: string | null
+          connection_status?: string
+          connection_status_updated_at?: string | null
           conversation_starters?: string[] | null
           event_id?: string | null
           generated_at?: string | null
@@ -529,6 +630,9 @@ export type Database = {
           ai_explanation?: string | null
           b_to_a_confidence?: number | null
           b_to_a_score?: number | null
+          connection_requested_by?: string | null
+          connection_status?: string
+          connection_status_updated_at?: string | null
           conversation_starters?: string[] | null
           event_id?: string | null
           generated_at?: string | null
@@ -549,6 +653,20 @@ export type Database = {
           user_b_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "matches_connection_requested_by_fkey"
+            columns: ["connection_requested_by"]
+            isOneToOne: false
+            referencedRelation: "attendee_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "matches_connection_requested_by_fkey"
+            columns: ["connection_requested_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "matches_event_id_fkey"
             columns: ["event_id"]
@@ -1453,6 +1571,10 @@ export type Database = {
         Returns: boolean
       }
       request_meeting: { Args: { p_match_id: string }; Returns: string }
+      respond_to_connection: {
+        Args: { p_match_id: string; p_response: string }
+        Returns: boolean
+      }
       respond_to_meeting: {
         Args: { p_meeting_id: string; p_response: string }
         Returns: boolean

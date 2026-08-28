@@ -5,6 +5,8 @@ export type NotificationDestination =
 export function notificationDestination(item: { type: string; match_id: string | null }): NotificationDestination | null {
   switch (item.type) {
     case "connection_request":
+    case "connection_accepted":
+    case "connection_declined":
     case "new_message":
     case "meeting_requested":
     case "meeting_accepted":

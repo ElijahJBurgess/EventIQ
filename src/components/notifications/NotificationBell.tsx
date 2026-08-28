@@ -17,6 +17,10 @@ function notificationDescription(type: string, actorName: string | null) {
   switch (type) {
     case "connection_request":
       return actorName ? `${actorName} sent you a connection request` : "You have a new connection request";
+    case "connection_accepted":
+      return actorName ? `${actorName} accepted your connection request` : "Your connection request was accepted";
+    case "connection_declined":
+      return actorName ? `${actorName} declined your connection request` : "Your connection request was declined";
     case "new_message":
       return actorName ? `${actorName} sent you a message` : "You have a new message";
     case "meeting_requested":

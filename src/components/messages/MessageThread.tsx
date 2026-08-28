@@ -19,6 +19,11 @@ interface MessageRow {
   read_at: string | null;
 }
 
+interface ConnectionRow {
+  connection_status: string;
+  connection_requested_by: string | null;
+}
+
 interface MeetingRow {
   id: string;
   status: string;
@@ -131,6 +136,8 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [connection, setConnection] = useState<ConnectionRow | null>(null);
+  const [respondingToConnection, setRespondingToConnection] = useState<"accepted" | "declined" | null>(null);
   const [meeting, setMeeting] = useState<MeetingRow | null>(null);
   const [declinedRequesterIds, setDeclinedRequesterIds] = useState<string[]>([]);
   const [requestingMeeting, setRequestingMeeting] = useState(false);
@@ -169,6 +176,20 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
     if (error) return;
     await onMessagesRead();
   }, [matchId, onMessagesRead]);
+
+  const loadConnection = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("matches")
+      .select("connection_status, connection_requested_by")
+      .eq("id", matchId)
+      .maybeSingle();
+
+    if (error) {
+      toast.error("Couldn't load connection status — try refreshing.");
+      return;
+    }
+    setConnection((data as ConnectionRow | null) ?? null);
+  }, [matchId]);
 
   const loadMeeting = useCallback(async () => {
     const { data, error } = await supabase
@@ -218,10 +239,11 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
     };
 
     loadThread();
+    loadConnection();
     loadMeeting();
     loadEventDateRange();
     return () => { cancelled = true; };
-  }, [loadEventDateRange, loadMeeting, loadMessages, matchId, onMessagesRead]);
+  }, [loadConnection, loadEventDateRange, loadMeeting, loadMessages, matchId, onMessagesRead]);
 
   const refreshActiveThread = useCallback(async () => {
     if (refreshInFlightRef.current) return;
@@ -232,10 +254,11 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
         (message) => message.sender_id !== userId && message.read_at === null,
       );
       if (hasUnreadIncoming) await markThreadRead();
+      await loadConnection();
     } finally {
       refreshInFlightRef.current = false;
     }
-  }, [loadMessages, markThreadRead, userId]);
+  }, [loadConnection, loadMessages, markThreadRead, userId]);
 
   useEffect(() => {
     const refreshWhenVisible = () => {
@@ -265,7 +288,7 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
 
   const handleSend = async () => {
     const content = text.trim();
-    if (!content) return;
+    if (!content || connection?.connection_status !== "accepted") return;
     setSending(true);
 
     const { error } = await supabase.from("messages").insert({
@@ -285,17 +308,40 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
     await loadMessages();
   };
 
-  const hasBackAndForth = messages.some((message) => message.sender_id === userId)
-    && messages.some((message) => message.sender_id === other.id);
+  const isConnected = connection?.connection_status === "accepted";
+  const isPendingOnMe = connection?.connection_status === "pending" && connection.connection_requested_by !== userId;
+  const isPendingOnThem = connection?.connection_status === "pending" && connection.connection_requested_by === userId;
+  const isDeclined = connection?.connection_status === "declined";
+
+  const respondToConnection = async (response: "accepted" | "declined") => {
+    if (!isPendingOnMe || respondingToConnection) return;
+    setRespondingToConnection(response);
+
+    const { error } = await supabase.rpc("respond_to_connection", {
+      p_match_id: matchId,
+      p_response: response,
+    });
+
+    setRespondingToConnection(null);
+    if (error) {
+      toast.error("Couldn't respond to this connection — try again.");
+      return;
+    }
+
+    await loadConnection();
+    toast.success(response === "accepted" ? `You're connected with ${other.full_name ?? "this member"}` : "Connection declined");
+  };
+
   const hasActiveMeeting = meeting ? ACTIVE_MEETING_STATUSES.includes(meeting.status) : false;
   const currentUserWasDeclined = declinedRequesterIds.includes(userId);
   const meetingRequestsClosed = declinedRequesterIds.includes(userId) && declinedRequesterIds.includes(other.id);
   const canRequestMeeting = (!meeting || ["declined", "cancelled"].includes(meeting.status))
     && !currentUserWasDeclined
-    && !meetingRequestsClosed;
+    && !meetingRequestsClosed
+    && isConnected;
 
   const requestMeeting = async () => {
-    if (!eventId || !hasBackAndForth || requestingMeeting) return;
+    if (!eventId || !isConnected || requestingMeeting) return;
     setRequestingMeeting(true);
 
     const { data: meetingHistory, error: existingError } = await supabase
@@ -502,7 +548,48 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
         </div>
       </header>
 
-      {(meeting || (hasBackAndForth && eventId)) && (
+      {connection && connection.connection_status !== "accepted" && (
+        <div className="border-b border-black/10 bg-offrip-lime/40 px-4 py-3 shrink-0">
+          <div className="max-w-2xl mx-auto flex flex-wrap items-center justify-between gap-3">
+            {isPendingOnMe && (
+              <>
+                <p className="text-sm normal-case font-sans">
+                  {other.full_name ?? "This member"} wants to connect. Accept to start messaging and unlock scheduling.
+                </p>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Button
+                    onClick={() => respondToConnection("declined")}
+                    disabled={respondingToConnection !== null}
+                    variant="outline"
+                    size="sm"
+                  >
+                    {respondingToConnection === "declined" ? "Declining…" : "Decline"}
+                  </Button>
+                  <Button
+                    onClick={() => respondToConnection("accepted")}
+                    disabled={respondingToConnection !== null}
+                    size="sm"
+                  >
+                    {respondingToConnection === "accepted" ? "Accepting…" : "Accept"}
+                  </Button>
+                </div>
+              </>
+            )}
+            {isPendingOnThem && (
+              <p className="text-sm normal-case font-sans">
+                Connection request sent. Waiting for {other.full_name ?? "this member"} to accept.
+              </p>
+            )}
+            {isDeclined && (
+              <p className="text-sm normal-case font-sans">
+                This connection request was declined.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {(meeting || (isConnected && eventId)) && (
         <div className="border-b border-black/10 bg-offrip-light-gray px-4 py-3 shrink-0">
           <div className="max-w-2xl mx-auto space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -530,7 +617,7 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
                   </Button>
                 </div>
               )}
-              {!hasActiveMeeting && canRequestMeeting && hasBackAndForth && eventId && (
+              {!hasActiveMeeting && canRequestMeeting && isConnected && eventId && (
                 <Button
                   onClick={requestMeeting}
                   disabled={requestingMeeting}
@@ -666,8 +753,18 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
       <div className="border-t border-black bg-white p-3 shrink-0">
         <div className="max-w-2xl mx-auto flex gap-2">
           <input
-            className="flex-1 ooo-border bg-card px-4 py-3 normal-case font-sans"
-            placeholder="Type a message…"
+            className="flex-1 ooo-border bg-card px-4 py-3 normal-case font-sans disabled:bg-offrip-light-gray disabled:cursor-not-allowed"
+            placeholder={
+              connection?.connection_status === "accepted"
+                ? "Type a message…"
+                : isPendingOnMe
+                  ? "Accept the connection to reply"
+                  : isPendingOnThem
+                    ? "Waiting for them to accept…"
+                    : isDeclined
+                      ? "This connection was declined"
+                      : "Type a message…"
+            }
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={(e) => {
@@ -676,9 +773,9 @@ export default function MessageThread({ userId, matchId, eventId, eventName, oth
                 handleSend();
               }
             }}
-            disabled={sending}
+            disabled={sending || connection?.connection_status !== "accepted"}
           />
-          <Button onClick={handleSend} disabled={sending || !text.trim()} size="icon" aria-label="Send message">
+          <Button onClick={handleSend} disabled={sending || !text.trim() || connection?.connection_status !== "accepted"} size="icon" aria-label="Send message">
             {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </Button>
         </div>

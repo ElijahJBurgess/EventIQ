@@ -24,6 +24,7 @@ function message(overrides: Partial<ConnectionMessageFact> = {}): ConnectionMess
 function meeting(overrides: Partial<ConnectionMeetingFact> = {}): ConnectionMeetingFact {
   return {
     id: "meeting-1",
+    match_id: "match-1",
     event_id: "event-1",
     requester_id: USER,
     recipient_id: OTHER,

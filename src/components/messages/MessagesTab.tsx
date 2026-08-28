@@ -18,6 +18,8 @@ interface Conversation {
   other: OtherProfile;
   lastContent: string;
   lastCreatedAt: string;
+  connectionStatus: string;
+  connectionRequestedBy: string | null;
 }
 
 const AVATAR_PALETTE = [
@@ -105,25 +107,31 @@ export default function MessagesTab({
       new Set(Array.from(groups.values()).map((g) => g.eventId).filter((id): id is string => Boolean(id))),
     );
 
-    const [{ data: profiles }, { data: events }] = await Promise.all([
+    const [{ data: profiles }, { data: events }, { data: connectionRows }] = await Promise.all([
       otherIds.length > 0
         ? supabase.from("attendee_profiles").select("id, full_name, avatar_url").in("id", otherIds)
         : Promise.resolve({ data: [] as OtherProfile[] }),
       eventIds.length > 0
         ? supabase.from("events").select("id, name").in("id", eventIds)
         : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+      matchIds.length > 0
+        ? supabase.from("matches").select("id, connection_status, connection_requested_by").in("id", matchIds)
+        : Promise.resolve({ data: [] as { id: string; connection_status: string; connection_requested_by: string | null }[] }),
     ]);
 
     const profileMap = new Map<string, OtherProfile>();
     for (const p of profiles ?? []) profileMap.set(p.id, p as OtherProfile);
     const eventMap = new Map<string, string>();
     for (const event of events ?? []) eventMap.set(event.id, event.name);
+    const connectionMap = new Map<string, { status: string; requestedBy: string | null }>();
+    for (const row of connectionRows ?? []) connectionMap.set(row.id, { status: row.connection_status, requestedBy: row.connection_requested_by });
 
     const list: Conversation[] = matchIds
       .map((matchId) => {
         const group = groups.get(matchId)!;
         const other = profileMap.get(group.otherId);
         if (!other) return null;
+        const connection = connectionMap.get(matchId);
         return {
           matchId,
           eventId: group.eventId,
@@ -131,6 +139,8 @@ export default function MessagesTab({
           other,
           lastContent: group.lastContent,
           lastCreatedAt: group.lastCreatedAt,
+          connectionStatus: connection?.status ?? "none",
+          connectionRequestedBy: connection?.requestedBy ?? null,
         };
       })
       .filter((c): c is Conversation => c !== null)
@@ -186,7 +196,14 @@ export default function MessagesTab({
                 </AvatarFallback>
               </Avatar>
               <div className="min-w-0 flex-1">
-                <p className="font-display text-xs truncate">{c.other.full_name ?? "Member"}</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-display text-xs truncate">{c.other.full_name ?? "Member"}</p>
+                  {c.connectionStatus === "pending" && (
+                    <span className={`shrink-0 text-[9px] normal-case font-offrip-body px-1.5 py-0.5 border ${openConversation?.matchId === c.matchId ? "border-white/40 text-white/70" : "border-black/20 text-black/50"}`}>
+                      {c.connectionRequestedBy === userId ? "Pending" : "Respond"}
+                    </span>
+                  )}
+                </div>
                 <p className={`text-[11px] normal-case font-offrip-body truncate mt-1 ${openConversation?.matchId === c.matchId ? "text-white/60" : "text-black/40"}`}>{c.lastContent}</p>
               </div>
               <span className={`text-[10px] normal-case font-offrip-body shrink-0 ${openConversation?.matchId === c.matchId ? "text-white/50" : "text-black/30"}`}>
