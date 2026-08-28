@@ -29,6 +29,8 @@ export interface EventRow {
   end_date?: string | null;
   start_time?: string | null;
   end_time?: string | null;
+  location?: string | null;
+  venue?: string | null;
 }
 
 export interface MatchRow {
@@ -169,6 +171,8 @@ export interface ConciergeContext {
       endDate: string | null;
       startTime: string | null;
       endTime: string | null;
+      venue: string | null;
+      location: string | null;
     };
   };
   roomDisplayData: { name: string };
@@ -230,6 +234,8 @@ function baseContext(userId: string, event: EventRow, status: ConciergeContextSt
         endDate: event.end_date ?? null,
         startTime: event.start_time ?? null,
         endTime: event.end_time ?? null,
+        venue: event.venue ?? null,
+        location: event.location ?? null,
       },
     },
     roomDisplayData: { name: event.name },
@@ -544,7 +550,7 @@ export function createSupabaseContextSource(client: ConciergeQueryClient): Conci
     },
     async getEvent(eventId) {
       const result = await client.from<EventRow>("events")
-        .select("id,name,date,end_date,start_time,end_time")
+        .select("id,name,date,end_date,start_time,end_time,venue,location")
         .eq("id", eventId)
         .maybeSingle();
       if (result.error) throw new Error("Concierge context event lookup failed");
