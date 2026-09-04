@@ -290,7 +290,60 @@ RLS is **enabled on all 23 tables**. Findings:
 
 ## Section 4 — Database schema health
 
-*Status: pending.*
+*Status: complete.* Method: every table name grepped across `src/` + `supabase/functions/` (excluding generated `types.ts` and tests); RPC bodies read to catch indirect use; every FK's `ON DELETE` action dumped; suspect columns grepped individually.
+
+### 4.1 Dead / orphaned tables — ⚪ safe to drop
+
+| Table | Rows | Why it's dead |
+|---|---|---|
+| `points` | 0 | No `from("points")` anywhere; check-in/gamification never shipped. `profiles.total_points` also unread. |
+| `check_ins` | 0 | Check-in state actually lives on `event_registrations.is_checked_in` (that's what `get_event_attendance_counts` and `event-stats` read). This table — with its own `status` enum — has no reader. **Duplicate-purpose, lost to `event_registrations.is_checked_in`.** |
+| `admin_actions` | 0 | "Visitors can record dashboard actions" — no code writes or reads it. `anon` INSERT policy. |
+| `connection_actions` | 0 | Same — orphan telemetry with an `anon` INSERT policy. |
+| `event_analytics` | 0 | Same — orphan telemetry with an `anon` INSERT policy. |
+| `sponsors` | 0 | Sponsor feature never built. Over-permissive `FOR ALL` policy (3.2). |
+| `sponsor_engagements` | 0 | Same. |
+| `needs_offers_compatibility` | 36 | **Has seed data but no reader** — referenced only in its own migration + generated types. The match scorer computes needs↔offers fit with its own logic and never consults this lookup. Either wire it into the scorer or drop it. |
+
+`us_cities` (5 389 rows) looks unreferenced by the same grep but is **live** — reached through the `search_us_cities` SECURITY DEFINER RPC. Not dead.
+
+**Live tables (14):** `profiles`, `events`, `event_registrations`, `matches`, `messages`, `meetings`, `match_actions`, `notifications`, `connection_notes`, `connection_self_reports`, `feedback`, `reports`, `event_ai_insights`, `concierge_logs`.
+
+### 4.2 Dead / redundant columns
+
+**`profiles` — 12 columns with zero code references** (only in generated types):
+`total_points`, `festivals`, `activities`, `travel_interests`, `sports`, `funding_raised`, `check_size`, `investment_stage`, `open_roles`, `hiring_priorities`, `candidate_level`, `company_stage`.
+Most are role-specific (investor / recruiter) fields that were superseded by the `role_details` jsonb blob. ⚪/🟡 — drop, or consciously decide to keep for a future feature.
+
+**`meetings` — dead columns:** `calendar_export_token`, `meeting_notes`, `proposed_time` (the flow uses `scheduled_at`) — 0 references. **`feedback.would_return`** — 0 references (nothing reads it).
+
+**Two-fields-one-job situations:**
+
+- 🟠 **`matching_goal` vs `primary_goal` — NOT fully resolved.** The earlier "goal field standardization" made the *edge-function reads* prefer `primary_goal`, but:
+  - **still dual-written:** `ProfileSetup.onSubmit:97` and `EditProfileScreen.tsx:120` both write `matching_goal: formData.primaryGoal` alongside `primary_goal`.
+  - **still fallback-read in 6 places:** `match-engine/scorer.ts` (×3 lines), `admin-run-matching/scorer.ts` (×3), `concierge/context.ts` (×2), `EditProfileScreen.tsx:66` — all `primary_goal ?? matching_goal`.
+  - **still in the `attendee_profiles` view** (`20260821010000_secure_profile_reads.sql:33`).
+  - Fully resolving means: drop the 2 writes → drop the 6 fallback reads → remove from the view → drop the column. Internally consistent today (both are written to the same value), so not urgent, but it is unfinished.
+- 🟡 **`areas_of_expertise` is an exact copy of `offers`.** Both `ProfileSetup.tsx:96` and `EditProfileScreen.tsx:119` write `areas_of_expertise: formData.offers`. Two columns, always identical. `FullProfileView` / `matchDetail` read `areas_of_expertise`; the scorer reads `offers`. Same pattern as `matching_goal`.
+- 🟡 **`profiles.location` (display string) vs `location_city` + `location_state_code` (structured).** Three columns for one concept; `location` is written as `"Atlanta, GA"` while the structured pair is written from the city picker. The scorer prefers the structured pair. Redundant but low-risk.
+- 🟡 **`matches` has accumulated overlapping scoring columns across rubric v1 → v2 → v2.1:** `match_score` (largely superseded by `a_to_b_score`/`b_to_a_score`), and three JSON columns `score_breakdown` / `match_details` / `match_evidence` that serve similar "why this match" purposes. Not untangled here — flagging that the table is due for a scoring-column consolidation.
+
+### 4.3 Foreign-key integrity — the `NO ACTION` landmines
+
+Complete list of `ON DELETE NO ACTION` / `RESTRICT` FKs (there are exactly 4):
+
+| Child → Parent | Status |
+|---|---|
+| `events.organizer_id → profiles` | ⚠️ **handled only in `delete-account`** (blocks an organizer from self-deleting). There is still **no path to delete an organizer/admin account** and no event-reassignment tooling. Flagged in Section 1.3 / the account-deletion memo. |
+| `reports.generated_by → profiles` | ✅ handled — `delete-account` nulls it before deleting. (All rows currently have `generated_by = NULL` anyway.) |
+| `matches.connection_requested_by → profiles` | ✅ handled — verified 0 rows point to a non-participant, so the match's own `CASCADE` clears it in the same statement. |
+| `points.event_id → events` | ⚪ **unhandled**, but `points` is dead (4.1). Deleting an `event` with `points` rows would throw; there are 0 such rows. Resolves itself when `points` is dropped. |
+
+No *other* landmines exist — every remaining user-data FK is `ON DELETE CASCADE` (confirmed in the account-deletion discovery and re-confirmed here). So the account-deletion audit was complete on this point.
+
+### 4.4 Migrations
+
+42 migrations, all forward, consistent `YYYYMMDD…` naming. The bulk of the dead tables (`sponsors`, `points`, `event_analytics`, …) trace to the initial scaffold migration `20260624020108_9dce6e02-…`. No reverts or no-op migrations of concern.
 
 ## Section 5 — Compliance gaps
 
