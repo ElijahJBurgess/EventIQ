@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   resetPasswordForEmail: vi.fn(),
   updateUser: vi.fn(),
   signOut: vi.fn(),
+  invoke: vi.fn(),
 }));
 
 vi.mock("@/integrations/supabase/client", () => ({
@@ -28,6 +29,7 @@ vi.mock("@/integrations/supabase/client", () => ({
       updateUser: mocks.updateUser,
       signOut: mocks.signOut,
     },
+    functions: { invoke: mocks.invoke },
   },
 }));
 
@@ -45,6 +47,7 @@ function Probe() {
         const response = await auth.signUp("avery@example.com", "secure88", "Avery Morgan");
         setResult(response.requiresEmailConfirmation ? "verify-email" : response.error ?? "signed-in");
       }}>Sign up</button>
+      <button onClick={async () => setResult((await auth.deleteAccount()).error ?? "deleted")}>Delete account</button>
       <span>{result}</span>
     </div>
   );
@@ -64,6 +67,8 @@ beforeEach(() => {
     error: null,
   });
   mocks.signInWithPassword.mockResolvedValue({ data: { session: null, user: null }, error: null });
+  mocks.signOut.mockResolvedValue({ error: null });
+  mocks.invoke.mockResolvedValue({ data: { success: true }, error: null });
   sessionStorage.clear();
 });
 
@@ -130,5 +135,48 @@ describe("AuthProvider password recovery", () => {
     screen.getByRole("button", { name: "Request reset" }).click();
 
     expect(await screen.findByText("reset-requested")).toBeInTheDocument();
+  });
+});
+
+describe("AuthProvider account deletion", () => {
+  it("calls the delete-account function with no parameters and signs the user out on success", async () => {
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await screen.findByText("ready");
+    screen.getByRole("button", { name: "Delete account" }).click();
+
+    expect(await screen.findByText("deleted")).toBeInTheDocument();
+    expect(mocks.invoke).toHaveBeenCalledWith("delete-account", { body: {} });
+    await waitFor(() => expect(mocks.signOut).toHaveBeenCalled());
+  });
+
+  it("surfaces the organizer block and does NOT sign the user out", async () => {
+    mocks.invoke.mockResolvedValue({
+      data: null,
+      error: {
+        name: "FunctionsHttpError",
+        context: new Response(JSON.stringify({ error: "organizer_has_events", organizedEventCount: 2 }), {
+          status: 409,
+        }),
+      },
+    });
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await screen.findByText("ready");
+    screen.getByRole("button", { name: "Delete account" }).click();
+
+    expect(await screen.findByText(/you still organize/i)).toBeInTheDocument();
+    expect(mocks.signOut).not.toHaveBeenCalled();
+  });
+
+  it("returns a generic error and stays signed in when the function fails for another reason", async () => {
+    mocks.invoke.mockResolvedValue({
+      data: null,
+      error: { name: "FunctionsHttpError", context: new Response("boom", { status: 500 }) },
+    });
+    render(<AuthProvider><Probe /></AuthProvider>);
+    await screen.findByText("ready");
+    screen.getByRole("button", { name: "Delete account" }).click();
+
+    expect(await screen.findByText(/couldn't delete your account/i)).toBeInTheDocument();
+    expect(mocks.signOut).not.toHaveBeenCalled();
   });
 });

@@ -12,6 +12,7 @@ interface AuthContextValue {
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   requestPasswordReset: (email: string) => Promise<{ error: string | null }>;
   updatePassword: (password: string) => Promise<{ error: string | null }>;
+  deleteAccount: () => Promise<{ error: string | null; code?: "organizer_has_events" }>;
   signOut: () => Promise<void>;
 }
 
@@ -85,6 +86,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { error: error ? safePasswordUpdateError(error.message) : null };
   };
 
+  const deleteAccount = async () => {
+    const { data, error } = await supabase.functions.invoke("delete-account", { body: {} });
+
+    if (error) {
+      let code: string | undefined;
+      try {
+        const context = (error as { context?: Response }).context;
+        if (context && typeof context.json === "function") {
+          const parsed = (await context.json()) as { error?: unknown };
+          if (typeof parsed?.error === "string") code = parsed.error;
+        }
+      } catch {
+        // Response body wasn't JSON — fall through to the generic message.
+      }
+      if (code === "organizer_has_events") {
+        return {
+          error:
+            "You still organize one or more events. Hand those off or delete them before deleting your account.",
+          code: "organizer_has_events" as const,
+        };
+      }
+      return { error: "We couldn't delete your account. Please try again." };
+    }
+
+    if (!data?.success) {
+      return { error: "We couldn't delete your account. Please try again." };
+    }
+
+    await supabase.auth.signOut();
+    return { error: null };
+  };
+
   const signOut = async () => {
     await supabase.auth.signOut();
   };
@@ -100,6 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         signIn,
         requestPasswordReset,
         updatePassword,
+        deleteAccount,
         signOut,
       }}
     >

@@ -25,6 +25,15 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Input } from "@/components/ui/input";
 import { buildConnectionSummary } from "@/lib/connectionSummary";
 import { getViewerMatchMetrics } from "@/lib/checkedInMatches";
 import { getMatchBand } from "@/lib/matchPresentation";
@@ -122,7 +131,7 @@ function profileInitials(name: string | null) {
 }
 
 export default function DashboardV2() {
-  const { user, signOut } = useAuth();
+  const { user, signOut, deleteAccount } = useAuth();
   const navigate = useNavigate();
   const [tab, setTab] = useState<Tab>("home");
   const [selectedEventId, setSelectedEventId] = useState<string | undefined>();
@@ -136,6 +145,10 @@ export default function DashboardV2() {
   // set is exactly the tab the user lands back on, since `tab` itself is
   // never changed to open Full Profile View -- only overlaid on top of it.
   const [viewingMatchId, setViewingMatchId] = useState<string | null>(null);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const selectNavigationItem = (item: NavItem) => {
     setViewingMatchId(null);
@@ -184,6 +197,19 @@ export default function DashboardV2() {
   const handleNotificationTarget = useCallback(() => {
     setNotificationMatchId(null);
   }, []);
+
+  const handleDeleteAccount = async () => {
+    setDeletingAccount(true);
+    setDeleteError(null);
+    const { error } = await deleteAccount();
+    if (error) {
+      setDeleteError(error);
+      setDeletingAccount(false);
+      return;
+    }
+    // The auth session is already gone; land on the sign-in screen.
+    navigate("/v2/auth", { replace: true });
+  };
 
   if (loading) {
     return <div className="min-h-screen bg-background flex items-center justify-center font-label text-xl">Loading…</div>;
@@ -236,10 +262,77 @@ export default function DashboardV2() {
                 <DropdownMenuItem onSelect={async () => { await signOut(); navigate("/v2/auth"); }}>
                   Sign Out
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-offrip-orange focus:text-offrip-orange"
+                  onSelect={() => {
+                    setDeleteConfirmText("");
+                    setDeleteError(null);
+                    setDeleteDialogOpen(true);
+                  }}
+                >
+                  Delete Account
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
         </div>
+
+        <AlertDialog
+          open={deleteDialogOpen}
+          onOpenChange={(open) => {
+            if (!deletingAccount) setDeleteDialogOpen(open);
+          }}
+        >
+          <AlertDialogContent className="border border-black rounded-sm bg-white">
+            <AlertDialogHeader>
+              <AlertDialogTitle className="font-display uppercase tracking-wide">
+                Delete your account?
+              </AlertDialogTitle>
+              <AlertDialogDescription className="normal-case font-offrip-body text-black/70">
+                This is <strong className="text-black">permanent and cannot be undone</strong>. Your
+                profile, matches, messages, meetings and feedback are removed. Conversation threads
+                you shared with other people disappear from their inboxes too.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="space-y-2">
+              <label
+                htmlFor="delete-confirm"
+                className="block text-[11px] tracking-widest uppercase text-black/60"
+              >
+                Type DELETE to confirm
+              </label>
+              <Input
+                id="delete-confirm"
+                value={deleteConfirmText}
+                onChange={(event) => setDeleteConfirmText(event.target.value)}
+                autoComplete="off"
+                autoCapitalize="characters"
+                className="rounded-none border-black"
+              />
+              {deleteError && (
+                <p className="text-sm text-offrip-orange normal-case font-offrip-body">{deleteError}</p>
+              )}
+            </div>
+            <AlertDialogFooter>
+              <button
+                type="button"
+                onClick={() => setDeleteDialogOpen(false)}
+                disabled={deletingAccount}
+                className="px-4 py-2 text-[11px] tracking-widest uppercase border border-black bg-white transition-colors hover:bg-black hover:text-white disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeleteAccount}
+                disabled={deleteConfirmText !== "DELETE" || deletingAccount}
+                className="px-4 py-2 text-[11px] tracking-widest uppercase border border-offrip-orange bg-offrip-orange text-white transition-colors hover:border-black hover:bg-black disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {deletingAccount ? "Deleting…" : "Delete my account"}
+              </button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
         <nav aria-label="Mobile attendee navigation" className="lg:hidden flex overflow-x-auto border-t border-black">
           {NAV_ITEMS.map((t) => (
             <button key={t} onClick={() => selectNavigationItem(t)} className={`relative flex min-h-11 shrink-0 items-center px-4 py-2.5 text-[10px] tracking-widest ${tab === t ? "bg-black text-white" : "text-black/40"}`}>

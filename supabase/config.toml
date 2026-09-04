@@ -34,3 +34,6 @@ verify_jwt = false
 
 [functions.concierge]
 verify_jwt = true
+
+[functions.delete-account]
+verify_jwt = true
