@@ -14,13 +14,27 @@ import {
   type ReportSection,
 } from "./report.ts";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+// Browser callers are restricted to an explicit origin allow-list. Non-browser
+// callers (no Origin header) are unaffected — CORS is a browser-only control.
+const LOCAL_ORIGINS = ["http://localhost:8080", "http://127.0.0.1:8080"];
+const DEFAULT_REMOTE_ORIGINS = ["https://event-iq-six.vercel.app"];
+const allowedOrigins = new Set([
+  ...LOCAL_ORIGINS,
+  ...DEFAULT_REMOTE_ORIGINS,
+  ...(Deno.env.get("ADMIN_AUTH_ALLOWED_ORIGINS") ?? "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean),
+]);
 
-function json(body: Record<string, unknown>, status = 200) {
-  return Response.json(body, { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+function corsHeaders(origin: string | null): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Vary": "Origin",
+  };
+  if (origin && allowedOrigins.has(origin)) headers["Access-Control-Allow-Origin"] = origin;
+  return headers;
 }
 
 async function sha256(value: string) {
@@ -137,7 +151,12 @@ function insightsModel() {
 }
 
 Deno.serve(async (request) => {
-  if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  const origin = request.headers.get("origin");
+  const json = (body: Record<string, unknown>, status = 200) =>
+    Response.json(body, { status, headers: { ...corsHeaders(origin), "Content-Type": "application/json" } });
+
+  if (origin && !allowedOrigins.has(origin)) return json({ valid: false }, 403);
+  if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders(origin) });
   if (request.method !== "POST") return json({ valid: false }, 405);
 
   try {
