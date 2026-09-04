@@ -1,20 +1,58 @@
 # V1 Readiness Audit
 
-**Status:** 🚧 in progress — this is a *living document*, committed section-by-section as each area is completed. Do not treat unfinished sections as final.
+**Status:** ✅ complete — all six sections done. Written and committed section-by-section (commits `6106ee6` → `4626086` → `bd0969e` → `b0717e5` → `d913c53` → this one) against a running audit, not in one dump.
 
-**Method:** Discovery + documentation only. Nothing is fixed as part of this pass except changes that are trivially safe, and those are listed explicitly in [Appendix B](#appendix-b--trivially-safe-fixes-applied-during-the-audit). Every "broken" or "working" claim is backed by an actual test — the verification method is stated per finding.
+**Method:** Discovery + documentation only. **Nothing was fixed.** Every "broken" / "working" claim is backed by an actual test; the verification method is stated per finding. [Appendix B](#appendix-b--trivially-safe-fixes-applied-during-the-audit) is intentionally empty — no code was changed.
 
-**Environment:** Production Supabase project `qdknsjoddmrvwjrrwwiq` ("Event IQ"). All destructive testing uses throwaway accounts created for the audit (naming: `audit-<timestamp>-*@offriptest.dev`); the 83 real `auth.users` and their data are never touched. Test artifacts are cleaned up and tracked in [Appendix A](#appendix-a--test-accounts--artifacts).
+**Environment:** Production Supabase project `qdknsjoddmrvwjrrwwiq` ("Event IQ"), deployed app `event-iq-six.vercel.app`. All destructive testing used throwaway `audit-20260903-*@offriptest.dev` accounts + one isolated test event; the 83 real `auth.users` and their data were never touched. **All test artifacts cleaned up — baseline restored and re-verified** (see [Appendix A](#appendix-a--test-accounts--artifacts)).
 
-**Severity legend:**
+**Severity legend:** 🔴 blocking · 🟠 should-fix · 🟡 nice-to-have · ⚪ dead-code · ✅ verified-ok
 
-| Tag | Meaning |
-|---|---|
-| 🔴 **blocking** | Must fix before real users / launch |
-| 🟠 **should-fix** | Real problem, not launch-blocking on its own |
-| 🟡 **nice-to-have** | Polish / hardening / tech debt |
-| ⚪ **dead-code** | Unused; safe to remove |
-| ✅ **verified-ok** | Checked and working as intended |
+---
+
+## Findings index
+
+### 🔴 Blocking (for a compliant public launch)
+
+| # | Finding | §|
+|---|---|---|
+| B1 | **No Privacy Policy exists** at all (menu item is `disabled`, no route, no document). App collects name/email/employer/title/LinkedIn/location/interests/messages and sends data to OpenAI. | 5.3 |
+| B2 | **Terms of Service is a "Coming Soon" placeholder** — but onboarding forces a checkbox agreeing to it. | 5.1 |
+| B3 | **Consent is never recorded** — no `terms_accepted`/`ai_consent` column; no timestamp; no version. No proof any user agreed. | 1.3 / 5.1 |
+
+*(B1–B3 are only "blocking" against a real-users / App-Store bar. If the near-term goal is continued controlled testing, they drop to should-fix — but they gate launch.)*
+
+### 🟠 Should-fix
+
+| # | Finding | §|
+|---|---|---|
+| S1 | `reports` table is **world-readable, including by anonymous users** (`SELECT` policy `true` for PUBLIC) — verified live: an unauthenticated request returned the full `executive_summary`. Aggregate data, but it's an event's private analytics on the open internet. | 3.2 / 3.4 |
+| S2 | `feedback` table is **readable by every authenticated user** (`SELECT true`) — verified live: a test user read another user's feedback incl. free-text fields. | 3.2 / 3.4 |
+| S3 | **`admin-gen-link`** — a deployed, `verify_jwt:false`, **not-in-the-repo** edge function that mints a service-role magic-link (full sign-in) for an allowlisted real address, gated only by one shared static secret. Delete it or harden + version it. | 2.5 |
+| S4 | `admin-auth` posture: `Access-Control-Allow-Origin: *` to any origin (verified), a single static shared password with no rotation/rate-limit/lockout, and a catch-all that returns the same `{valid:false}` shape for downstream errors as for auth failure (the pattern behind today's `.in()` outage). | 2.2 / 3.5 |
+| S5 | `profiles` UPDATE policy has **no `WITH CHECK`** → `UPDATE profiles SET id='<other>'` isn't blocked by RLS; exploitable against the ~44 `auth.users` that have no profile row. | 3.2 |
+| S6 | `attendee_profiles` + `matched_event_attendance` are **`SECURITY DEFINER` views** (Supabase advisor: ERROR) — they bypass the caller's RLS; only their own WHERE clause contains them. Recreate as `security_invoker`. | 3.3 |
+| S7 | **Email verification is disabled** in prod (`enable_confirmations = false`). | 3.6 / 5.4 |
+| S8 | `EditProfileScreen` **cannot save** a profile whose `location_preference` is `NULL` (all 39 current rows) unless the user picks a value — writes `""` → check-constraint violation → generic "save failed". | 1.3 |
+| S9 | Over-permissive INSERT policies on `points` (`WITH CHECK true`), `sponsors` (`FOR ALL` any authed), `events` (`organizer_id` not forced to `auth.uid()`), `reports` (INSERT not organizer-checked). Mostly on dead tables. | 3.2 |
+| S10 | **`matching_goal` is not fully resolved** — still dual-written in 2 places, fallback-read in 6, and in the `attendee_profiles` view. | 4.2 |
+| S11 | No path to **delete an organizer/admin account** (`events.organizer_id` NO ACTION; `delete-account` blocks it; no reassignment tooling). | 1.3 / 4.3 |
+
+### 🟡 Nice-to-have
+
+Leaked-password protection off (3.6); `config.toml` only lists 2 of 6 functions (2.0); `handle_new_user`/`rls_auto_enable`/`search_us_cities` exposed to `anon` via `/rpc/` (3.3); CORS allow-lists exclude Vercel preview URLs (3.5); `areas_of_expertise` is an exact copy of `offers` (4.2); `matches` has redundant scoring columns (4.2); `profiles.location` vs `location_city`/`state_code` redundancy (4.2); onboarding step/component naming drift (1.3); signup name not carried into onboarding (1.2); no data-export / "right to access" path (5.4); anon can write junk to 3 dead telemetry tables (3.2).
+
+### ⚪ Dead / safe to remove
+
+- **V1:** already gone — no `src/pages/Index.tsx`, no V1 routes. Nothing to remove. (1.1)
+- **Tables (8):** `points`, `check_ins`, `admin_actions`, `connection_actions`, `event_analytics`, `sponsors`, `sponsor_engagements`, `needs_offers_compatibility`. (4.1)
+- **Columns:** `profiles` — `total_points`, `festivals`, `activities`, `travel_interests`, `sports`, `funding_raised`, `check_size`, `investment_stage`, `open_roles`, `hiring_priorities`, `candidate_level`, `company_stage`; `meetings` — `calendar_export_token`, `meeting_notes`, `proposed_time`; `feedback` — `would_return`. (4.2)
+- **Field:** `ProfileSetupFormData.aiConsent` (declared, never used). (1.3)
+- **Function:** `admin-run-matching` — committed today, not deployed; its own header says delete after the v2.1 backfill. (2.6)
+
+### ✅ Verified working (headline)
+
+V2 signup + onboarding render/validate/submit; matching engine; messaging with connection-gating; connection accept/decline; full meeting lifecycle; feedback + self-reports; account deletion (re-verified); all 6 enterprise dashboard tabs on real data. Core relationship data (profiles/matches/messages/meetings/notifications) is correctly per-user-scoped with all writes funnelled through guarded `SECURITY DEFINER` RPCs — every negative case tested. No secrets in the codebase or git history.
 
 ---
 
@@ -347,7 +385,38 @@ No *other* landmines exist — every remaining user-data FK is `ON DELETE CASCAD
 
 ## Section 5 — Compliance gaps
 
-*Status: pending.*
+*Status: complete.* Method: grep of the whole app for ToS / privacy / cookie / GDPR / CCPA / AI-disclosure strings and routes; inspection of `Page4Terms`, the account menu, the landing footer, and `public/`.
+
+### 5.1 Terms of Service — 🔴 placeholder only
+
+- `Page4Terms.tsx` renders the literal text **"Terms of Service — Coming Soon"** with `{/* TODO: Replace with real terms URL when available */}`.
+- **No ToS document exists** — no `/terms` route, no file in `public/`, no external URL.
+- Yet the onboarding checkbox users must tick reads *"I agree to the Terms of Service and consent to the use of AI-powered features within OFFRIP."* — an agreement to a document that does not exist.
+- And (Section 1.3) **the tick is never persisted** — no `terms_accepted` column, no timestamp, no version. There is no record any user ever agreed.
+
+### 5.2 AI-use disclosure — 🟠 partial
+
+- **In-product disclosure exists:** the `Page4Terms` "AI Consent" card explains *"OFFRIP uses artificial intelligence to power match recommendations, conversation starters, and event insights,"* and the enterprise `InsightsTab` header says "AI-generated intelligence from {event}".
+- **Gaps:** the *"Learn more about how we use AI — Coming Soon"* link is a placeholder (no AI-use policy page); the consent is bundled into the same unticked-by-default checkbox as ToS and is **not recorded**; there is no disclosure of *which* provider (OpenAI) processes the data, what data is sent (the code is careful to send only aggregates for insights, and profile/match context for concierge — but this isn't disclosed to users), or a way to opt out of AI features while still using the app.
+
+### 5.3 Privacy Policy — 🔴 does not exist
+
+- The only reference is a **`disabled` "Privacy Policy" menu item** in the dashboard account dropdown (`Dashboard.tsx:261`). It links nowhere.
+- No `/privacy` route, no document in `public/`, no footer link on the landing page (`Landing.tsx` footer is just the copyright line).
+- For an app that collects name, email, employer, job title, LinkedIn, location, detailed professional interests, and free-text messages/notes, and runs that data through a third-party AI provider, the absence of a privacy policy is a launch blocker in essentially every jurisdiction (GDPR, CCPA/CPRA, and the Apple App Store's own review guideline 5.1.1(i), which requires a privacy policy link).
+
+### 5.4 Related gaps (cross-referenced)
+
+- 🟠 **Email verification is disabled** (`config.toml` `enable_confirmations = false`, marked "temporary V1 testing behavior"). Users can register with addresses they don't control. Restore before launch.
+- 🟡 **No cookie/analytics consent** — currently moot (the only cookie is the shadcn `sidebar:state` UI cookie; the `event_analytics` telemetry table is dead), but the moment any analytics/marketing script is added, a consent mechanism is needed for EU/UK visitors.
+- 🟡 **Account deletion (shipped today) partially satisfies the "right to erasure"** — good — but there is **no data-export / "right to access" path**, and (Section 4.3) organizer accounts cannot be deleted at all.
+- 🟡 **Leaked-password protection is off** (Section 3.6) — not strictly compliance, but part of a defensible "reasonable security measures" posture.
+
+### 5.5 What exists and is fine
+
+- Account deletion is real, self-serve, and verified (Section 1.9) — this is the hardest erasure requirement and it's done.
+- The AI pipeline is built to minimise data exposure (aggregates only for insights; no raw DB rows to the model) — the engineering is privacy-conscious even though the *disclosure* isn't written.
+- No third-party trackers, no ad SDKs, no data sold.
 
 ---
 
@@ -357,15 +426,13 @@ No *other* landmines exist — every remaining user-data FK is `ON DELETE CASCAD
 
 | Created (UTC) | Identifier | Purpose | Cleaned up? |
 |---|---|---|---|
-| 2026-09-04 | `audit-20260903-a@offriptest.dev` (`5bcf7d92…`) | Founder test profile — onboarding, matching, messaging, meetings, feedback | ⏳ pending end-of-audit cleanup |
-| 2026-09-04 | `audit-20260903-b@offriptest.dev` (`3cf616a9…`) | Investor test profile — counterpart for all two-sided flows | ⏳ pending end-of-audit cleanup |
+| 2026-09-04 | `audit-20260903-a@offriptest.dev` (`5bcf7d92…`) | Founder test profile — onboarding, matching, messaging, meetings, feedback | ✅ deleted (auth.users + cascade) |
+| 2026-09-04 | `audit-20260903-b@offriptest.dev` (`3cf616a9…`) | Investor test profile — counterpart for all two-sided flows | ✅ deleted (auth.users + cascade) |
 | 2026-09-04 | `audit-20260903-del@offriptest.dev` (`5f51bf24…`) | Account-deletion re-test | ✅ deleted by the flow under test |
-| 2026-09-04 | Event `a0d17e00-…-0001` "AUDIT Flow Event" + 2 registrations, 1 match, 2 messages, 1 meeting, 1 feedback, 1 self-report | Isolated container for flow tests (not the seeded event) | ⏳ pending end-of-audit cleanup |
+| 2026-09-04 | Event `a0d17e00-…-0001` "AUDIT Flow Event" + 2 registrations, 1 match, 2 messages, 1 meeting, 1 feedback, 1 self-report | Isolated container for flow tests (not the seeded event) | ✅ deleted (event + child cascade) |
+
+**Post-cleanup baseline re-verified:** `auth.users` 83, `profiles` 39, `events` 2, `matches` 718, `messages` 19, `meetings` 6, `feedback` 1, `connection_self_reports` 2, `reports` 1 (`generated_by` null) — all identical to the pre-audit counts. `leftover_audit_users` = 0. No edge functions were deployed during the audit.
 
 ## Appendix B — Trivially-safe fixes applied during the audit
 
-*Nothing yet. Anything here is listed for your visibility, not pre-approved scope; each entry says exactly what changed and why it is safe.*
-
-| Area | Change | Why it's safe |
-|---|---|---|
-| — | — | — |
+**None.** This pass changed no application code, schema, RLS, or edge functions. The only writes to the database were the creation and subsequent full deletion of the `audit-*` test accounts / test event described in Appendix A. Every finding above is left for your review and approval before any fix.
