@@ -163,7 +163,55 @@ No `from("points")`, no insert, no read anywhere in `src/` or `supabase/function
 
 ## Section 2 — Edge functions
 
-*Status: pending.*
+*Status: complete.* Verified against the deployed function list (`list_edge_functions`), each function's source, live CORS preflights from prod + a foreign origin, and live auth-boundary probes.
+
+### 2.0 Inventory — **6 functions deployed, repo tracks 5, config.toml lists 2**
+
+| Function | Deployed | `verify_jwt` | In repo | In `config.toml` | Verdict |
+|---|---|---|---|---|---|
+| `match-engine` | v22 | `true` | ✅ | ❌ (relies on platform default `true`) | ✅ ok |
+| `admin-auth` | v21 | **`false`** | ✅ | ✅ (`false`, deliberate) | ⚠️ see 2.2 |
+| `concierge` | v14 | `true` | ✅ | ✅ (`true`) | ✅ ok |
+| `delete-account` | v1 | `true` | ✅ | ✅ (`true`) | ✅ ok |
+| **`admin-gen-link`** | **v4** | **`false`** | **❌ not in repo** | **❌** | 🟠 see 2.5 |
+| `admin-run-matching` | **not deployed** | n/a | ✅ (committed `8cc4eb1` today) | ❌ | see 2.6 |
+
+- 🟡 **`config.toml` is not the source of truth.** It lists only `admin-auth` and `concierge`. `match-engine` and `delete-account` are `verify_jwt:true` only because that's the platform default; a future `supabase functions deploy` from a machine with a stale/rewritten config could silently flip them. Add explicit entries for every function.
+
+### 2.1 `match-engine` — ✅ ok
+
+`verify_jwt:true`; own `Bearer` → `getUser`; **authorizes** the caller is a registered attendee of `eventId` (403 otherwise — verified live); ignores any `profileId` in the body ("never read or trusted"); body-size caps (4 KB, 413); generic error strings + `console.error` on every failure path (no silent swallow); CORS = origin allow-list, reflects the prod origin (verified). Runs the write with the service-role key. No issues.
+
+### 2.2 `admin-auth` — ⚠️ should-fix items (function works; posture is thin)
+
+`verify_jwt:false` is **deliberate and defensible** — the enterprise dashboard has no user session; it is gated by a shared organizer password. The client SHA-256-hashes the password and sends only the hash; the function `secureEqual`-compares it against `sha256(OOO_ADMIN_PASSWORD)`. Live: correct hash → data; wrong hash → `{"valid":false}` `200`.
+
+- 🟠 **`Access-Control-Allow-Origin: *`.** Verified live: `admin-auth` returns `ACAO: *` to `https://evil.example.com`. Every other function uses an origin allow-list. Because there is no cookie/session auth this isn't classic CSRF, but it means the password hash is the *entire* boundary and any web page anywhere can submit guesses. Tighten to the known origins.
+- 🟠 **The shared password is the whole security model** — one static credential, no rotation, no per-request rate limit, no lockout. It sits in `localStorage` on every organizer's browser and rides every request. A leak or a weak password = full read of all event analytics + AI generation + `create-report`. (`create-report` writes rows; `generated_by` is null so no data-integrity risk, but it's an unauthenticated-user write path.)
+- 🟠 **Silent-failure shape (the bug pattern that caused today's outage).** The top-level `catch` returns `json({ valid: false }, 400)` for *any* thrown error — a bad query, a PostgREST limit, OpenAI being down. The body is byte-identical to an auth failure; only the status differs (`400` vs `200`), which the client UI does not distinguish. This is exactly how the 703-id `.in()` outage hid for three deploys. Mitigations already in place: a `console.error` in the catch (added today) and per-action graceful handling for `insights`/`copilot`/`create-report` (they return specific error codes like `generation_failed`). Still unmitigated for `event-stats` and `list-reports`, which throw straight to the catch-all. Recommend: distinct error codes + non-`valid:false` bodies for downstream failures.
+- 🟡 exposure check: every action requires the password; nothing is reachable unauthenticated. `event-stats` returns aggregate analytics only (no PII rows). OK.
+
+### 2.3 `concierge` — ✅ ok
+
+`verify_jwt:true`; own `Bearer` → `getUser`; **authorizes** the caller is `status='registered'` for the requested `eventId` (403 otherwise); thorough input validation (`validateConciergeRequest` — question ≤1000 chars, history caps, UUID checks, timezone validated via `Intl`); CORS origin allow-list — **verified live** that it reflects `https://event-iq-six.vercel.app` (so `CONCIERGE_ALLOWED_ORIGINS` is set in prod). Specific error messages, `console.error` on failures. The model only ever receives pre-aggregated context, not raw rows. No issues. 🟡 minor: Vercel *preview* deployment URLs (random subdomains) would be CORS-rejected — only the prod alias is allow-listed.
+
+### 2.4 `delete-account` — ✅ ok
+
+Covered in depth by today's account-deletion work. `verify_jwt:true`; deletes only `auth.uid()`; organizer 409-block; `console.error` in catch; CORS origin allow-list (verified live). No issues.
+
+### 2.5 `admin-gen-link` — 🟠 undocumented account-takeover primitive in production
+
+**Not in the repo, not in `config.toml`, not referenced by any code.** Retrieved its source via the API. It is 30 lines: `POST {email, secret}` → if `secret === ADMIN_LINK_SECRET` **and** `email` is in a hardcoded 4-entry allowlist (`chanise@oooevents.org` + three `offrip.loadtest.*@example.com`), it calls the **service-role `auth.admin.generateLink({type:"magiclink"})`** and returns the `action_link`. That link is a full sign-in for that account.
+
+- Security rests **entirely** on `ADMIN_LINK_SECRET` (a shared static string) staying secret. No `verify_jwt`, no rate limit. Live probe: wrong secret → `403 {"error":"forbidden"}` (works), but it *is* reachable with no `apikey` and no JWT.
+- `redirectTo` is hardcoded `http://localhost:8080/` → this is clearly a dev/QA login helper, but the token it mints is valid regardless of redirect.
+- `chanise@oooevents.org` is a real-looking `@oooevents.org` address; if that account has organizer/admin capability, a leak of `ADMIN_LINK_SECRET` is account takeover of a privileged user.
+- `catch (e) { ... String(e) }` leaks raw error text to the caller.
+- **Recommendation:** if the load testing that motivated it is done, **delete the function**. If it must stay, move the source into the repo, drop the three `loadtest` allowlist entries, fix `redirectTo`, and consider `verify_jwt:true` + an allow-listed caller instead of a shared secret.
+
+### 2.6 `admin-run-matching` — not deployed; do not deploy without review
+
+Committed today (`8cc4eb1`) but **not deployed** → inert in prod. Source review: it *does* authenticate (`Bearer` → `getUser` → `ADMIN_ALLOWLIST.has(user.id)` of two hardcoded UUIDs → 403), and it accepts an arbitrary `profileId` by design (an operator regenerating other users' matches). Acceptable as a gated one-off. Its own header says delete it after the v2.1 backfill. 🟡 If it is ever deployed: confirm the two allowlisted UUIDs are current admin accounts and add a `config.toml` entry.
 
 ## Section 3 — Security
 
