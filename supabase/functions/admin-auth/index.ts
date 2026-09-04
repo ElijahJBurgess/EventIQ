@@ -1,9 +1,27 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { buildEventStats, type EventStats } from "./stats.ts";
+import {
+  createOpenAIResponsesClient,
+  fingerprintStats,
+  generateCopilotAnswer,
+  generateEventInsights,
+  INSIGHTS_MODEL_DEFAULT,
+} from "./insights.ts";
+import {
+  BUILDABLE_REPORT_TYPE,
+  buildExecutiveSummary,
+  KNOWN_REPORT_SECTIONS,
+  type ReportSection,
+} from "./report.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
+
+function json(body: Record<string, unknown>, status = 200) {
+  return Response.json(body, { status, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+}
 
 async function sha256(value: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
@@ -19,127 +37,278 @@ function secureEqual(left: string, right: string) {
   return difference === 0;
 }
 
-function topSelections(selectionsByAttendee: string[][], limit = 5) {
-  const totals = new Map<string, { label: string; count: number }>();
-  for (const selections of selectionsByAttendee) {
-    const uniqueSelections = new Map<string, string>();
-    for (const selection of selections) {
-      const label = selection?.trim();
-      if (label) uniqueSelections.set(label.toLocaleLowerCase(), label);
-    }
-    for (const [key, label] of uniqueSelections) {
-      const existing = totals.get(key);
-      totals.set(key, { label: existing?.label ?? label, count: (existing?.count ?? 0) + 1 });
-    }
-  }
-  return [...totals.values()]
-    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label))
-    .slice(0, limit);
+type SupabaseClient = ReturnType<typeof createClient>;
+
+async function gatherEventStats(supabase: SupabaseClient): Promise<EventStats[]> {
+  const { data: events, error: eventsError } = await supabase
+    .from("events")
+    .select("id, name, date")
+    .eq("is_published", true)
+    .order("date", { ascending: true });
+  if (eventsError) throw eventsError;
+
+  const eventIds = (events ?? []).map((event: { id: string }) => event.id);
+  const { data: registrations, error: registrationsError } = eventIds.length === 0
+    ? { data: [], error: null }
+    : await supabase
+      .from("event_registrations")
+      .select("event_id, profile_id, is_checked_in")
+      .in("event_id", eventIds);
+  if (registrationsError) throw registrationsError;
+
+  const profileIds = [
+    ...new Set((registrations ?? []).map((registration: { profile_id: string | null }) => registration.profile_id).filter(Boolean)),
+  ];
+  const { data: profiles, error: profilesError } = profileIds.length === 0
+    ? { data: [], error: null }
+    : await supabase
+      .from("profiles")
+      .select(
+        "id, profile_completed, primary_goal, seniority, areas_of_expertise, interests, communities, role_type, industries, location",
+      )
+      .in("id", profileIds);
+  if (profilesError) throw profilesError;
+
+  return await Promise.all((events ?? []).map(async (event: { id: string; name: string; date: string | null }) => {
+    const eventRegistrations = (registrations ?? []).filter((registration: { event_id: string }) => registration.event_id === event.id);
+    const registeredProfileIds = new Set(
+      eventRegistrations.map((registration: { profile_id: string | null }) => registration.profile_id).filter(Boolean),
+    );
+    const eventProfiles = (profiles ?? []).filter((profile: { id: string }) => registeredProfileIds.has(profile.id));
+    const [matchesResult, connectionRequestsResult, meetingsResult, matchRowsResult, eventMessagesResult, feedbackResult] = await Promise.all([
+      supabase.from("matches").select("*", { count: "exact", head: true }).eq("event_id", event.id),
+      supabase
+        .from("messages")
+        .select("*", { count: "exact", head: true })
+        .eq("event_id", event.id)
+        .eq("message_type", "connect_request"),
+      supabase.from("meetings").select("match_id, status, created_at").eq("event_id", event.id),
+      // Every match for this event (not just requested/accepted/declined): this
+      // doubles as the match-id list used to scope connection_self_reports,
+      // which has no event_id column of its own.
+      supabase
+        .from("matches")
+        .select("id, user_a_id, user_b_id, connection_status, connection_requested_by, connection_status_updated_at")
+        .eq("event_id", event.id),
+      supabase.from("messages").select("match_id, sender_id, message_type").eq("event_id", event.id),
+      supabase.from("feedback").select("user_id, overall_rating, matching_rating, networking_quality").eq("event_id", event.id),
+    ]);
+    if (matchesResult.error) throw matchesResult.error;
+    if (connectionRequestsResult.error) throw connectionRequestsResult.error;
+    if (meetingsResult.error) throw meetingsResult.error;
+    if (matchRowsResult.error) throw matchRowsResult.error;
+    if (eventMessagesResult.error) throw eventMessagesResult.error;
+    if (feedbackResult.error) throw feedbackResult.error;
+
+    // connection_self_reports has no event_id, and an .in() over every match id
+    // for a busy event blows past the request-URL length limit. The table is
+    // tiny globally, so fetch it all and scope in memory.
+    const eventMatchIdSet = new Set((matchRowsResult.data ?? []).map((match: { id: string }) => match.id));
+    const selfReportsResult = await supabase
+      .from("connection_self_reports")
+      .select("match_id, user_id, response, was_valuable");
+    if (selfReportsResult.error) throw selfReportsResult.error;
+    const eventSelfReports = (selfReportsResult.data ?? []).filter(
+      (report: { match_id: string | null }) => report.match_id !== null && eventMatchIdSet.has(report.match_id),
+    );
+
+    return buildEventStats({
+      event,
+      registrations: eventRegistrations,
+      profiles: eventProfiles,
+      matchCount: matchesResult.count ?? 0,
+      connectionRequestMessageCount: connectionRequestsResult.count ?? 0,
+      matches: matchRowsResult.data ?? [],
+      messages: eventMessagesResult.data ?? [],
+      meetings: meetingsResult.data ?? [],
+      feedback: feedbackResult.data ?? [],
+      selfReports: eventSelfReports,
+    });
+  }));
+}
+
+function pickEvent(events: EventStats[], eventId: unknown): EventStats | null {
+  if (typeof eventId === "string") return events.find((event) => event.id === eventId) ?? null;
+  return events[0] ?? null;
+}
+
+function insightsModel() {
+  return Deno.env.get("INSIGHTS_OPENAI_MODEL") ?? Deno.env.get("CONCIERGE_OPENAI_MODEL") ?? INSIGHTS_MODEL_DEFAULT;
 }
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (request.method !== "POST") {
-    return Response.json({ valid: false }, { status: 405, headers: corsHeaders });
-  }
+  if (request.method !== "POST") return json({ valid: false }, 405);
 
   try {
     const configuredPassword = Deno.env.get("OOO_ADMIN_PASSWORD");
     if (!configuredPassword) {
       console.error("OOO_ADMIN_PASSWORD is not configured");
-      return Response.json({ valid: false }, { status: 503, headers: corsHeaders });
+      return json({ valid: false }, 503);
     }
 
-    const { passwordHash, action } = await request.json();
+    const payload = await request.json();
+    const { passwordHash, action } = payload as { passwordHash?: unknown; action?: unknown };
     if (typeof passwordHash !== "string" || !/^[a-f0-9]{64}$/.test(passwordHash)) {
-      return Response.json({ valid: false }, { status: 400, headers: corsHeaders });
+      return json({ valid: false }, 400);
     }
 
-    const configuredHash = await sha256(configuredPassword);
-    const valid = secureEqual(passwordHash, configuredHash);
-    if (!valid || action !== "event-stats") {
-      return Response.json(
-        { valid },
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-      );
-    }
+    const valid = secureEqual(passwordHash, await sha256(configuredPassword));
+    if (!valid) return json({ valid: false });
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
       { auth: { persistSession: false } },
     );
-    const { data: events, error: eventsError } = await supabase
-      .from("events")
-      .select("id, name, date")
-      .eq("is_published", true)
-      .order("date", { ascending: true });
-    if (eventsError) throw eventsError;
 
-    const eventIds = (events ?? []).map((event) => event.id);
-    const { data: registrations, error: registrationsError } = eventIds.length === 0
-      ? { data: [], error: null }
-      : await supabase
-        .from("event_registrations")
-        .select("event_id, profile_id, is_checked_in")
-        .in("event_id", eventIds);
-    if (registrationsError) throw registrationsError;
+    if (action === "event-stats") {
+      return json({ valid: true, events: await gatherEventStats(supabase) });
+    }
 
-    const profileIds = [...new Set((registrations ?? []).map((registration) => registration.profile_id).filter(Boolean))];
-    const { data: profiles, error: profilesError } = profileIds.length === 0
-      ? { data: [], error: null }
-      : await supabase
-        .from("profiles")
-        .select("id, matching_goal, areas_of_expertise, interests, communities")
-        .in("id", profileIds);
-    if (profilesError) throw profilesError;
+    if (action === "insights") {
+      const events = await gatherEventStats(supabase);
+      const event = pickEvent(events, (payload as { eventId?: unknown }).eventId);
+      if (!event) return json({ valid: true, insights: [], generatedAt: null, cached: false });
 
-    const eventStats = await Promise.all((events ?? []).map(async (event) => {
-      const eventRegistrations = (registrations ?? []).filter((registration) => registration.event_id === event.id);
-      const registeredProfileIds = new Set(eventRegistrations.map((registration) => registration.profile_id).filter(Boolean));
-      const eventProfiles = (profiles ?? []).filter((profile) => registeredProfileIds.has(profile.id));
-      const [matchesResult, connectionRequestsResult, meetingRequestsResult] = await Promise.all([
-        supabase.from("matches").select("*", { count: "exact", head: true }).eq("event_id", event.id),
-        supabase
-          .from("messages")
-          .select("*", { count: "exact", head: true })
+      const fingerprint = await fingerprintStats(event);
+      const { data: cached } = await supabase
+        .from("event_ai_insights")
+        .select("insights, stats_fingerprint, generated_at")
+        .eq("event_id", event.id)
+        .maybeSingle();
+
+      const refresh = (payload as { refresh?: unknown }).refresh === true;
+      if (cached && cached.stats_fingerprint === fingerprint && !refresh) {
+        return json({ valid: true, insights: cached.insights ?? [], generatedAt: cached.generated_at, cached: true });
+      }
+
+      const apiKey = Deno.env.get("OOO_Intellegence_Open_API_Key");
+      if (!apiKey) {
+        return json({
+          valid: true,
+          insights: cached?.insights ?? [],
+          generatedAt: cached?.generated_at ?? null,
+          cached: Boolean(cached),
+          error: "insights_unavailable",
+        });
+      }
+
+      const model = insightsModel();
+      let insights: string[];
+      try {
+        insights = await generateEventInsights(createOpenAIResponsesClient(apiKey), event, model);
+      } catch {
+        return json({
+          valid: true,
+          insights: cached?.insights ?? [],
+          generatedAt: cached?.generated_at ?? null,
+          cached: Boolean(cached),
+          error: "generation_failed",
+        });
+      }
+
+      const generatedAt = new Date().toISOString();
+      await supabase.from("event_ai_insights").upsert({
+        event_id: event.id,
+        insights,
+        stats_fingerprint: fingerprint,
+        model,
+        generated_at: generatedAt,
+      });
+      return json({ valid: true, insights, generatedAt, cached: false });
+    }
+
+    if (action === "copilot") {
+      const question = typeof (payload as { question?: unknown }).question === "string"
+        ? ((payload as { question: string }).question)
+        : "";
+      if (!question.trim()) return json({ valid: true, answer: "", error: "empty_question" });
+
+      const events = await gatherEventStats(supabase);
+      const event = pickEvent(events, (payload as { eventId?: unknown }).eventId);
+      if (!event) return json({ valid: true, answer: "There is no published event to analyze yet." });
+
+      const apiKey = Deno.env.get("OOO_Intellegence_Open_API_Key");
+      if (!apiKey) return json({ valid: true, answer: "", error: "copilot_unavailable" });
+
+      let answer: string;
+      try {
+        answer = await generateCopilotAnswer(createOpenAIResponsesClient(apiKey), event, question, insightsModel());
+      } catch {
+        return json({ valid: true, answer: "", error: "generation_failed" });
+      }
+      return json({ valid: true, answer });
+    }
+
+    if (action === "list-reports") {
+      const eventId = (payload as { eventId?: unknown }).eventId;
+      let query = supabase
+        .from("reports")
+        .select("id, event_id, executive_summary, insights, raw_metrics, generated_at")
+        .order("generated_at", { ascending: false });
+      if (typeof eventId === "string") query = query.eq("event_id", eventId);
+      const { data, error } = await query;
+      if (error) throw error;
+      return json({ valid: true, reports: data ?? [] });
+    }
+
+    if (action === "create-report") {
+      const body = payload as { eventId?: unknown; reportType?: unknown; title?: unknown; sections?: unknown };
+      // Only "Executive Impact" is buildable; the wizard shows the rest disabled.
+      if (body.reportType !== BUILDABLE_REPORT_TYPE) {
+        return json({ valid: true, error: "report_type_unavailable" });
+      }
+
+      const events = await gatherEventStats(supabase);
+      const event = pickEvent(events, body.eventId);
+      if (!event) return json({ valid: true, error: "no_event" });
+
+      const known = KNOWN_REPORT_SECTIONS as readonly string[];
+      const picked = Array.isArray(body.sections)
+        ? (body.sections.filter((section): section is ReportSection =>
+          typeof section === "string" && known.includes(section)))
+        : [];
+      const sections: ReportSection[] = picked.includes("executive_summary")
+        ? picked
+        : ["executive_summary", ...picked];
+      const title = typeof body.title === "string" && body.title.trim()
+        ? body.title.trim().slice(0, 200)
+        : `${event.name} — Executive Impact`;
+
+      let insights: string[] = [];
+      if (sections.includes("ai_insights")) {
+        const { data: cachedInsights } = await supabase
+          .from("event_ai_insights")
+          .select("insights")
           .eq("event_id", event.id)
-          .eq("message_type", "connect_request"),
-        supabase.from("meetings").select("status").eq("event_id", event.id),
-      ]);
-      if (matchesResult.error) throw matchesResult.error;
-      if (connectionRequestsResult.error) throw connectionRequestsResult.error;
-      if (meetingRequestsResult.error) throw meetingRequestsResult.error;
+          .maybeSingle();
+        if (cachedInsights && Array.isArray(cachedInsights.insights)) insights = cachedInsights.insights;
+      }
 
-      return {
-        id: event.id,
-        name: event.name,
-        date: event.date,
-        totalRegistrations: eventRegistrations.length,
-        totalCheckedIn: eventRegistrations.filter((registration) => registration.is_checked_in).length,
-        totalMatches: matchesResult.count ?? 0,
-        totalConnectionRequests: connectionRequestsResult.count ?? 0,
-        totalMeetingRequests: meetingRequestsResult.data?.length ?? 0,
-        meetingsByStatus: {
-          requested: meetingRequestsResult.data?.filter((meeting) => meeting.status === "requested").length ?? 0,
-          accepted: meetingRequestsResult.data?.filter((meeting) => meeting.status === "accepted").length ?? 0,
-          declined: meetingRequestsResult.data?.filter((meeting) => meeting.status === "declined").length ?? 0,
-          scheduled: meetingRequestsResult.data?.filter((meeting) => meeting.status === "scheduled").length ?? 0,
-          completed: meetingRequestsResult.data?.filter((meeting) => meeting.status === "completed").length ?? 0,
-        },
-        topMatchingGoals: topSelections(eventProfiles.map((profile) => profile.matching_goal ? [profile.matching_goal] : [])),
-        topExpertise: topSelections(eventProfiles.map((profile) => profile.areas_of_expertise ?? [])),
-        topInterestsAndCommunities: topSelections(
-          eventProfiles.map((profile) => [...(profile.interests ?? []), ...(profile.communities ?? [])]),
-        ),
-      };
-    }));
+      const { data: inserted, error } = await supabase
+        .from("reports")
+        .insert({
+          event_id: event.id,
+          generated_by: null,
+          executive_summary: buildExecutiveSummary(event),
+          insights,
+          recommendations: null,
+          outcome_score: null,
+          raw_metrics: {
+            meta: { reportType: BUILDABLE_REPORT_TYPE, title, sections },
+            stats: event,
+          },
+        })
+        .select("id, event_id, executive_summary, insights, raw_metrics, generated_at")
+        .single();
+      if (error) throw error;
+      return json({ valid: true, report: inserted });
+    }
 
-    return Response.json(
-      { valid: true, events: eventStats },
-      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
-    );
-  } catch {
-    return Response.json({ valid: false }, { status: 400, headers: corsHeaders });
+    return json({ valid: true });
+  } catch (error) {
+    console.error("admin-auth handler error", error instanceof Error ? `${error.name}: ${error.message}` : String(error));
+    return json({ valid: false }, 400);
   }
 });

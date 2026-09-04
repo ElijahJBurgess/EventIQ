@@ -3,6 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { EnterpriseTab, EventStats } from "@/lib/enterpriseOverview";
+import OverviewTab from "./enterprise/OverviewTab";
+import AudienceTab from "./enterprise/AudienceTab";
+import RelationshipsTab from "./enterprise/RelationshipsTab";
+import InsightsTab from "./enterprise/InsightsTab";
+import ReportsTab from "./enterprise/ReportsTab";
 
 const ADMIN_SESSION_KEY = "ooo-organizer-admin-session";
 const ADMIN_SESSION_DURATION_MS = 72 * 60 * 60 * 1_000;
@@ -30,32 +37,20 @@ function getValidOrganizerSession() {
   return "";
 }
 
-interface EventStats {
-  id: string;
-  name: string;
-  date: string | null;
-  totalRegistrations: number;
-  totalCheckedIn: number;
-  totalMatches: number;
-  totalConnectionRequests: number;
-  totalMeetingRequests: number;
-  meetingsByStatus: {
-    requested: number;
-    accepted: number;
-    declined: number;
-    scheduled: number;
-    completed: number;
-  };
-  topMatchingGoals: Array<{ label: string; count: number }>;
-  topExpertise: Array<{ label: string; count: number }>;
-  topInterestsAndCommunities: Array<{ label: string; count: number }>;
-}
-
 async function hashPassword(password: string) {
   const bytes = new TextEncoder().encode(password);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
+
+const ENTERPRISE_TABS: Array<{ value: EnterpriseTab; label: string }> = [
+  { value: "overview", label: "Overview" },
+  { value: "audience", label: "Audience" },
+  { value: "relationships", label: "Relationships" },
+  { value: "outcomes", label: "Outcomes" },
+  { value: "insights", label: "Insights" },
+  { value: "reports", label: "Reports" },
+];
 
 export default function OrganizerAdmin() {
   const navigate = useNavigate();
@@ -65,6 +60,7 @@ export default function OrganizerAdmin() {
   const [error, setError] = useState("");
   const [events, setEvents] = useState<EventStats[]>([]);
   const [loadingStats, setLoadingStats] = useState(Boolean(accessHash));
+  const [activeTab, setActiveTab] = useState<EnterpriseTab>("overview");
 
   const loadStats = useCallback(async (passwordHash: string) => {
     setLoadingStats(true);
@@ -160,96 +156,147 @@ export default function OrganizerAdmin() {
                 No published events found.
               </section>
             ) : (
-              <div className="space-y-6">
-                {events.map((event) => {
-                  const checkedInPercentage = event.totalRegistrations === 0
-                    ? 0
-                    : Math.round((event.totalCheckedIn / event.totalRegistrations) * 100);
-                  return (
-                    <section key={event.id} className="border border-black p-6 sm:p-8">
+              <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as EnterpriseTab)}>
+                <TabsList className="inline-flex gap-1 rounded-none border border-black bg-white p-1">
+                  {ENTERPRISE_TABS.map((tab) => (
+                    <TabsTrigger
+                      key={tab.value}
+                      value={tab.value}
+                      className="rounded-none px-4 py-2 font-display text-[11px] tracking-widest data-[state=active]:bg-black data-[state=active]:text-white data-[state=active]:shadow-none"
+                    >
+                      {tab.label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+
+                <TabsContent value="overview" className="mt-8 space-y-12">
+                  {events.map((event) => {
+                    const checkedInPercentage = event.totalRegistrations === 0
+                      ? 0
+                      : Math.round((event.totalCheckedIn / event.totalRegistrations) * 100);
+                    return (
+                      <div key={event.id}>
+                        <h2 className="text-2xl">{event.name}</h2>
+                        <p className="normal-case font-offrip-body text-sm text-muted-foreground mt-1 mb-6">
+                          {formatEventDate(event.date)} · {event.totalCheckedIn} checked in of {event.totalRegistrations} registered
+                          {event.totalRegistrations > 0 && ` · ${checkedInPercentage}% check-in rate`}
+                        </p>
+                        <OverviewTab event={event} onNavigateTab={setActiveTab} />
+                      </div>
+                    );
+                  })}
+                </TabsContent>
+
+                <TabsContent value="audience" className="mt-8 space-y-12">
+                  {events.map((event) => (
+                    <div key={event.id}>
                       <h2 className="text-2xl">{event.name}</h2>
-                      <p className="normal-case font-sans text-sm text-muted-foreground mt-1 mb-6">
+                      <p className="normal-case font-offrip-body text-sm text-muted-foreground mt-1 mb-6">
                         {formatEventDate(event.date)}
                       </p>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        <div className="ooo-border bg-aqua p-4">
-                          <p className="font-label text-xs text-muted-foreground">Registrations</p>
-                          <p className="font-display text-3xl mt-2">{event.totalRegistrations}</p>
-                        </div>
-                        <div className="ooo-border bg-citron p-4">
-                          <p className="font-label text-xs text-muted-foreground">Checked in</p>
-                          <p className="font-display text-3xl mt-2">{event.totalCheckedIn}</p>
-                        </div>
-                        <div className="ooo-border bg-warm p-4">
-                          <p className="font-label text-xs text-muted-foreground">Check-in rate</p>
-                          <p className="font-display text-3xl mt-2">{checkedInPercentage}%</p>
-                        </div>
-                        <div className="ooo-border bg-card p-4">
-                          <p className="font-label text-xs text-muted-foreground">Matches generated</p>
-                          <p className="font-display text-3xl mt-2">{event.totalMatches}</p>
-                        </div>
-                        <div className="ooo-border bg-card p-4">
-                          <p className="font-label text-xs text-muted-foreground">Connection requests</p>
-                          <p className="font-display text-3xl mt-2">{event.totalConnectionRequests}</p>
-                        </div>
-                        <div className="ooo-border bg-card p-4">
-                          <p className="font-label text-xs text-muted-foreground">Meeting requests</p>
-                          <p className="font-display text-3xl mt-2">{event.totalMeetingRequests}</p>
-                        </div>
-                      </div>
-                      <div className="mt-6 pt-6 border-t-2 border-primary">
+                      <AudienceTab event={event} />
+                    </div>
+                  ))}
+                </TabsContent>
+
+                <TabsContent value="relationships" className="mt-8 space-y-12">
+                  {events.map((event) => (
+                    <div key={event.id}>
+                      <h2 className="text-2xl">{event.name}</h2>
+                      <p className="normal-case font-offrip-body text-sm text-muted-foreground mt-1 mb-6">
+                        {formatEventDate(event.date)}
+                      </p>
+                      <RelationshipsTab event={event} />
+                    </div>
+                  ))}
+                </TabsContent>
+
+                <TabsContent value="outcomes" className="mt-8 space-y-6">
+                  {events.map((event) => {
+                    const selfReportsValuablePercentage = event.selfReportsTotal === 0
+                      ? 0
+                      : Math.round((event.selfReportsValuable / event.selfReportsTotal) * 100);
+                    return (
+                      <section key={event.id} className="border border-black p-6 sm:p-8">
+                        <h2 className="text-2xl">{event.name}</h2>
+                        <p className="normal-case font-sans text-sm text-muted-foreground mt-1 mb-6">
+                          {formatEventDate(event.date)}
+                        </p>
                         <div className="mb-4">
-                          <p className="font-label text-xs text-muted-foreground">Meeting activity</p>
-                          <h3 className="text-xl mt-1">Meeting status</h3>
+                          <p className="font-label text-xs text-muted-foreground">Attendee outcomes</p>
+                          <h3 className="text-xl mt-1">Outcomes</h3>
                         </div>
-                        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                          {([
-                            ["Requested", event.meetingsByStatus.requested],
-                            ["Accepted", event.meetingsByStatus.accepted],
-                            ["Declined", event.meetingsByStatus.declined],
-                            ["Scheduled", event.meetingsByStatus.scheduled],
-                            ["Completed", event.meetingsByStatus.completed],
-                          ] as const).map(([label, value]) => (
-                            <div key={label} className={`ooo-border p-4 ${label === "Completed" ? "bg-citron" : "bg-card"}`}>
-                              <p className="font-label text-[11px] text-muted-foreground">{label}</p>
-                              <p className="font-display text-3xl mt-2">{value}</p>
-                            </div>
-                          ))}
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="ooo-border bg-card p-4">
+                            <p className="font-label text-[11px] text-muted-foreground">Avg. Overall Satisfaction</p>
+                            {event.avgOverallRating === null ? (
+                              <p className="normal-case font-sans text-sm text-muted-foreground mt-2">No data yet</p>
+                            ) : (
+                              <p className="font-display text-3xl mt-2">{event.avgOverallRating.toFixed(1)}</p>
+                            )}
+                          </div>
+                          <div className="ooo-border bg-warm p-4">
+                            <p className="font-label text-[11px] text-muted-foreground">% Self-Reported as Valuable</p>
+                            <p className="font-display text-3xl mt-2">{selfReportsValuablePercentage}%</p>
+                          </div>
                         </div>
-                      </div>
-                      <div className="mt-6 pt-6 border-t-2 border-primary">
-                        <div className="mb-4">
-                          <p className="font-label text-xs text-muted-foreground">Attendee insights</p>
-                          <h3 className="text-xl mt-1">What attendees care about</h3>
+                        <div className="mt-6 pt-6 border-t-2 border-primary">
+                          <div className="mb-4">
+                            <p className="font-label text-xs text-muted-foreground">Attendee insights</p>
+                            <h3 className="text-xl mt-1">What attendees care about</h3>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {([
+                              ["Top areas of expertise", event.topExpertise],
+                              ["Top interests & communities", event.topInterestsAndCommunities],
+                            ] as const).map(([title, items]) => (
+                              <div key={title} className="ooo-border bg-card p-4">
+                                <h4 className="font-label text-xs mb-3">{title}</h4>
+                                {items.length === 0 ? (
+                                  <p className="normal-case font-sans text-sm text-muted-foreground">No data yet</p>
+                                ) : (
+                                  <ol className="space-y-2">
+                                    {items.map((item, index) => (
+                                      <li key={item.label} className="flex items-start justify-between gap-3 normal-case font-sans text-sm">
+                                        <span><span className="text-muted-foreground mr-2">{index + 1}.</span>{item.label}</span>
+                                        <span className="font-label text-xs ooo-border bg-aqua px-2 py-1 shrink-0">{item.count}</span>
+                                      </li>
+                                    ))}
+                                  </ol>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                          {([
-                            ["Top matching goals", event.topMatchingGoals],
-                            ["Top areas of expertise", event.topExpertise],
-                            ["Top interests & communities", event.topInterestsAndCommunities],
-                          ] as const).map(([title, items]) => (
-                            <div key={title} className="ooo-border bg-card p-4">
-                              <h4 className="font-label text-xs mb-3">{title}</h4>
-                              {items.length === 0 ? (
-                                <p className="normal-case font-sans text-sm text-muted-foreground">No data yet</p>
-                              ) : (
-                                <ol className="space-y-2">
-                                  {items.map((item, index) => (
-                                    <li key={item.label} className="flex items-start justify-between gap-3 normal-case font-sans text-sm">
-                                      <span><span className="text-muted-foreground mr-2">{index + 1}.</span>{item.label}</span>
-                                      <span className="font-label text-xs ooo-border bg-aqua px-2 py-1 shrink-0">{item.count}</span>
-                                    </li>
-                                  ))}
-                                </ol>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    </section>
-                  );
-                })}
-              </div>
+                      </section>
+                    );
+                  })}
+                </TabsContent>
+
+                <TabsContent value="insights" className="mt-8 space-y-12">
+                  {events.map((event) => (
+                    <div key={event.id}>
+                      <h2 className="text-2xl">{event.name}</h2>
+                      <p className="normal-case font-offrip-body text-sm text-muted-foreground mt-1 mb-6">
+                        {formatEventDate(event.date)}
+                      </p>
+                      <InsightsTab event={event} accessHash={accessHash} />
+                    </div>
+                  ))}
+                </TabsContent>
+
+                <TabsContent value="reports" className="mt-8 space-y-12">
+                  {events.map((event) => (
+                    <div key={event.id}>
+                      <h2 className="text-2xl">{event.name}</h2>
+                      <p className="normal-case font-offrip-body text-sm text-muted-foreground mt-1 mb-6">
+                        {formatEventDate(event.date)}
+                      </p>
+                      <ReportsTab event={event} accessHash={accessHash} />
+                    </div>
+                  ))}
+                </TabsContent>
+              </Tabs>
             )}
           </div>
         ) : (

@@ -8,7 +8,13 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.{test,spec}.{ts,tsx}", "supabase/functions/match-engine/scorer.test.ts"],
+    include: [
+      "src/**/*.{test,spec}.{ts,tsx}",
+      "supabase/functions/match-engine/scorer.test.ts",
+      "supabase/functions/admin-auth/stats.test.ts",
+      "supabase/functions/admin-auth/insights.test.ts",
+      "supabase/functions/admin-auth/report.test.ts",
+    ],
   },
   resolve: {
     alias: { "@": path.resolve(__dirname, "./src") },
