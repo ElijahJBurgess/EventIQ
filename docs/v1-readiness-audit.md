@@ -215,7 +215,78 @@ Committed today (`8cc4eb1`) but **not deployed** → inert in prod. Source revie
 
 ## Section 3 — Security
 
-*Status: pending.*
+*Status: complete.* Method: full `pg_policy` dump analysed table-by-table; Supabase security advisor; **live auth-boundary probes** as an authenticated test user and as anon against prod REST; full git-history secret scan (every blob, every branch); client-bundle inspection.
+
+### 3.1 Secrets — ✅ clean
+
+- **No `.env*` file was ever committed** on any branch (`git log --all --diff-filter=A` empty).
+- **Full-history blob scan** for `sb_secret_*`, service-role JWTs, `sk-`/`sk-proj-` OpenAI keys, `ADMIN_LINK_SECRET=`, `OOO_ADMIN_PASSWORD=`, PEM private keys → **zero hits** across all objects and branches.
+- No file ever named `*.pem` / `*.key` / `*secret*` / `*credential*`.
+- Client code reads only `import.meta.env.VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, `import.meta.env.DEV`. No `SERVICE_ROLE` / `SUPABASE_SECRET_KEY` reference anywhere in `src/`.
+- Deployed JS bundle (`event-iq-six.vercel.app`) contains no `sb_secret_`, `service_role`, or `sk-proj-` strings — only the publishable (anon) key, which is designed to be public.
+- `.gitignore` is deliberate and correct (comments call out that `.env` "contains live Supabase keys, including a secret key").
+- 🟡 the two secrets that gate admin surfaces — `OOO_ADMIN_PASSWORD` (enterprise dashboard) and `ADMIN_LINK_SECRET` (`admin-gen-link`) — are static shared strings with no rotation. Not leaked; just fragile single credentials. See 2.2 / 2.5.
+
+### 3.2 RLS — table by table
+
+RLS is **enabled on all 23 tables**. Findings:
+
+| Table | Posture | Finding |
+|---|---|---|
+| `profiles` | SELECT/INSERT own only; other profiles via the `attendee_profiles` view | 🟠 **UPDATE policy has `USING (auth.uid()=id)` but NO `WITH CHECK`.** The new row is unchecked, so `UPDATE profiles SET id='<other-uuid>' WHERE id=auth.uid()` is not blocked by RLS. PK/FK stop it *if* the target already has a profile row — but ~44 `auth.users` have **no** profile row (see 4.x), so an attacker could move their profile onto one of those identity slots. Add `WITH CHECK (auth.uid() = id)`. |
+| `feedback` | INSERT `auth.uid()=user_id` ✅ | 🟠 **SELECT policy is `true` for every authenticated user.** Live-confirmed: a signed-in test user read another user's `feedback` row. `highlights` / `improvements` are free-text. Scope to `user_id = auth.uid()` (+ event organizer). |
+| `reports` | INSERT `auth.uid()=generated_by` | 🟠 **SELECT policy is `true` for role `{}` (PUBLIC).** Live-confirmed: **an unauthenticated request read the full `executive_summary`.** Content is aggregate (no PII rows), but it is an event's private analytics readable by the entire internet. Also INSERT isn't organizer-checked — any signed-in user can create `reports` rows with an attacker-controlled `raw_metrics` jsonb. |
+| `points` | SELECT own ✅ | 🟠 **INSERT `WITH CHECK (true)`** — any authenticated user can insert points rows for anyone. Moot only because the table is dead (4.x); fix or drop. |
+| `sponsors` | SELECT PUBLIC `true` | 🟠 **`FOR ALL` to any authenticated user** (`auth.uid() IS NOT NULL`) — any signed-in user can insert/update/**delete** any sponsor row. Dead feature (0 rows); drop the table or replace the policy. |
+| `sponsor_engagements` | INSERT own ✅ | 🟡 SELECT `true` for authenticated — reads all rows. Dead feature. |
+| `events` | SELECT published-or-own ✅; manage own ✅ | 🟡 **INSERT `WITH CHECK (auth.uid() IS NOT NULL)`** — any signed-in user can create an event, and `organizer_id` isn't forced to `auth.uid()`. No UI exposes this; still an unbounded write. |
+| `admin_actions`, `connection_actions`, `event_analytics` | INSERT for `anon`+`authenticated`, only length/enum checks; no SELECT policy | 🟡 **anon can write junk rows** to all three, no rate limit. All are dead telemetry tables (0 rows, no code reads or writes them — 4.x). Drop them. |
+| `check_ins`, `connection_notes`, `connection_self_reports`, `event_registrations`, `match_actions` | own-row scoped, participant-checked on the two connection tables | ✅ correct |
+| `matches`, `meetings`, `messages`, `notifications` | SELECT restricted to participants; **no client INSERT/UPDATE/DELETE** — all mutations go through guarded SECURITY DEFINER RPCs | ✅ correct (live-verified — a signed-in user sees only their own match / thread / notifications) |
+| `concierge_logs`, `event_ai_insights`, `needs_offers_compatibility`, `us_cities` | RLS on, **0 policies** = deny-all to client; access only via service role or a SECURITY DEFINER RPC | ✅ intentional (advisor flags as INFO only). `concierge_logs` also has no `GRANT` to `authenticated` — belt and braces. |
+
+### 3.3 SECURITY DEFINER surface (from the Supabase advisor + source review)
+
+- 🟠 **`attendee_profiles` and `matched_event_attendance` are `SECURITY DEFINER` views** (advisor level **ERROR**). They run as the superuser and **bypass the querying user's RLS**; only their own `WHERE` clause (`id = auth.uid() OR EXISTS shared-match`) contains them. Live-verified the WHERE clause currently works (a test user saw only their own profile + shared-match profiles, and `email`/`linkedin_url` are not in the view's column list). But the pattern is brittle — recreate with `security_invoker = true`. `attendee_profiles` is load-bearing (every matches / messages / profile-view screen depends on it), so this needs care, not just a flip.
+- ✅ **The 8 meeting/connection/notification RPCs are SECURITY DEFINER by necessity and are correctly guarded** — every one checks `auth.uid() IS NOT NULL`, checks the caller is a participant of the target row, enforces the state machine, and sets `search_path = ''`. Live-verified the negative cases (non-recipient responding, requester self-accepting, wrong-state transitions all rejected). The advisor lists them as WARN informationally; reviewed and acceptable.
+- 🟡 **`handle_new_user()` and `rls_auto_enable()` are exposed at `/rest/v1/rpc/` to `anon`+`authenticated`** (advisor WARN). Both are trigger/maintenance functions that should never be called directly. `REVOKE EXECUTE ... FROM anon, authenticated` (keep the trigger binding).
+- 🟡 **`search_us_cities` is `anon`-executable** but the only caller is the onboarding form, which is behind `ProtectedRoute`. Tighten to `authenticated`.
+
+### 3.4 Auth boundary — live probe results
+
+| Probe (as authenticated test user unless noted) | Result |
+|---|---|
+| Read another user's `profiles` row directly | `[]` ✅ |
+| Read `matches` — how many of 718 visible | 1 (only own) ✅ |
+| Read `concierge_logs` | `42501 permission denied` ✅ |
+| `connection_self_reports` insert with `user_id` = another user | `42501` RLS block ✅ |
+| `respond_to_meeting` as the requester (not recipient) | `42501 Access denied` ✅ |
+| `messages` free-text insert before `connection_status='accepted'` | `42501` RLS block ✅ |
+| `match-engine` for an event the caller isn't registered to | `403 Access denied` ✅ |
+| **Read all `feedback`** | **rows returned — over-share** 🟠 |
+| **Read all `reports` with no auth at all (anon)** | **rows returned — public leak** 🟠 |
+| Anon read `profiles` | `42501` ✅ |
+| Anon read `feedback` | `[]` ✅ |
+
+**Verdict:** the core relationship data (profiles, matches, messages, meetings, notifications, connection notes/reports) is correctly walled off per-user, and the write paths are all funnelled through guarded RPCs. The boundary breaks are `feedback` (any signed-in user) and `reports` (the whole internet), plus the `profiles` UPDATE `WITH CHECK` gap and the SECURITY DEFINER views.
+
+### 3.5 CORS (per-function, live-verified)
+
+| Function | `Access-Control-Allow-Origin` | Verdict |
+|---|---|---|
+| `concierge` | reflects `https://event-iq-six.vercel.app`; foreign origin gets none | ✅ |
+| `delete-account` | reflects the prod origin | ✅ |
+| `match-engine` | reflects the prod origin | ✅ |
+| `admin-auth` | **`*`** — returned `*` to `https://evil.example.com` | 🟠 tighten to an allow-list |
+| `admin-gen-link` | no CORS headers (not browser-called) | n/a |
+
+🟡 None of the allow-lists include Vercel *preview* URLs, so preview deployments can't call `concierge`/`match-engine`/`delete-account`.
+
+### 3.6 Auth configuration
+
+- 🟡 **Leaked-password protection is disabled** (advisor WARN) — enable the HaveIBeenPwned check in Auth settings.
+- 🟡 `minimum_password_length = 8`, `otp_length = 8`. 8 is the floor; consider 10–12.
+- `enable_confirmations = false` — email verification is **off** (a `config.toml` comment marks it "Temporary V1 testing behavior; restore once production SMTP is configured"). 🟠 for launch: anyone can sign up with an email they don't control and reach the full app. Tied to compliance (Section 5) and to the ToS/consent gap.
 
 ## Section 4 — Database schema health
 
