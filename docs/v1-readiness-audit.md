@@ -28,7 +28,7 @@
 |---|---|---|
 | S1 | `reports` table is **world-readable, including by anonymous users** (`SELECT` policy `true` for PUBLIC) — verified live: an unauthenticated request returned the full `executive_summary`. Aggregate data, but it's an event's private analytics on the open internet. | 3.2 / 3.4 |
 | S2 | `feedback` table is **readable by every authenticated user** (`SELECT true`) — verified live: a test user read another user's feedback incl. free-text fields. | 3.2 / 3.4 |
-| S3 | **`admin-gen-link`** — a deployed, `verify_jwt:false`, **not-in-the-repo** edge function that mints a service-role magic-link (full sign-in) for an allowlisted real address, gated only by one shared static secret. Delete it or harden + version it. | 2.5 |
+| S3 | ~~**`admin-gen-link`** — a deployed, `verify_jwt:false`, **not-in-the-repo** edge function that mints a service-role magic-link (full sign-in) for an allowlisted real address, gated only by one shared static secret.~~ **RESOLVED 2026-09-04** — investigated (was intentional ad-hoc QA scaffolding, Aug 26–28, never meant to persist), approved for removal with no replacement, and neutralised: v5 is an inert `410` stub with `verify_jwt:true`, no secrets, no `generateLink`. Residual: the empty function *slug* + the now-unused `ADMIN_LINK_SECRET` env var still need a dashboard delete by an owner account. | 2.5 |
 | S4 | `admin-auth` posture: `Access-Control-Allow-Origin: *` to any origin (verified), a single static shared password with no rotation/rate-limit/lockout, and a catch-all that returns the same `{valid:false}` shape for downstream errors as for auth failure (the pattern behind today's `.in()` outage). | 2.2 / 3.5 |
 | S5 | `profiles` UPDATE policy has **no `WITH CHECK`** → `UPDATE profiles SET id='<other>'` isn't blocked by RLS; exploitable against the ~44 `auth.users` that have no profile row. | 3.2 |
 | S6 | `attendee_profiles` + `matched_event_attendance` are **`SECURITY DEFINER` views** (Supabase advisor: ERROR) — they bypass the caller's RLS; only their own WHERE clause contains them. Recreate as `security_invoker`. | 3.3 |
@@ -211,7 +211,7 @@ No `from("points")`, no insert, no read anywhere in `src/` or `supabase/function
 | `admin-auth` | v21 | **`false`** | ✅ | ✅ (`false`, deliberate) | ⚠️ see 2.2 |
 | `concierge` | v14 | `true` | ✅ | ✅ (`true`) | ✅ ok |
 | `delete-account` | v1 | `true` | ✅ | ✅ (`true`) | ✅ ok |
-| **`admin-gen-link`** | **v4** | **`false`** | **❌ not in repo** | **❌** | 🟠 see 2.5 |
+| `admin-gen-link` | v5 — inert `410` stub | `true` | ❌ (source held only in Supabase) | ❌ | ✅ decommissioned 2026-09-04, see 2.5; slug still needs a dashboard delete |
 | `admin-run-matching` | **not deployed** | n/a | ✅ (committed `8cc4eb1` today) | ❌ | see 2.6 |
 
 - 🟡 **`config.toml` is not the source of truth.** It lists only `admin-auth` and `concierge`. `match-engine` and `delete-account` are `verify_jwt:true` only because that's the platform default; a future `supabase functions deploy` from a machine with a stale/rewritten config could silently flip them. Add explicit entries for every function.
@@ -237,15 +237,17 @@ No `from("points")`, no insert, no read anywhere in `src/` or `supabase/function
 
 Covered in depth by today's account-deletion work. `verify_jwt:true`; deletes only `auth.uid()`; organizer 409-block; `console.error` in catch; CORS origin allow-list (verified live). No issues.
 
-### 2.5 `admin-gen-link` — 🟠 undocumented account-takeover primitive in production
+### 2.5 `admin-gen-link` — ✅ RESOLVED 2026-09-04 (was: undocumented account-takeover primitive)
 
-**Not in the repo, not in `config.toml`, not referenced by any code.** Retrieved its source via the API. It is 30 lines: `POST {email, secret}` → if `secret === ADMIN_LINK_SECRET` **and** `email` is in a hardcoded 4-entry allowlist (`chanise@oooevents.org` + three `offrip.loadtest.*@example.com`), it calls the **service-role `auth.admin.generateLink({type:"magiclink"})`** and returns the `action_link`. That link is a full sign-in for that account.
+**Original state (v4):** not in the repo, not in `config.toml`, not referenced by any code. 30 lines: `POST {email, secret}` → if `secret === ADMIN_LINK_SECRET` **and** `email` is in a hardcoded 4-entry allowlist (`chanise@oooevents.org` + three `offrip.loadtest.*@example.com`), it called the **service-role `auth.admin.generateLink({type:"magiclink"})`** and returned the `action_link` — a full sign-in for that account. Security rested entirely on one shared static string; `verify_jwt:false`; no rate limit; `redirectTo` hardcoded to `http://localhost:8080/`; raw error text leaked to the caller.
 
-- Security rests **entirely** on `ADMIN_LINK_SECRET` (a shared static string) staying secret. No `verify_jwt`, no rate limit. Live probe: wrong secret → `403 {"error":"forbidden"}` (works), but it *is* reachable with no `apikey` and no JWT.
-- `redirectTo` is hardcoded `http://localhost:8080/` → this is clearly a dev/QA login helper, but the token it mints is valid regardless of redirect.
-- `chanise@oooevents.org` is a real-looking `@oooevents.org` address; if that account has organizer/admin capability, a leak of `ADMIN_LINK_SECRET` is account takeover of a privileged user.
-- `catch (e) { ... String(e) }` leaks raw error text to the caller.
-- **Recommendation:** if the load testing that motivated it is done, **delete the function**. If it must stay, move the source into the repo, drop the three `loadtest` allowlist entries, fix `redirectTo`, and consider `verify_jwt:true` + an allow-listed caller instead of a shared secret.
+**Intent investigation (2026-09-04):** zero trace in git history (all branches, pickaxe, tree) and zero mention in any doc/comment — it was deployed straight to Supabase. Supabase metadata: created **2026-08-26 22:18 UTC**, 4 versions through **2026-08-28 00:15 UTC**, untouched after. The 3 allowlisted `offrip.loadtest.20260819-*` accounts are seeded personas from an Aug 19 load test; all three were logged into within a 15-minute window on 2026-08-28 (a QA session). `chanise@oooevents.org` (Chanise Robinson, a real OOO teammate — regular attendee profile, **no organizer/admin powers**) logged in once via a generated link on 2026-08-28 21:02, not since. **Conclusion: deliberately built, but as disposable QA scaffolding for one review week — never intended as durable infrastructure.**
+
+**Resolution:** approved for removal with no replacement (Chanise gets a normal password set from the Supabase dashboard; a proper magic-link flow comes for free once production SMTP is wired for launch). Neutralised on 2026-09-04 by deploying **v5** — an inert stub that returns `410 Gone` for every request, holds no secrets, imports nothing, and has `verify_jwt:true`. Live-verified: the old `{email, secret}` payload now returns `410` with no `action_link`; an unauthenticated call returns `401` at the platform gate.
+
+**Residual (needs an account with function-delete privileges — this CLI account gets `403`):**
+- Delete the `admin-gen-link` function slug itself: Supabase dashboard → Edge Functions → `admin-gen-link` → Delete (or `supabase functions delete admin-gen-link` with an owner token).
+- Remove the now-unused `ADMIN_LINK_SECRET` project secret.
 
 ### 2.6 `admin-run-matching` — not deployed; do not deploy without review
 
@@ -433,6 +435,12 @@ No *other* landmines exist — every remaining user-data FK is `ON DELETE CASCAD
 
 **Post-cleanup baseline re-verified:** `auth.users` 83, `profiles` 39, `events` 2, `matches` 718, `messages` 19, `meetings` 6, `feedback` 1, `connection_self_reports` 2, `reports` 1 (`generated_by` null) — all identical to the pre-audit counts. `leftover_audit_users` = 0. No edge functions were deployed during the audit.
 
-## Appendix B — Trivially-safe fixes applied during the audit
+## Appendix B — Changes made
 
-**None.** This pass changed no application code, schema, RLS, or edge functions. The only writes to the database were the creation and subsequent full deletion of the `audit-*` test accounts / test event described in Appendix A. Every finding above is left for your review and approval before any fix.
+**During the audit pass itself: none.** No application code, schema, RLS, or edge function was changed; the only DB writes were the `audit-*` test accounts / test event in Appendix A, all since deleted.
+
+**Post-audit, explicitly approved (2026-09-04):**
+
+| Change | Detail | Status |
+|---|---|---|
+| Decommissioned `admin-gen-link` (finding S3 / §2.5) | After an intent investigation and user approval to remove it with no replacement, deployed **v5** — an inert `410 Gone` stub, `verify_jwt:true`, no secrets, no imports. The account-takeover primitive is gone; live-verified. | Done. **Residual:** the empty function slug + the unused `ADMIN_LINK_SECRET` secret need a dashboard delete by an owner account (this CLI account lacks the privilege). User is handling Chanise's password directly. |
