@@ -36,6 +36,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { buildConnectionSummary } from "@/lib/connectionSummary";
 import { getViewerMatchMetrics } from "@/lib/checkedInMatches";
+import { selectHomeStatsEvent } from "@/lib/homeStatsEvent";
 import { getMatchBand } from "@/lib/matchPresentation";
 
 type Tab = "home" | "profile" | "events" | "matches" | "concierge" | "connections" | "messages" | "myday";
@@ -539,14 +540,11 @@ function HomeTab({
         return;
       }
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const activeEvent = (events ?? []).find((event) => {
-        if (!event.date) return false;
-        const start = new Date(`${event.date}T00:00:00`);
-        const end = new Date(`${event.end_date ?? event.date}T00:00:00`);
-        return start <= today && end >= today;
-      });
+      // The event to source Home stats from: the one live today if the user is
+      // checked into one, otherwise the event they most recently checked into
+      // (eventIds is ordered by checked_in_at desc) so Home doesn't go blank
+      // between events.
+      const activeEvent = selectHomeStatsEvent(events ?? [], eventIds, new Date());
 
       if (!activeEvent) {
         if (!cancelled) setStats(null);
