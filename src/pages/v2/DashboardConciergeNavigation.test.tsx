@@ -194,7 +194,7 @@ describe("Dashboard Concierge navigation", () => {
     expect(screen.getByText("Marcus is your strongest checked-in match.")).toBeInTheDocument();
 
     fireEvent.click(within(desktopNav).getByRole("button", { name: "Home" }));
-    fireEvent.click(within(desktopNav).getByRole("button", { name: "Matches" }));
+    fireEvent.click(within(desktopNav).getByRole("button", { name: "People" }));
     expect(screen.getByText("People event: room-b")).toBeInTheDocument();
     fireEvent.click(within(mobileNav).getByRole("button", { name: "Concierge" }));
     expect(screen.getByText("Who is in Room B?")).toBeInTheDocument();

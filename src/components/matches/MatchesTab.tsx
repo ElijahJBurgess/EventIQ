@@ -284,7 +284,7 @@ export default function MatchesTab({
       <div className="mb-8">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="font-display text-4xl">Matches worth knowing</h1>
+            <h1 className="font-display text-4xl">People worth knowing</h1>
             <p className="text-sm text-black/40 normal-case font-offrip-body mt-1 max-w-2xl">
               {selectedEvent ? `Matches you should meet at ${selectedEvent.name}` : "Join an event to discover matches you should meet"}
             </p>

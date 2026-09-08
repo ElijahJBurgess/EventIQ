@@ -46,7 +46,7 @@ const NAV_ITEMS: NavItem[] = ["home", "events", "matches", "concierge", "connect
 const NAV_LABELS: Record<NavItem, string> = {
   home: "Home",
   events: "Rooms",
-  matches: "Matches",
+  matches: "People",
   concierge: "Concierge",
   connections: "Connections",
   messages: "Messages",
