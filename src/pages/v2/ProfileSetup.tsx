@@ -9,6 +9,7 @@ import Page4Terms from "@/components/profile-setup/Page4Terms";
 import Page5EventSelection from "@/components/profile-setup/Page5EventSelection";
 import SuccessScreen from "@/components/profile-setup/SuccessScreen";
 import { initialProfileSetupFormData, type ProfileSetupFormData } from "@/components/profile-setup/types";
+import { buildProfileUpdatePayload } from "@/components/profile-setup/profileUpdate";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/v2/AuthProvider";
@@ -77,28 +78,7 @@ export default function ProfileSetup() {
     const { error } = await supabase
       .from("profiles")
       .update({
-        full_name: formData.fullName,
-        avatar_url: formData.avatarUrl,
-        title: formData.jobTitle,
-        company: formData.company,
-        location: formData.location,
-        linkedin_url: formData.linkedinUrl,
-        role_type: formData.roleType,
-        secondary_role_types: formData.secondaryRoleTypes,
-        primary_function: formData.primaryFunction,
-        additional_functions: formData.additionalFunctions,
-        seniority: formData.seniority,
-        who_to_meet: formData.whoToMeet,
-        primary_goal: formData.primaryGoal,
-        secondary_goals: formData.secondaryGoals,
-        needs: formData.needs,
-        offers: formData.offers,
-        areas_of_expertise: formData.offers,
-        matching_goal: formData.primaryGoal,
-        industry_preference: formData.industryPreference,
-        location_preference: formData.locationPreference,
-        career_level_preference: formData.careerLevelPreference,
-        connection_preference: formData.connectionPreference,
+        ...buildProfileUpdatePayload(formData),
         role_details: (
           [formData.roleType, ...formData.secondaryRoleTypes].includes("Other") && formData.customRoleType.trim()
             ? { ...formData.roleDetails, Other: { customTitle: formData.customRoleType.trim() } }

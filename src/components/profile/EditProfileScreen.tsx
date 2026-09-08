@@ -6,6 +6,7 @@ import Page3RoleQuestions from "@/components/profile-setup/Page3RoleQuestions";
 import ProgressIndicator from "@/components/profile-setup/ProgressIndicator";
 import { cleanRoleDetailsForIdentities } from "@/components/profile-setup/roleDetailsUtils";
 import { initialProfileSetupFormData, type ProfileSetupFormData } from "@/components/profile-setup/types";
+import { buildProfileUpdatePayload } from "@/components/profile-setup/profileUpdate";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { getOwnedProfilePhotoPath, PROFILE_PHOTO_BUCKET } from "@/lib/profilePhotoStorage";
@@ -101,28 +102,7 @@ export default function EditProfileScreen({ userId, onClose, onSaved }: EditProf
     const { error } = await supabase
       .from("profiles")
       .update({
-        full_name: formData.fullName,
-        avatar_url: formData.avatarUrl,
-        title: formData.jobTitle,
-        company: formData.company,
-        location: formData.location,
-        linkedin_url: formData.linkedinUrl,
-        role_type: formData.roleType,
-        secondary_role_types: formData.secondaryRoleTypes,
-        primary_function: formData.primaryFunction,
-        additional_functions: formData.additionalFunctions,
-        seniority: formData.seniority,
-        primary_goal: formData.primaryGoal,
-        secondary_goals: formData.secondaryGoals,
-        needs: formData.needs,
-        offers: formData.offers,
-        areas_of_expertise: formData.offers,
-        matching_goal: formData.primaryGoal,
-        who_to_meet: formData.whoToMeet,
-        industry_preference: formData.industryPreference,
-        location_preference: formData.locationPreference,
-        career_level_preference: formData.careerLevelPreference,
-        connection_preference: formData.connectionPreference,
+        ...buildProfileUpdatePayload(formData),
         role_details: cleanedRoleDetails as Json,
       })
       .eq("id", userId);
