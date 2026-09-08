@@ -8,6 +8,10 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
+    // The full-Dashboard render tests do a lot of work per test; 5s is marginal
+    // once the suite runs enough files in parallel. Give every test headroom so
+    // load-related flakiness doesn't masquerade as a real failure.
+    testTimeout: 15000,
     include: [
       "src/**/*.{test,spec}.{ts,tsx}",
       "supabase/functions/match-engine/scorer.test.ts",

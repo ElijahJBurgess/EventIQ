@@ -1,15 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
-import { MapPin, Loader2, RefreshCw, Check, X, Bookmark } from "lucide-react";
+import { MapPin, Loader2, RefreshCw, X, Bookmark } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { sendConnectRequest } from "@/lib/connectRequest";
 import { selectTopCheckedInMatches } from "@/lib/checkedInMatches";
 import { fetchSavedMatchIds, saveMatch, unsaveMatch } from "@/lib/savedMatches";
-import { getMatchBand, getViewerReciprocityLabel } from "@/lib/matchPresentation";
+import { getViewerReciprocityLabel } from "@/lib/matchPresentation";
+import { buildMatchTags } from "@/lib/matchTags";
+import OffripButton from "@/components/offrip/Button";
+import OffripCard from "@/components/offrip/Card";
+import OffripChip from "@/components/offrip/Chip";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Separator } from "@/components/ui/separator";
 
 interface JoinedEvent {
   id: string;
@@ -39,18 +42,14 @@ interface EnrichedMatch {
   alreadyConnected: boolean;
 }
 
-const AVATAR_PALETTE = [
-  "bg-aqua text-aqua-foreground",
-  "bg-citron text-citron-foreground",
-  "bg-vermillion text-vermillion-foreground",
-  "bg-warm text-warm-foreground",
+// Cycled by card position so the People grid reads like the Home cards.
+const OFFRIP_AVATAR_PALETTE = [
+  "bg-offrip-aqua text-offrip-black",
+  "bg-offrip-orange text-offrip-white",
+  "bg-offrip-lime text-offrip-black",
+  "bg-offrip-blue text-offrip-white",
 ];
-
-function avatarClasses(id: string) {
-  let hash = 0;
-  for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
-  return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
-}
+const SCORE_CHIP_COLORS = ["aqua", "orange", "lime", "blue"] as const;
 
 function initials(name: string | null) {
   if (!name) return "?";
@@ -388,10 +387,11 @@ export default function MatchesTab({
         }
         return (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {visibleMatches.map((m) => (
+            {visibleMatches.map((m, index) => (
               <MatchCard
                 key={m.id}
                 match={m}
+                index={index}
                 eventName={selectedEvent?.name ?? "this event"}
                 onViewFullProfile={onViewFullProfile}
                 isSaved={savedMatchIds.has(m.id)}
@@ -407,12 +407,14 @@ export default function MatchesTab({
 
 function MatchCard({
   match,
+  index,
   eventName,
   onViewFullProfile,
   isSaved,
   onToggleSaved,
 }: {
   match: EnrichedMatch;
+  index: number;
   eventName: string;
   onViewFullProfile: (matchId: string) => void;
   isSaved: boolean;
@@ -421,9 +423,16 @@ function MatchCard({
   const [status, setStatus] = useState<"idle" | "composing" | "sending" | "sent">(
     match.alreadyConnected ? "sent" : "idle",
   );
-  const label = getMatchBand(match.score);
+  const [showReason, setShowReason] = useState(false);
   const { other } = match;
+  const name = other.full_name ?? "Member";
   const subtitle = [other.title, other.company].filter(Boolean).join(" · ");
+  const tags = buildMatchTags(match.sharedIndustries, match.sharedInterests);
+  const avatarClass = OFFRIP_AVATAR_PALETTE[index % OFFRIP_AVATAR_PALETTE.length];
+  const scoreColor = SCORE_CHIP_COLORS[index % SCORE_CHIP_COLORS.length];
+  const composing = status === "composing" || status === "sending";
+  const actionCell =
+    "flex items-center justify-center px-2 py-3 text-center font-offrip-display text-[10px] font-black uppercase tracking-widest transition-colors disabled:pointer-events-none";
 
   const sendConnectMessage = async (rawContent: string) => {
     const content = rawContent.trim();
@@ -463,89 +472,108 @@ function MatchCard({
   };
 
   return (
-    <div className="relative border border-black/10 bg-white p-5 flex flex-col gap-3 hover:border-black hover:shadow-offrip-hard transition-all">
-      <button
-        type="button"
-        onClick={() => onToggleSaved(match.id)}
-        aria-label={isSaved ? `Remove ${other.full_name ?? "this match"} from saved` : `Save ${other.full_name ?? "this match"} for later`}
-        aria-pressed={isSaved}
-        className="absolute right-4 top-4 z-10 rounded-full border border-black/10 bg-white p-1.5 text-muted-foreground hover:border-black hover:text-black transition-colors"
-      >
-        <Bookmark className={`h-4 w-4 ${isSaved ? "fill-current text-primary" : ""}`} />
-      </button>
-      <button
-        type="button"
-        onClick={() => onViewFullProfile(match.id)}
-        className="flex flex-col gap-3 text-left"
-      >
-        <div className="flex items-start justify-between gap-3 pr-8">
-          <div className="flex items-center gap-3 min-w-0">
-            <Avatar className="h-12 w-12 border-2 border-primary shrink-0">
-              {other.avatar_url && <AvatarImage src={other.avatar_url} alt={other.full_name ?? "Profile photo"} />}
-              <AvatarFallback className={`font-label text-sm ${avatarClasses(other.id)}`}>
-                {initials(other.full_name)}
-              </AvatarFallback>
-            </Avatar>
-            <div className="min-w-0">
-              <p className="normal-case font-offrip-body font-normal truncate">{other.full_name ?? "Member"}</p>
-              {subtitle && <p className="text-xs text-muted-foreground normal-case font-offrip-body font-normal truncate">{subtitle}</p>}
-              {other.location && (
-                <p className="text-[11px] text-muted-foreground normal-case font-offrip-body font-normal flex items-center gap-1 mt-0.5">
-                  <MapPin className="h-3 w-3 shrink-0" />
-                  <span className="truncate">{other.location}</span>
-                </p>
-              )}
-              <p className="text-[10px] font-label uppercase tracking-widest text-muted-foreground mt-1 truncate">
-                {eventName}
-              </p>
+    <OffripCard className="flex flex-col">
+      <div className="p-4">
+        <div className="border border-offrip-black/10 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 gap-3">
+              <Avatar className="h-12 w-12 shrink-0 rounded-full border-2 border-offrip-black">
+                {other.avatar_url && <AvatarImage src={other.avatar_url} alt={name} />}
+                <AvatarFallback className={`rounded-full font-offrip-display text-sm font-bold ${avatarClass}`}>
+                  {initials(other.full_name)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="min-w-0">
+                <p className="truncate font-offrip-display font-bold uppercase">{name}</p>
+                {subtitle && (
+                  <p className="mt-0.5 truncate font-offrip-body text-sm text-offrip-medium-gray">{subtitle}</p>
+                )}
+                {other.location && (
+                  <p className="mt-0.5 flex items-center gap-1 font-offrip-body text-sm text-offrip-medium-gray">
+                    <MapPin className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{other.location}</span>
+                  </p>
+                )}
+              </div>
             </div>
+            <OffripChip color={scoreColor}>{match.score}%</OffripChip>
           </div>
-          <div className="flex flex-col items-end gap-1 shrink-0">
-            <span className={`font-label text-[10px] px-2 py-1 ooo-border ${label.className}`}>{label.text}</span>
-            <span className="font-label text-xs text-muted-foreground">{match.score}%</span>
-          </div>
+
+          {tags.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {tags.map((tag) => (
+                <span
+                  key={tag}
+                  className="inline-flex border border-offrip-black/20 px-2.5 py-1 font-offrip-display text-[10px] font-bold uppercase tracking-wide text-offrip-black"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
 
-        <Separator className="bg-primary/20" />
-
-        {match.reason && (
-          <p className="text-sm leading-relaxed normal-case font-offrip-body font-normal break-words">{match.reason}</p>
-        )}
-
-        {match.reciprocityLabel && (
-          <p className="text-xs font-label text-primary">{match.reciprocityLabel}</p>
-        )}
-
-        {(match.sharedIndustries.length > 0 || match.sharedInterests.length > 0) && (
-          <div className="flex flex-wrap gap-1.5">
-            {match.sharedIndustries.length > 0 && (
-              <span className="text-[10px] font-label bg-muted text-muted-foreground px-2 py-1 ooo-border">
-                Shared: {match.sharedIndustries.join(", ")}
-              </span>
-            )}
-            {match.sharedInterests.slice(0, 3).map((interest) => (
-              <span key={interest} className="text-[10px] font-label bg-muted text-muted-foreground px-2 py-1 ooo-border">
-                {interest}
-              </span>
-            ))}
+        {showReason && match.reason && (
+          <div className="mt-3 bg-offrip-light-gray p-4">
+            <p className="font-offrip-display text-[10px] font-bold uppercase tracking-widest text-offrip-medium-gray">
+              Why OFFRIP matched you
+            </p>
+            <p className="mt-2 font-offrip-body text-sm leading-relaxed text-offrip-black">{match.reason}</p>
           </div>
         )}
-      </button>
 
-      {status === "composing" || status === "sending" ? (
-        <ConnectComposer
-          defaultMessage={`Hi! Looking forward to connecting at ${eventName}.`}
-          sending={status === "sending"}
-          onSend={sendConnectMessage}
-          onCancel={() => setStatus("idle")}
-        />
-      ) : (
-        <Button className="w-full" disabled={status === "sent"} onClick={() => setStatus("composing")}>
-          {status === "sent" && <Check className="h-4 w-4" />}
-          {status === "sent" ? "Message Sent" : "Request to Connect"}
-        </Button>
-      )}
-    </div>
+        {composing && (
+          <div className="mt-3">
+            <ConnectComposer
+              defaultMessage={`Hi! Looking forward to connecting at ${eventName}.`}
+              sending={status === "sending"}
+              onSend={sendConnectMessage}
+              onCancel={() => setStatus("idle")}
+            />
+          </div>
+        )}
+      </div>
+
+      <div className="mt-auto grid grid-cols-2 border-t border-offrip-black/10">
+        <button
+          type="button"
+          onClick={() => onViewFullProfile(match.id)}
+          className={`${actionCell} border-b border-r border-offrip-black/10 hover:bg-offrip-black hover:text-offrip-white`}
+        >
+          View Profile
+        </button>
+        <button
+          type="button"
+          onClick={() => setShowReason((current) => !current)}
+          disabled={!match.reason}
+          aria-pressed={showReason}
+          className={`${actionCell} border-b border-offrip-black/10 disabled:opacity-30 ${
+            showReason ? "bg-offrip-black text-offrip-white" : "hover:bg-offrip-black hover:text-offrip-white"
+          }`}
+        >
+          See Why
+        </button>
+        <button
+          type="button"
+          onClick={() => setStatus("composing")}
+          disabled={status === "sent" || composing}
+          className={`${actionCell} border-r border-offrip-black/10 disabled:opacity-40 hover:bg-offrip-black hover:text-offrip-white`}
+        >
+          {status === "sent" ? "Message Sent" : "Message"}
+        </button>
+        <button
+          type="button"
+          onClick={() => onToggleSaved(match.id)}
+          aria-pressed={isSaved}
+          className={`${actionCell} ${
+            isSaved ? "bg-offrip-black text-offrip-white" : "hover:bg-offrip-black hover:text-offrip-white"
+          }`}
+        >
+          <Bookmark className={`mr-1 h-3 w-3 ${isSaved ? "fill-current" : ""}`} />
+          {isSaved ? "Saved" : "Save"}
+        </button>
+      </div>
+    </OffripCard>
   );
 }
 
@@ -565,29 +593,29 @@ function ConnectComposer({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs text-muted-foreground normal-case font-sans">This one's just a starting point</span>
+        <span className="font-offrip-body text-xs text-offrip-medium-gray">This one's just a starting point</span>
         <button
           type="button"
           onClick={onCancel}
           disabled={sending}
           aria-label="Cancel"
-          className="text-muted-foreground hover:text-foreground disabled:opacity-50 shrink-0"
+          className="shrink-0 text-offrip-medium-gray hover:text-offrip-black disabled:opacity-50"
         >
           <X className="h-4 w-4" />
         </button>
       </div>
       <textarea
-        className="w-full ooo-border bg-card px-3 py-2 text-sm normal-case font-sans resize-none"
+        className="w-full border border-offrip-black/20 bg-offrip-white px-3 py-2 font-offrip-body text-sm outline-none focus:border-offrip-black resize-none"
         rows={3}
         value={text}
         onChange={(e) => setText(e.target.value)}
         disabled={sending}
         autoFocus
       />
-      <Button className="w-full" disabled={sending || !text.trim()} onClick={() => onSend(text)}>
-        {sending && <Loader2 className="h-4 w-4 animate-spin" />}
+      <OffripButton className="w-full" disabled={sending || !text.trim()} onClick={() => onSend(text)}>
+        {sending && <Loader2 className="mr-1 h-4 w-4 animate-spin" />}
         {sending ? "Sending…" : "Send"}
-      </Button>
+      </OffripButton>
     </div>
   );
 }

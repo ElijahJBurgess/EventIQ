@@ -90,7 +90,7 @@ describe("MatchesTab controlled Room state", () => {
 
     expect(await screen.findByText("Checked Person A")).toBeInTheDocument();
     expect(screen.getByText("86%")).toBeInTheDocument();
-    expect(screen.getByText("Don't Leave Without Meeting")).toBeInTheDocument();
+    expect(screen.getByText("Founder · A Co")).toBeInTheDocument();
     expect(screen.queryByText("Absent Person")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Dashboard selected Room")).toHaveTextContent("room-a");
 
@@ -100,8 +100,9 @@ describe("MatchesTab controlled Room state", () => {
     expect(await screen.findByText("Checked Person B")).toBeInTheDocument();
     expect(screen.getByText("74%")).toBeInTheDocument();
     expect(screen.queryByText("Confidence 78%")).not.toBeInTheDocument();
-    expect(screen.getByText("Strong Match")).toBeInTheDocument();
-    expect(screen.getByText("Mutual Value")).toBeInTheDocument();
+    expect(screen.getByText("Creator · B Co")).toBeInTheDocument();
+    // The redesigned card drops the band label and reciprocity line.
+    expect(screen.queryByText("Mutual Value")).not.toBeInTheDocument();
     expect(mocks.queriedMatchEvents).toContain("room-a");
     expect(mocks.queriedMatchEvents).toContain("room-b");
 
