@@ -7,6 +7,7 @@ import ProgressIndicator from "@/components/profile-setup/ProgressIndicator";
 import { cleanRoleDetailsForIdentities } from "@/components/profile-setup/roleDetailsUtils";
 import { initialProfileSetupFormData, type ProfileSetupFormData } from "@/components/profile-setup/types";
 import { buildProfileUpdatePayload } from "@/components/profile-setup/profileUpdate";
+import { findMissingRequiredProfileFields } from "@/components/profile-setup/requiredProfileFields";
 import { supabase } from "@/integrations/supabase/client";
 import type { Json } from "@/integrations/supabase/types";
 import { getOwnedProfilePhotoPath, PROFILE_PHOTO_BUCKET } from "@/lib/profilePhotoStorage";
@@ -91,6 +92,19 @@ export default function EditProfileScreen({ userId, onClose, onSaved }: EditProf
     if (!formData || isSaving) return;
 
     setSaveError("");
+
+    // Same required pick-one fields the signup wizard blocks on. The wizard
+    // enforces these per-page; saveChanges writes the profile directly, so it
+    // re-checks them here instead of persisting a blanked-out required field.
+    const missingRequired = findMissingRequiredProfileFields(formData);
+    if (missingRequired.length > 0) {
+      setSaveError(
+        `Add the following before saving: ${missingRequired.map((item) => item.message).join(" · ")}`,
+      );
+      setCurrentPage(missingRequired[0].page);
+      return;
+    }
+
     setIsSaving(true);
     const cleanedRoleDetails = cleanRoleDetailsForIdentities(
       formData.roleDetails,
