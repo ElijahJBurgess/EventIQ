@@ -38,6 +38,7 @@ import { buildConnectionSummary } from "@/lib/connectionSummary";
 import { getViewerMatchMetrics } from "@/lib/checkedInMatches";
 import { selectHomeStatsEvent } from "@/lib/homeStatsEvent";
 import { buildEventCardSubtitle } from "@/lib/eventCardSubtitle";
+import { companyColleagueNames, formatCompanyInRoom, dontLeaveWithoutMeetingHeading } from "@/lib/homeCopy";
 import { getMatchBand } from "@/lib/matchPresentation";
 
 type Tab = "home" | "profile" | "events" | "matches" | "concierge" | "connections" | "messages" | "myday";
@@ -77,6 +78,7 @@ interface HomeStatsData {
   unreadMessages: number;
   topMatches: HomeMatch[];
   connectionsInMotion: HomeConnection[];
+  companyColleagues: string[];
 }
 
 interface HomeMeeting {
@@ -552,6 +554,20 @@ function HomeTab({
         return;
       }
 
+      // "Your company is in the room": other checked-in attendees at this event
+      // whose company matches the viewer's own. Skipped when the viewer has no
+      // company set. The RPC already filters by company; the client re-filters
+      // as a backstop. Cast because home_company_colleagues isn't in the
+      // generated types.ts yet (known drift — see README).
+      const ownCompany = profile?.company ?? "";
+      type CompanyColleagueRow = { full_name: string | null; company: string | null };
+      const colleagueRows: CompanyColleagueRow[] = ownCompany.trim()
+        ? (((await supabase.rpc("home_company_colleagues" as never, { p_event_id: activeEvent.id } as never)).data as
+            | CompanyColleagueRow[]
+            | null) ?? [])
+        : [];
+      const companyColleagues = companyColleagueNames(ownCompany, colleagueRows);
+
       const [registrationResult, scoredMatchResult, incomingResult, unreadResult, connectionResult] = await Promise.all([
         supabase.rpc("get_event_attendance_counts", { p_event_id: activeEvent.id }),
         supabase
@@ -684,13 +700,14 @@ function HomeTab({
           unreadMessages: unreadResult.count ?? 0,
           topMatches,
           connectionsInMotion,
+          companyColleagues,
         });
       }
     };
 
     loadStats();
     return () => { cancelled = true; };
-  }, [userId]);
+  }, [userId, profile?.company]);
 
   const firstName = profile?.full_name?.trim().split(/\s+/)[0] || "there";
   const formatEventDate = (date: string) => new Date(`${date}T00:00:00`).toLocaleDateString([], {
@@ -723,6 +740,7 @@ function HomeTab({
     if (connection.status === "accepted") return "aqua";
     return "blue";
   };
+  const companyInRoomText = stats ? formatCompanyInRoom(stats.companyColleagues, profile?.company) : null;
 
   return (
     <section className="bg-offrip-white p-6 font-offrip-body text-offrip-black sm:p-8">
@@ -825,10 +843,16 @@ function HomeTab({
               See the Room
             </OffripButton>
           </div>
+          {companyInRoomText && (
+            <div className="mt-4 border-2 border-offrip-black bg-offrip-lime p-5">
+              <p className="font-offrip-display text-xs font-bold uppercase tracking-widest">Your company is in the room</p>
+              <p className="mt-1 font-offrip-body text-sm text-offrip-black">{companyInRoomText}</p>
+            </div>
+          )}
           <div className="mt-8">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="font-offrip-display text-2xl font-black uppercase tracking-tight">Don't Leave Without Meeting</h2>
+                <h2 className="font-offrip-display text-2xl font-black uppercase tracking-tight">{dontLeaveWithoutMeetingHeading(stats.topMatches)}</h2>
                 <p className="mt-1 font-offrip-body text-sm text-offrip-medium-gray">Start here.</p>
               </div>
               {stats.topMatches.length > 0 && (

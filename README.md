@@ -89,7 +89,11 @@ docs/
 
 Postgres on Supabase, **RLS enabled on every table**. Writes to the relationship
 tables (`matches`, `messages`, `meetings`, `notifications`, connection tables) go
-through guarded `SECURITY DEFINER` RPCs, not direct table writes.
+through guarded `SECURITY DEFINER` RPCs, not direct table writes. Some reads that
+need to see past a self-only RLS policy also go through `SECURITY DEFINER`
+functions — e.g. `home_company_colleagues(p_event_id)` (Home "Your company is in
+the room" banner), which only returns checked-in attendees who share the caller's
+own company.
 
 ### Migrations caveat
 
