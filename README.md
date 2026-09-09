@@ -54,7 +54,7 @@ project, not in this file — see `.env.example` for the full list.
 
 ```
 src/
-  pages/v2/            route components (Landing, Auth, ProfileSetup, Dashboard, OrganizerAdmin, …)
+  pages/v2/            route components (Landing, Auth, ProfileSetup, Dashboard, OrganizerAdmin, OrganizerRooms, …)
   pages/v2/enterprise/ the 6 admin-dashboard tabs
   components/          feature areas: matches, messages, connections, notifications,
                       concierge, profile, profile-setup, offrip (design primitives), ui (shadcn)
@@ -80,6 +80,7 @@ docs/
 | `/v2/reset-password` | ResetPassword | public (token in URL) |
 | `/v2/setup` | ProfileSetup (5-step onboarding) | auth required |
 | `/v2` | Dashboard | auth + completed profile |
+| `/v2/organizer` | OrganizerRooms (self-serve room creation) | auth + completed profile; renders only if the caller's profile has `is_organizer = true`, else redirects to `/v2`. Entry point is an "Organizer Rooms" item in the Dashboard account menu, shown only to flagged accounts |
 | `/v2/admin` | OrganizerAdmin (enterprise dashboard) | **no route guard** — password-gated inside via the `admin-auth` function |
 | `/offrip-preview` | design-primitive preview | dev build only |
 
@@ -105,6 +106,40 @@ plainly that the two haven't officially matched yet. Scoped to attendees checked
 in at the same event, read straight from `event_registrations` (not the
 `auth.uid()`-gated `matched_event_attendance` view, which a service-role
 connection can't see through).
+
+### Organizer rooms (self-serve)
+
+`profiles.is_organizer` (boolean, default false) is a **manual grant** — there is
+no signup flow. Flip it directly:
+
+```sql
+update public.profiles set is_organizer = true where id = '<profile-uuid>';
+-- or by email:  ... where id = (select id from auth.users where email = 'name@example.com');
+```
+
+or in Supabase Studio → Table editor → `profiles` → the row's `is_organizer`
+cell. A `before insert or update` trigger
+(`block_self_service_organizer_grant`) rejects any change to `is_organizer` made
+from an end-user session (`auth.uid()` non-null), so a user cannot self-grant via
+the profile-edit path; admin changes (SQL editor / Studio / service role) run
+with no JWT and pass.
+
+A flagged account creates rooms straight from the client at `/v2/organizer` —
+`insert into events (…, organizer_id = auth.uid())`, no edge function. RLS does
+the enforcing:
+
+- The 2026-06 `"Authenticated can insert events"` policy (any signed-in user
+  could insert any event) is **dropped**.
+- `"Organizers can manage events"` is rebuilt `FOR ALL TO authenticated` with an
+  explicit `WITH CHECK` and an `is_organizer()` gate:
+  `USING / WITH CHECK (organizer_id = auth.uid() AND public.is_organizer())`.
+  So only flagged accounts can create/update/delete, and only their own rows.
+- `"Anyone can view published events"` is unchanged: published rooms are
+  world-readable; owners see their own drafts. A self-serve organizer never sees
+  another organizer's rooms or the owner analytics dashboard.
+
+Editing/deleting rooms has no UI yet, but the policy already permits an organizer
+to update/delete their own rows.
 
 `matches` rows are stored in **canonical pair order** — `user_a_id` is always the
 smaller UUID (`matches_user_a_before_b` CHECK). `match-engine` writes that order

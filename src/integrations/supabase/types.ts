@@ -1088,6 +1088,7 @@ export type Database = {
           industry_preference: string | null
           interests: string[] | null
           investment_stage: string | null
+          is_organizer: boolean
           last_name: string | null
           linkedin_url: string | null
           location: string | null
@@ -1150,6 +1151,7 @@ export type Database = {
           industry_preference?: string | null
           interests?: string[] | null
           investment_stage?: string | null
+          is_organizer?: boolean
           last_name?: string | null
           linkedin_url?: string | null
           location?: string | null
@@ -1212,6 +1214,7 @@ export type Database = {
           industry_preference?: string | null
           interests?: string[] | null
           investment_stage?: string | null
+          is_organizer?: boolean
           last_name?: string | null
           linkedin_url?: string | null
           location?: string | null

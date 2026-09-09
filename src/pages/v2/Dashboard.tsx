@@ -63,6 +63,7 @@ interface Profile {
   title?: string | null;
   role_type?: string | null;
   company?: string | null;
+  is_organizer?: boolean | null;
 }
 
 interface HomeStatsData {
@@ -166,7 +167,7 @@ export default function DashboardV2() {
 
   const loadProfile = useCallback(async () => {
     if (!user) return;
-    const { data } = await supabase.from("profiles").select("id,full_name").eq("id", user.id).maybeSingle();
+    const { data } = await supabase.from("profiles").select("id,full_name,is_organizer").eq("id", user.id).maybeSingle();
     setProfile(data as Profile | null);
     setLoading(false);
   }, [user]);
@@ -262,6 +263,11 @@ export default function DashboardV2() {
                 >
                   Edit Profile
                 </DropdownMenuItem>
+                {profile?.is_organizer && (
+                  <DropdownMenuItem onSelect={() => navigate("/v2/organizer")}>
+                    Organizer Rooms
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem disabled>Privacy Policy</DropdownMenuItem>
                 <DropdownMenuItem onSelect={async () => { await signOut(); navigate("/v2/auth"); }}>
                   Sign Out
