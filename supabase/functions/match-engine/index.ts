@@ -16,6 +16,7 @@ import {
   type MatchEngineResult,
 } from "./handler.ts";
 import { buildMatchDetails, calculateMatchScore, type MatchDetails, type MatchResult, type Profile } from "./scorer.ts";
+import { buildStoredMatchValues, canonicalOrientation } from "./canonical.ts";
 
 const PROFILE_SELECT =
   "id, full_name, role_type, secondary_role_types, role_details, who_to_meet, desired_outcomes, areas_of_expertise, expertise_sought, matching_goal, primary_goal, secondary_goals, primary_function, additional_functions, seniority, career_level_preference, industry_focus, industries, industry_preference, needs, offers, connection_preference, interests, communities, hobbies, music_interests, favorite_conferences, location, location_city, location_state_code, location_preference, profile_completed, profile_completion_score, updated_at, linkedin_url";
@@ -199,77 +200,30 @@ async function runMatching(profileId: string, eventId: string): Promise<MatchEng
     );
 
     let matchesUpdated = 0;
-    const rowsToInsert: Record<string, unknown>[] = [];
+    const rowsToUpsert: Record<string, unknown>[] = [];
     const now = new Date().toISOString();
-
-    const storedValues = (
-      result: MatchResult,
-      details: MatchDetails,
-      orientedAsCalculated: boolean,
-    ): Record<string, unknown> => {
-      const aToBScore = orientedAsCalculated ? result.aToBScore : result.bToAScore;
-      const bToAScore = orientedAsCalculated ? result.bToAScore : result.aToBScore;
-      const aToBConfidence = orientedAsCalculated ? result.aToBConfidence : result.bToAConfidence;
-      const bToAConfidence = orientedAsCalculated ? result.bToAConfidence : result.aToBConfidence;
-      const scoreBreakdown = orientedAsCalculated
-        ? result.scoreBreakdown
-        : { aToB: result.scoreBreakdown.bToA, bToA: result.scoreBreakdown.aToB };
-      const matchEvidence = orientedAsCalculated
-        ? result.matchEvidence
-        : { aToB: result.matchEvidence.bToA, bToA: result.matchEvidence.aToB };
-      const reasons = orientedAsCalculated ? result.aToBReasons : result.bToAReasons;
-      const reciprocityLabel = orientedAsCalculated
-        ? result.reciprocityLabel
-        : result.reciprocityLabel === "They Can Help You"
-          ? "You Can Help Them"
-          : result.reciprocityLabel === "You Can Help Them"
-            ? "They Can Help You"
-            : result.reciprocityLabel;
-      return {
-        a_to_b_score: aToBScore,
-        b_to_a_score: bToAScore,
-        a_to_b_confidence: aToBConfidence,
-        b_to_a_confidence: bToAConfidence,
-        reciprocity_label: reciprocityLabel,
-        score_version: result.scoreVersion,
-        score_breakdown: scoreBreakdown,
-        match_evidence: matchEvidence,
-        match_details: orientedAsCalculated
-          ? details
-          : {
-              ...details,
-              matchedGoals: details.matchedGoals.map(({ goalA, goalB, ...rest }) => ({ goalA: goalB, goalB: goalA, ...rest })),
-              matchedRoles: details.matchedRoles.map(({ roleA, roleB, ...rest }) => ({ roleA: roleB, roleB: roleA, ...rest })),
-              needsOffersAToB: details.needsOffersBToA,
-              needsOffersBToA: details.needsOffersAToB,
-            },
-        // Transitional shared values remain populated for the unchanged UI.
-        match_score: aToBScore,
-        match_reason: reasons.join(" "),
-        generated_at: now,
-      };
-    };
 
     for (const match of scoredMatches) {
       const key = pairKey(profileId, match.other.id);
+      const { userAId, userBId, orientedAsCalculated } = canonicalOrientation(profileId, match.other.id);
       const existing = existingByPair.get(key);
-      if (existing) {
-        const orientedAsCalculated = existing.user_a_id === profileId;
+      if (existing && existing.id !== "pending") {
         const { error: updateError } = await supabase
           .from("matches")
-          .update(storedValues(match.result, match.details, orientedAsCalculated))
+          .update(buildStoredMatchValues(match.result, match.details, now, orientedAsCalculated))
           .eq("id", existing.id);
         if (updateError) throw new Error("Match update failed");
         matchesUpdated += 1;
         continue;
       }
-      existingByPair.set(key, { id: "pending", user_a_id: profileId, user_b_id: match.other.id });
+      existingByPair.set(key, { id: "pending", user_a_id: userAId, user_b_id: userBId });
 
-      rowsToInsert.push({
-        user_a_id: profileId,
-        user_b_id: match.other.id,
+      rowsToUpsert.push({
+        user_a_id: userAId,
+        user_b_id: userBId,
         event_id: eventId,
-        ...storedValues(match.result, match.details, true),
+        ...buildStoredMatchValues(match.result, match.details, now, orientedAsCalculated),
+        // Symmetric (order-independent) set intersections -- no orientation swap.
         shared_goals: sharedGoals(requestingProfile, match.other),
         shared_industries: overlapValues(requestingProfile.industry_focus, match.other.industry_focus),
         shared_interests: sharedInterestsList(requestingProfile, match.other),
@@ -279,12 +233,14 @@ async function runMatching(profileId: string, eventId: string): Promise<MatchEng
       });
     }
 
-    // 8. Save.
+    // 8. Save. Atomic upsert on the canonical pair key so two concurrent
+    // match-engine calls for the same pair (in either direction) resolve to one
+    // row -- INSERT ... ON CONFLICT (event_id, user_a_id, user_b_id) DO UPDATE.
     let matchesSaved = 0;
-    if (rowsToInsert.length > 0) {
+    if (rowsToUpsert.length > 0) {
       const { data: inserted, error: insertError } = await supabase
         .from("matches")
-        .insert(rowsToInsert)
+        .upsert(rowsToUpsert, { onConflict: "event_id,user_a_id,user_b_id" })
         .select("id");
 
       if (insertError) {

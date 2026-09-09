@@ -95,6 +95,13 @@ functions — e.g. `home_company_colleagues(p_event_id)` (Home "Your company is 
 the room" banner), which only returns checked-in attendees who share the caller's
 own company.
 
+`matches` rows are stored in **canonical pair order** — `user_a_id` is always the
+smaller UUID (`matches_user_a_before_b` CHECK). `match-engine` writes that order
+and upserts on `(event_id, user_a_id, user_b_id)`, so concurrent runs for the
+same pair can't create a mirrored/duplicate row. The direction-dependent columns
+(`a_to_b_*` / `b_to_a_*`, the `aToB`/`bToA` halves of `score_breakdown` /
+`match_evidence`, `reciprocity_label`, `match_details`) are oriented to match.
+
 ### Migrations caveat
 
 `supabase/migrations/` and the remote migration history have **drifted** — the

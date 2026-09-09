@@ -15,6 +15,7 @@ export default defineConfig({
     include: [
       "src/**/*.{test,spec}.{ts,tsx}",
       "supabase/functions/match-engine/scorer.test.ts",
+      "supabase/functions/match-engine/canonical.test.ts",
       "supabase/functions/admin-auth/stats.test.ts",
       "supabase/functions/admin-auth/insights.test.ts",
       "supabase/functions/admin-auth/report.test.ts",

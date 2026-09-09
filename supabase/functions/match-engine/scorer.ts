@@ -568,6 +568,14 @@ function reasons(items: MatchEvidenceItem[]): string[] {
   return items.sort((a, b) => WEIGHTS[b.component] - WEIGHTS[a.component] || b.score - a.score).slice(0, 3).map((item) => `${item.viewerValue} matches ${item.candidateValue} (${item.mapping}).`);
 }
 
+/** The `match_reason` text for one direction, rebuilt from that direction's stored evidence. */
+export function matchReasonSummary(evidence: MatchEvidenceItem[]): string {
+  return reasons([...evidence]).join(" ");
+}
+
+/** Component weights, exported so the canonicalisation helper and the cleanup migration stay in sync with the scorer. */
+export const COMPONENT_WEIGHTS: Record<string, number> = { ...WEIGHTS };
+
 export function calculateMatchScore(profileA: Profile, profileB: Profile): MatchResult {
   const aToB = scoreDirection(profileA, profileB);
   const bToA = scoreDirection(profileB, profileA);
