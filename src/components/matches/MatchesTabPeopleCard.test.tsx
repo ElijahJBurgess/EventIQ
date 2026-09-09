@@ -118,17 +118,19 @@ describe("People card", () => {
     expect(screen.getByText("94%")).toBeInTheDocument();
   });
 
-  it("hides the reason until See Why is toggled, then hides it again", async () => {
+  it("opens the reason in a modal from See Why, and closing it hides the reason", async () => {
     renderTab();
     await screen.findByText("Jordan Lee");
 
     expect(screen.queryByText(/hiring engineering talent/)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /see why/i }));
-    expect(screen.getByText(/hiring engineering talent/)).toBeInTheDocument();
-    expect(screen.getByText(/why offrip matched you/i)).toBeInTheDocument();
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText(/why offrip matched you/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(/hiring engineering talent/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /see why/i }));
+    fireEvent.click(within(dialog).getByRole("button", { name: /close/i }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.queryByText(/hiring engineering talent/)).not.toBeInTheDocument();
   });
 

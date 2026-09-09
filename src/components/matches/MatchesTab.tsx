@@ -10,6 +10,7 @@ import { buildMatchTags } from "@/lib/matchTags";
 import OffripButton from "@/components/offrip/Button";
 import OffripCard from "@/components/offrip/Card";
 import OffripChip from "@/components/offrip/Chip";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -423,7 +424,7 @@ function MatchCard({
   const [status, setStatus] = useState<"idle" | "composing" | "sending" | "sent">(
     match.alreadyConnected ? "sent" : "idle",
   );
-  const [showReason, setShowReason] = useState(false);
+  const [reasonOpen, setReasonOpen] = useState(false);
   const { other } = match;
   const name = other.full_name ?? "Member";
   const subtitle = [other.title, other.company].filter(Boolean).join(" · ");
@@ -513,15 +514,6 @@ function MatchCard({
           )}
         </div>
 
-        {showReason && match.reason && (
-          <div className="mt-5 bg-offrip-light-gray p-6">
-            <p className="font-offrip-display text-[10px] font-bold uppercase tracking-widest text-offrip-medium-gray">
-              Why OFFRIP matched you
-            </p>
-            <p className="mt-3 font-offrip-body text-sm leading-relaxed text-offrip-black">{match.reason}</p>
-          </div>
-        )}
-
         {composing && (
           <div className="mt-5">
             <ConnectComposer
@@ -544,12 +536,9 @@ function MatchCard({
         </button>
         <button
           type="button"
-          onClick={() => setShowReason((current) => !current)}
+          onClick={() => setReasonOpen(true)}
           disabled={!match.reason}
-          aria-pressed={showReason}
-          className={`${actionCell} border-b border-offrip-black/10 disabled:opacity-30 ${
-            showReason ? "bg-offrip-black text-offrip-white" : "hover:bg-offrip-black hover:text-offrip-white"
-          }`}
+          className={`${actionCell} border-b border-offrip-black/10 disabled:opacity-30 hover:bg-offrip-black hover:text-offrip-white`}
         >
           See Why
         </button>
@@ -573,6 +562,20 @@ function MatchCard({
           {isSaved ? "Saved" : "Save"}
         </button>
       </div>
+
+      <Dialog open={reasonOpen} onOpenChange={setReasonOpen}>
+        <DialogContent className="border border-offrip-black bg-offrip-white sm:rounded-none">
+          <DialogHeader>
+            <DialogTitle className="font-offrip-display uppercase tracking-wide">
+              Why OFFRIP matched you
+            </DialogTitle>
+            <DialogDescription className="font-offrip-body text-offrip-medium-gray">
+              {[name, subtitle].filter(Boolean).join(" · ")}
+            </DialogDescription>
+          </DialogHeader>
+          <p className="font-offrip-body text-sm leading-relaxed text-offrip-black">{match.reason}</p>
+        </DialogContent>
+      </Dialog>
     </OffripCard>
   );
 }
