@@ -9,6 +9,7 @@ import {
   PROFILE_PHOTO_BUCKET,
 } from "@/lib/profilePhotoStorage";
 import PillSelect from "./PillSelect";
+import { REQUIRED_PROFILE_FIELD_MESSAGES } from "./requiredProfileFields";
 import type { ProfileSetupPageProps } from "./types";
 
 const ROLE_TYPES = [
@@ -82,7 +83,9 @@ interface FieldErrors {
   company?: string;
   roleType?: string;
   customRoleType?: string;
+  secondaryRoleTypes?: string;
   primaryFunction?: string;
+  additionalFunctions?: string;
   seniority?: string;
   location?: string;
   linkedinUrl?: string;
@@ -290,8 +293,16 @@ export default function Page1BasicInfo({
       next.customRoleType = "Tell us what best describes you";
     }
 
+    if (formData.secondaryRoleTypes.length === 0) {
+      next.secondaryRoleTypes = REQUIRED_PROFILE_FIELD_MESSAGES.secondaryRoleTypes;
+    }
+
     if (!formData.primaryFunction) {
       next.primaryFunction = "Select at least 1 function";
+    }
+
+    if (formData.additionalFunctions.length === 0) {
+      next.additionalFunctions = REQUIRED_PROFILE_FIELD_MESSAGES.additionalFunctions;
     }
 
     if (!formData.seniority) {
@@ -508,7 +519,7 @@ export default function Page1BasicInfo({
         <div>
           <label className={labelClass}>
             Which identities best describe you? <span className="text-destructive">*</span>{" "}
-            <span className="text-muted-foreground font-normal normal-case">(choose up to 3)</span>
+            <span className="text-muted-foreground font-normal normal-case">(choose 2 or 3)</span>
           </label>
           <PillSelect
             options={ROLE_TYPES}
@@ -551,12 +562,13 @@ export default function Page1BasicInfo({
           )}
           {identityLimitReached && <p className={errorClass}>Choose up to 3 identities.</p>}
           {errors.roleType && <p className={errorClass}>{errors.roleType}</p>}
+          {errors.secondaryRoleTypes && <p className={errorClass}>{errors.secondaryRoleTypes}</p>}
         </div>
 
         <div>
           <label className={labelClass}>
             Which functions best describe your work? <span className="text-destructive">*</span>{" "}
-            <span className="text-muted-foreground font-normal normal-case">(choose up to 3)</span>
+            <span className="text-muted-foreground font-normal normal-case">(choose 2 or 3)</span>
           </label>
           <PillSelect
             options={FUNCTION_TYPES}
@@ -584,6 +596,7 @@ export default function Page1BasicInfo({
           )}
           {functionLimitReached && <p className={errorClass}>Choose up to 3 functions.</p>}
           {errors.primaryFunction && <p className={errorClass}>{errors.primaryFunction}</p>}
+          {errors.additionalFunctions && <p className={errorClass}>{errors.additionalFunctions}</p>}
         </div>
 
         <div>

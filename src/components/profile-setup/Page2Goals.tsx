@@ -1,5 +1,6 @@
 import { useState } from "react";
 import PillSelect from "./PillSelect";
+import { REQUIRED_PROFILE_FIELD_MESSAGES } from "./requiredProfileFields";
 import type { ProfileSetupPageProps } from "./types";
 
 const GOAL_OPTIONS = [
@@ -125,6 +126,7 @@ const NO_OPPORTUNITIES_GOAL = "I'm Not Currently Looking for New Opportunities";
 
 interface FieldErrors {
   goals?: string;
+  secondaryGoals?: string;
   needs?: string;
   offers?: string;
 }
@@ -181,6 +183,7 @@ export default function Page2Goals({ formData, setFormData, onNext, onBack }: Pr
   const validate = () => {
     const next: FieldErrors = {};
     if (!formData.primaryGoal) next.goals = "Select at least 1 goal";
+    if (formData.secondaryGoals.length === 0) next.secondaryGoals = REQUIRED_PROFILE_FIELD_MESSAGES.secondaryGoals;
     if (formData.needs.length === 0) next.needs = "Select at least 1 way someone can help";
     if (formData.offers.length === 0) next.offers = "Select at least 1 thing you can offer";
     setErrors(next);
@@ -198,7 +201,7 @@ export default function Page2Goals({ formData, setFormData, onNext, onBack }: Pr
         <div>
           <label className={sectionLabel}>
             What are you hoping to make happen right now? <span className="text-destructive">*</span>{" "}
-            <span className="text-muted-foreground font-normal normal-case">(choose up to 3)</span>
+            <span className="text-muted-foreground font-normal normal-case">(choose 2 or 3)</span>
           </label>
           <PillSelect
             options={GOAL_OPTIONS}
@@ -225,6 +228,7 @@ export default function Page2Goals({ formData, setFormData, onNext, onBack }: Pr
           <p className={countText}>{selectedGoals.length} of 3 selected</p>
           {goalMaxHit && <p className={messageText}>Maximum 3 selections</p>}
           {errors.goals && <p className={messageText}>{errors.goals}</p>}
+          {errors.secondaryGoals && <p className={messageText}>{errors.secondaryGoals}</p>}
         </div>
 
         <div>

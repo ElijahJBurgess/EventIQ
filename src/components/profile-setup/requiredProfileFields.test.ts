@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { initialProfileSetupFormData, type ProfileSetupFormData } from "./types";
-import { findMissingRequiredProfileFields } from "./requiredProfileFields";
+import { findMissingRequiredProfileFields, REQUIRED_ARRAY_FIELDS } from "./requiredProfileFields";
 
 const complete: ProfileSetupFormData = {
   ...initialProfileSetupFormData,
@@ -10,10 +10,18 @@ const complete: ProfileSetupFormData = {
   primaryGoal: "Raise Capital",
   industryPreference: "Show me a mix of both",
   locationPreference: "mix",
+  secondaryRoleTypes: ["Investor"],
+  additionalFunctions: ["Engineering"],
+  secondaryGoals: ["Hire Talent"],
+  needs: ["Hiring Talent"],
+  offers: ["Career Advice"],
+  whoToMeet: ["Founders"],
+  careerLevelPreference: ["Director"],
+  connectionPreference: ["Quick Introduction"],
 };
 
 describe("findMissingRequiredProfileFields", () => {
-  it("returns no findings when every required pick-one field is set", () => {
+  it("returns no findings when every required field is set", () => {
     expect(findMissingRequiredProfileFields(complete)).toEqual([]);
   });
 
@@ -53,18 +61,37 @@ describe("findMissingRequiredProfileFields", () => {
     ]);
   });
 
-  it("treats whitespace-only values as blank", () => {
+  it("treats whitespace-only text values as blank", () => {
     const findings = findMissingRequiredProfileFields({ ...complete, seniority: "   " });
     expect(findings.map((f) => f.field)).toEqual(["seniority"]);
   });
 
-  it("returns findings ordered by wizard page when several are blank", () => {
+  // The eight multi-selects that became required.
+  for (const entry of REQUIRED_ARRAY_FIELDS) {
+    it(`flags an empty ${entry.field}`, () => {
+      const findings = findMissingRequiredProfileFields({ ...complete, [entry.field]: [] });
+      expect(findings).toEqual([entry]);
+    });
+  }
+
+  it("passes when a multi-select has at least one selection", () => {
+    expect(findMissingRequiredProfileFields({ ...complete, whoToMeet: ["Investors", "Recruiters"] })).toEqual([]);
+  });
+
+  it("returns findings ordered by wizard page when several are missing", () => {
     const findings = findMissingRequiredProfileFields({
       ...complete,
-      locationPreference: "",
+      connectionPreference: [],
       roleType: "",
-      primaryGoal: "",
+      secondaryGoals: [],
+      additionalFunctions: [],
     });
-    expect(findings.map((f) => f.field)).toEqual(["roleType", "primaryGoal", "locationPreference"]);
+    expect(findings.map((f) => f.page)).toEqual([1, 1, 2, 3]);
+    expect(findings.map((f) => f.field)).toEqual([
+      "roleType",
+      "additionalFunctions",
+      "secondaryGoals",
+      "connectionPreference",
+    ]);
   });
 });

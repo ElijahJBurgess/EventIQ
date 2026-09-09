@@ -1,5 +1,6 @@
 import { useState } from "react";
 import PillSelect from "./PillSelect";
+import { REQUIRED_PROFILE_FIELD_MESSAGES } from "./requiredProfileFields";
 import type { ProfileSetupPageProps } from "./types";
 
 const WHO_TO_MEET_OPTIONS = [
@@ -63,6 +64,8 @@ interface FieldErrors {
   whoToMeet?: string;
   industryPreference?: string;
   locationPreference?: string;
+  careerLevelPreference?: string;
+  connectionPreference?: string;
 }
 
 function normalizeNoPreference(current: string[], next: string[]): string[] {
@@ -85,6 +88,12 @@ export default function Page3WhoAndFilters({ formData, setFormData, onNext, onBa
     if (formData.whoToMeet.length === 0) next.whoToMeet = "Select at least 1 option";
     if (!formData.industryPreference) next.industryPreference = "Select an industry preference";
     if (!formData.locationPreference) next.locationPreference = "Select a location preference";
+    if (formData.careerLevelPreference.length === 0) {
+      next.careerLevelPreference = REQUIRED_PROFILE_FIELD_MESSAGES.careerLevelPreference;
+    }
+    if (formData.connectionPreference.length === 0) {
+      next.connectionPreference = REQUIRED_PROFILE_FIELD_MESSAGES.connectionPreference;
+    }
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -155,8 +164,8 @@ export default function Page3WhoAndFilters({ formData, setFormData, onNext, onBa
 
         <div>
           <label className={sectionLabel}>
-            Are there career levels you would like us to prioritize?{" "}
-            <span className="text-muted-foreground font-normal normal-case">(optional, choose up to 3)</span>
+            Are there career levels you would like us to prioritize? <span className="text-destructive">*</span>{" "}
+            <span className="text-muted-foreground font-normal normal-case">(choose up to 3)</span>
           </label>
           <PillSelect
             options={CAREER_LEVEL_OPTIONS}
@@ -177,12 +186,12 @@ export default function Page3WhoAndFilters({ formData, setFormData, onNext, onBa
           />
           <p className={countText}>{formData.careerLevelPreference.length} of 3 selected</p>
           {careerMaxHit && <p className={messageText}>Maximum 3 selections</p>}
+          {errors.careerLevelPreference && <p className={messageText}>{errors.careerLevelPreference}</p>}
         </div>
 
         <div>
           <label className={sectionLabel}>
-            How would you prefer to connect?{" "}
-            <span className="text-muted-foreground font-normal normal-case">(optional)</span>
+            How would you prefer to connect? <span className="text-destructive">*</span>
           </label>
           <PillSelect
             options={CONNECTION_PREFERENCE_OPTIONS}
@@ -194,6 +203,7 @@ export default function Page3WhoAndFilters({ formData, setFormData, onNext, onBa
               }))
             }
           />
+          {errors.connectionPreference && <p className={messageText}>{errors.connectionPreference}</p>}
         </div>
       </div>
 
