@@ -33,8 +33,9 @@ const serviceRoleClient = supabaseUrl && supabaseServiceRoleKey
     })
   : null;
 const telemetryClient = serviceRoleClient as unknown as ConciergeTelemetryClient | null;
-// Used only to read an unmatched attendee's profile for the live comparison
-// (the caller's RLS cannot see it) -- scoped to same-event checked-in attendees.
+// Live unmatched-comparison plumbing. It needs an event roster to scope against,
+// which the platform-wide request no longer carries, so it stays dormant unless
+// buildConciergeContext is given an explicit event context.
 const liveCandidateSource = serviceRoleClient
   ? createSupabaseLiveCandidateSource(serviceRoleClient as unknown as ConciergeQueryClient)
   : undefined;
@@ -48,10 +49,9 @@ const handler = createConciergeHandler({
       auth: { autoRefreshToken: false, persistSession: false },
     }) as unknown as ConciergeSupabaseClient;
   },
-  gatherContext: (client, authenticatedUserId, eventId, question) => buildConciergeContext(
+  gatherContext: (client, authenticatedUserId, question) => buildConciergeContext(
     createSupabaseContextSource(client as unknown as ConciergeQueryClient),
     authenticatedUserId,
-    eventId,
     question,
     liveCandidateSource,
   ),

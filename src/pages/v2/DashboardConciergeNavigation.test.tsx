@@ -100,15 +100,14 @@ beforeEach(() => {
     data: {
       success: true,
       requestId: "server-request",
-      eventId: "room-b",
-      answer: "Marcus is your strongest checked-in match.",
+      answer: "Marcus is your strongest match.",
       people: [{ profileId: "marcus-id", matchId: "match-marcus", name: "Marcus Lee", title: "Investor", company: "Northstar", matchScore: 94, reason: "Fundraising fit" }],
       meetings: [{ meetingId: "meeting-marcus", matchId: "match-marcus", otherProfileId: "marcus-id", otherName: "Marcus Lee", scheduledAt: "2099-08-21T18:00:00Z", duration: 30, location: "Lobby", status: "scheduled" }],
       context: {
         status: "ready",
         authenticatedUserId: "current-user",
-        event: { id: "room-b", name: "Room B" },
-        checkedInMatchCount: 0,
+        matchCount: 1,
+        eventCount: 1,
         conversationCount: 0,
         activeMeetingCount: 0,
         allowedMatchIds: [],
@@ -151,7 +150,7 @@ describe("Dashboard Concierge navigation", () => {
     );
   });
 
-  it("uses one canonical Room for Rooms, Matches, and Concierge across tab changes", async () => {
+  it("uses one canonical Room for Rooms and Matches, and a platform-wide Concierge", async () => {
     render(
       <MemoryRouter>
         <DashboardV2 />
@@ -170,34 +169,33 @@ describe("Dashboard Concierge navigation", () => {
 
     const mobileNav = screen.getByRole("navigation", { name: "Mobile attendee navigation" });
     fireEvent.click(within(mobileNav).getByRole("button", { name: "Concierge" }));
-    expect(screen.getByRole("region", { name: "OFFRIP Concierge" })).toHaveAttribute(
-      "data-selected-event-id",
-      "room-b",
-    );
+    // Concierge no longer binds to the selected room -- it answers without one.
+    expect(screen.getByRole("region", { name: "OFFRIP Concierge" })).not.toHaveAttribute("data-selected-event-id");
     fireEvent.change(screen.getByRole("textbox", { name: "Ask OFFRIP Concierge" }), {
-      target: { value: "Who is in Room B?" },
+      target: { value: "Who should I meet?" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
-    expect(await screen.findByText("Marcus is your strongest checked-in match.")).toBeInTheDocument();
+    expect(await screen.findByText("Marcus is your strongest match.")).toBeInTheDocument();
     expect(mocks.functionInvoke).toHaveBeenCalledWith("concierge", expect.objectContaining({
-      body: expect.objectContaining({ question: "Who is in Room B?", eventId: "room-b" }),
+      body: expect.objectContaining({ question: "Who should I meet?" }),
     }));
+    expect(mocks.functionInvoke.mock.calls.at(-1)?.[1].body).not.toHaveProperty("eventId");
 
     fireEvent.click(screen.getByRole("button", { name: "View Marcus Lee's profile" }));
     expect(screen.getByText("Profile match: match-marcus")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "← Back to Concierge" }));
-    expect(screen.getByText("Marcus is your strongest checked-in match.")).toBeInTheDocument();
+    expect(screen.getByText("Marcus is your strongest match.")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "View My Day →" }));
     expect(await screen.findByText("Your day")).toBeInTheDocument();
     fireEvent.click(within(mobileNav).getByRole("button", { name: "Concierge" }));
-    expect(screen.getByText("Marcus is your strongest checked-in match.")).toBeInTheDocument();
+    expect(screen.getByText("Marcus is your strongest match.")).toBeInTheDocument();
 
     fireEvent.click(within(desktopNav).getByRole("button", { name: "Home" }));
     fireEvent.click(within(desktopNav).getByRole("button", { name: "People" }));
     expect(screen.getByText("People event: room-b")).toBeInTheDocument();
     fireEvent.click(within(mobileNav).getByRole("button", { name: "Concierge" }));
-    expect(screen.getByText("Who is in Room B?")).toBeInTheDocument();
-    expect(screen.getByText("Marcus is your strongest checked-in match.")).toBeInTheDocument();
+    expect(screen.getByText("Who should I meet?")).toBeInTheDocument();
+    expect(screen.getByText("Marcus is your strongest match.")).toBeInTheDocument();
   });
 });

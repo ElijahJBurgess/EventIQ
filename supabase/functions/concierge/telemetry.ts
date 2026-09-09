@@ -7,7 +7,8 @@ export interface ConciergeTelemetryClient { from(table: "concierge_logs"): Inser
 export interface ConciergeTelemetryEntry {
   requestId: string;
   userId: string;
-  eventId: string;
+  /** Legacy field -- the concierge is platform-wide now and does not send it. */
+  eventId?: string;
   status: ConciergeTelemetryStatus;
   recommendedMatchIds?: string[];
   providerRequestId?: string;
@@ -22,9 +23,9 @@ export async function logConciergeSearch(
     source: "concierge_v1",
     request_id: entry.requestId,
     user_id: entry.userId,
-    event_id: entry.eventId,
     status: entry.status,
   };
+  if (entry.eventId) context.event_id = entry.eventId;
   if (entry.providerRequestId) context.openai_request_id = entry.providerRequestId;
   if (entry.providerErrorCode) context.provider_error_code = entry.providerErrorCode;
   const { error } = await client.from("concierge_logs").insert({

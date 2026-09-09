@@ -51,7 +51,7 @@ describe("ConciergeTab", () => {
     fireEvent.submit(form!);
 
     expect(onSubmit).toHaveBeenCalledOnce();
-    expect(screen.getByText("Ask about your current Room.")).toBeInTheDocument();
+    expect(screen.getByText("Ask about your matches.")).toBeInTheDocument();
     expect(screen.queryByText(/you should meet/i)).not.toBeInTheDocument();
   });
 

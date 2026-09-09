@@ -8,13 +8,12 @@ export interface ConciergeHistoryItem {
 export interface ConciergeRequestPayload {
   [key: string]: unknown;
   question: string;
-  eventId: string;
   requestId: string;
   history: ConciergeHistoryItem[];
   timezone?: string;
 }
 
-export type ConciergeContextStatus = "ready" | "profile_completion_required" | "no_matches" | "no_people_checked_in";
+export type ConciergeContextStatus = "ready" | "profile_completion_required" | "no_matches";
 
 export interface ConciergePersonResult {
   profileId: string;
@@ -40,15 +39,14 @@ export interface ConciergeMeetingResult {
 export interface ConciergeEdgeResponse {
   success: true;
   requestId: string;
-  eventId: string;
   answer?: string;
   people: ConciergePersonResult[];
   meetings: ConciergeMeetingResult[];
   context: {
     status: ConciergeContextStatus;
     authenticatedUserId: string;
-    event: { id: string; name: string };
-    checkedInMatchCount: number;
+    matchCount: number;
+    eventCount: number;
     conversationCount: number;
     activeMeetingCount: number;
     allowedMatchIds: string[];
@@ -60,7 +58,7 @@ export type ConciergeInvokeResult =
   | { ok: true; response: ConciergeEdgeResponse }
   | {
       ok: false;
-      kind: "auth" | "room_access" | "rate_limit" | "timeout" | "network" | "server";
+      kind: "auth" | "forbidden" | "rate_limit" | "timeout" | "network" | "server";
       status?: number;
     };
 
@@ -90,7 +88,7 @@ export async function invokeConciergeEdge(
     if (error) {
       const status = errorStatus(error);
       if (status === 401) return { ok: false, kind: "auth", status };
-      if (status === 403) return { ok: false, kind: "room_access", status };
+      if (status === 403) return { ok: false, kind: "forbidden", status };
       if (status === 429) return { ok: false, kind: "rate_limit", status };
       const errorText = `${error.name ?? ""} ${error.message ?? ""}`.toLowerCase();
       if (errorText.includes("timeout") || errorText.includes("abort")) {

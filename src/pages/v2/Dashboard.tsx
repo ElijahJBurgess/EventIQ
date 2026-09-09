@@ -144,7 +144,7 @@ export default function DashboardV2() {
   const [loading, setLoading] = useState(true);
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
   const [notificationMatchId, setNotificationMatchId] = useState<string | null>(null);
-  const conciergeSession = useConciergeSession({ selectedEventId });
+  const conciergeSession = useConciergeSession();
   const [editingFullProfile, setEditingFullProfile] = useState(false);
   // Set from either Home or Matches; whichever tab was active when this was
   // set is exactly the tab the user lands back on, since `tab` itself is
@@ -403,7 +403,6 @@ export default function DashboardV2() {
                 messages={conciergeSession.messages}
                 draft={conciergeSession.draft}
                 onDraftChange={conciergeSession.setDraft}
-                selectedEventId={selectedEventId}
                 loading={conciergeSession.loading}
                 inlineError={conciergeSession.inlineError}
                 onSubmit={conciergeSession.submit}

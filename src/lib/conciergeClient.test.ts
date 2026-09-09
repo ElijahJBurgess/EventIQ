@@ -3,7 +3,6 @@ import { invokeConciergeEdge, type ConciergeRequestPayload } from "./conciergeCl
 
 const payload: ConciergeRequestPayload = {
   question: "Who should I meet?",
-  eventId: "room-a",
   requestId: "11111111-1111-4111-8111-111111111111",
   history: [],
   timezone: "America/Los_Angeles",
@@ -18,11 +17,10 @@ describe("invokeConciergeEdge", () => {
     const response = {
       success: true,
       requestId: payload.requestId,
-      eventId: payload.eventId,
       answer: "Meet Marcus.",
       people: [],
       meetings: [],
-      context: { status: "ready", authenticatedUserId: "user", event: { id: "room-a", name: "Room A" }, checkedInMatchCount: 0, conversationCount: 0, activeMeetingCount: 0, allowedMatchIds: [], allowedProfileIds: [] },
+      context: { status: "ready", authenticatedUserId: "user", matchCount: 0, eventCount: 0, conversationCount: 0, activeMeetingCount: 0, allowedMatchIds: [], allowedProfileIds: [] },
     };
     const mockClient = client({ data: response, error: null });
     await expect(invokeConciergeEdge(payload, mockClient)).resolves.toEqual({ ok: true, response });
@@ -31,7 +29,7 @@ describe("invokeConciergeEdge", () => {
 
   it.each([
     [401, "auth"],
-    [403, "room_access"],
+    [403, "forbidden"],
     [429, "rate_limit"],
     [500, "server"],
   ] as const)("normalizes HTTP %s", async (status, kind) => {

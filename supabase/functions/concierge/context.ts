@@ -7,7 +7,14 @@ import {
   type CheckedInName,
 } from "./liveComparison.ts";
 
-export type ConciergeContextStatus = "ready" | "profile_completion_required" | "no_matches" | "no_people_checked_in";
+export type ConciergeContextStatus = "ready" | "profile_completion_required" | "no_matches";
+
+/**
+ * Most matches a single Concierge request carries. The concierge is now
+ * platform-wide (every OFFRIP event the attendee has participated in), so this
+ * is the whole-platform cap, not a per-room one.
+ */
+export const MAX_CONCIERGE_MATCHES = 50;
 
 export interface ProfileRow {
   id: string;
@@ -96,12 +103,13 @@ export interface MeetingRow {
 
 export interface ConciergeContextSource {
   getCurrentProfile(userId: string): Promise<ProfileRow | null>;
-  getEvent(eventId: string): Promise<EventRow | null>;
-  getMatches(userId: string, eventId: string): Promise<MatchRow[]>;
-  getCheckedInProfileIds(eventId: string): Promise<string[]>;
+  /** Every OFFRIP event named by the surfaced matches (for per-match event info). */
+  getEvents(eventIds: string[]): Promise<EventRow[]>;
+  /** Every match row the user is a participant in, across every event. */
+  getMatches(userId: string): Promise<MatchRow[]>;
   getProfiles(profileIds: string[]): Promise<ProfileRow[]>;
-  getMessageFacts(userId: string, eventId: string, matchIds: string[]): Promise<MessageFactRow[]>;
-  getMeetings(userId: string, eventId: string, matchIds: string[]): Promise<MeetingRow[]>;
+  getMessageFacts(userId: string, matchIds: string[]): Promise<MessageFactRow[]>;
+  getMeetings(userId: string, matchIds: string[]): Promise<MeetingRow[]>;
 }
 
 interface UserAuthoredProfileData {
@@ -139,14 +147,23 @@ export interface ConciergeRelationshipFacts {
   hasCompletedMeeting: boolean;
 }
 
+/** Each match carries the OFFRIP event it belongs to -- there is no single "current room". */
+export interface ConciergeMatchEventInfo {
+  id: string;
+  name: string | null;
+  date: string | null;
+  endDate: string | null;
+}
+
 export interface ConciergeMatchContext {
   trusted: {
     matchId: string;
     profileId: string;
-    eventId: string;
+    eventId: string | null;
     persistedScore: number;
     persistedConfidence: number;
   };
+  event: ConciergeMatchEventInfo | null;
   userAuthoredProfileData: UserAuthoredProfileData;
   persistedMatchEvidence: {
     reason: string | null;
@@ -166,7 +183,9 @@ export interface ConciergeMatchContext {
 /**
  * An on-the-spot, non-persisted comparison for someone the user has NOT matched
  * with. Same score/confidence/reasons shape as a real match, but flagged so the
- * model frames it honestly as "not an official match yet".
+ * model frames it honestly as "not an official match yet". Only produced when a
+ * caller passes an explicit event context (roster-scoped); dormant in the
+ * default platform-wide flow.
  */
 export interface ConciergeLiveComparison {
   isLiveComputed: true;
@@ -192,7 +211,7 @@ export interface ConciergeMeetingContext {
   trusted: {
     meetingId: string;
     matchId: string;
-    eventId: string;
+    eventId: string | null;
     otherProfileId: string;
   };
   otherPersonName: string | null;
@@ -206,22 +225,13 @@ export interface ConciergeContext {
   status: ConciergeContextStatus;
   trusted: {
     authenticatedUserId: string;
-    event: {
-      id: string;
-      date: string | null;
-      endDate: string | null;
-      startTime: string | null;
-      endTime: string | null;
-      venue: string | null;
-      location: string | null;
-    };
   };
-  roomDisplayData: { name: string };
   currentUser: null | {
     trusted: { profileId: string };
     userAuthoredProfileData: UserAuthoredProfileData;
   };
-  checkedInMatches: ConciergeMatchContext[];
+  /** Top matches across every OFFRIP event the attendee has participated in. */
+  matches: ConciergeMatchContext[];
   meetings: ConciergeMeetingContext[];
   /** At most one live "how would we score" comparison for an unmatched person the question named. */
   liveComparison: ConciergeLiveComparison | null;
@@ -273,32 +283,31 @@ function profileData(profile: ProfileRow): UserAuthoredProfileData {
   };
 }
 
-function baseContext(userId: string, event: EventRow, status: ConciergeContextStatus): ConciergeContext {
+function eventInfo(event: EventRow | undefined): ConciergeMatchEventInfo | null {
+  if (!event) return null;
+  return {
+    id: event.id,
+    name: event.name ?? null,
+    date: event.date ?? null,
+    endDate: event.end_date ?? null,
+  };
+}
+
+function baseContext(userId: string, status: ConciergeContextStatus): ConciergeContext {
   return {
     status,
-    trusted: {
-      authenticatedUserId: userId,
-      event: {
-        id: event.id,
-        date: event.date ?? null,
-        endDate: event.end_date ?? null,
-        startTime: event.start_time ?? null,
-        endTime: event.end_time ?? null,
-        venue: event.venue ?? null,
-        location: event.location ?? null,
-      },
-    },
-    roomDisplayData: { name: event.name },
+    trusted: { authenticatedUserId: userId },
     currentUser: null,
-    checkedInMatches: [],
+    matches: [],
     meetings: [],
     liveComparison: null,
   };
 }
 
 /**
- * Best-effort live comparison for an unmatched person the question names. Never
- * throws -- returns null on any problem (no name resolved, lookup failed, etc.).
+ * Best-effort live comparison for an unmatched person the question names, scoped
+ * to a specific event's checked-in roster. Never throws -- returns null on any
+ * problem (no event context, no name resolved, lookup failed, etc.).
  * Read-only: no AI explanation, no DB write.
  */
 async function tryLiveComparison(
@@ -455,43 +464,35 @@ function deriveRelationship(
 export async function buildConciergeContext(
   source: ConciergeContextSource,
   userId: string,
-  eventId: string,
   question = "",
   liveCandidateSource?: ConciergeLiveCandidateSource,
+  eventId?: string,
 ): Promise<ConciergeContext> {
-  const [currentProfile, event] = await Promise.all([
-    source.getCurrentProfile(userId),
-    source.getEvent(eventId),
-  ]);
-  if (!event || event.id !== eventId) throw new Error("Authorized event context is unavailable");
+  const currentProfile = await source.getCurrentProfile(userId);
 
   if (!currentProfile || currentProfile.id !== userId) {
-    return baseContext(userId, event, "profile_completion_required");
+    return baseContext(userId, "profile_completion_required");
   }
 
-  const context = baseContext(userId, event, "ready");
+  const context = baseContext(userId, "ready");
   context.currentUser = {
     trusted: { profileId: currentProfile.id },
     userAuthoredProfileData: profileData(currentProfile),
   };
 
-  const [rawMatches, checkedInProfileIds] = await Promise.all([
-    source.getMatches(userId, eventId),
-    source.getCheckedInProfileIds(eventId),
-  ]);
+  const rawMatches = await source.getMatches(userId);
   const authorizedMatches = rawMatches.filter((match) => (
-    match.event_id === eventId
-    && (match.user_a_id === userId || match.user_b_id === userId)
+    match.user_a_id === userId || match.user_b_id === userId
   ));
 
-  // A live comparison is about someone the user has NO match row with, so exclude
-  // every counterpart across all of the user's match rows for this event.
+  // A live comparison is about someone the user has NO match row with anywhere,
+  // so exclude every counterpart across all of the user's match rows.
   const alreadyMatchedProfileIds = new Set(
     authorizedMatches
       .map((match) => (match.user_a_id === userId ? match.user_b_id : match.user_a_id))
       .filter((id): id is string => Boolean(id)),
   );
-  if (liveCandidateSource && question.trim()) {
+  if (liveCandidateSource && eventId && question.trim()) {
     context.liveComparison = await tryLiveComparison(
       liveCandidateSource,
       question,
@@ -507,7 +508,6 @@ export async function buildConciergeContext(
     return context;
   }
 
-  const checkedIn = new Set(checkedInProfileIds.filter((profileId) => profileId !== userId));
   const eligibleMatches = authorizedMatches
     .map((match) => {
       const viewerIsA = match.user_a_id === userId;
@@ -531,7 +531,6 @@ export async function buildConciergeContext(
     })
     .filter((entry): entry is typeof entry & { otherId: string; score: number; confidence: number } => Boolean(
       entry.otherId
-      && checkedIn.has(entry.otherId)
       && entry.score !== null
       && entry.score >= 60
       && entry.confidence !== null
@@ -541,18 +540,22 @@ export async function buildConciergeContext(
       right.score - left.score
       || left.match.id.localeCompare(right.match.id)
     ))
-    .slice(0, 10);
+    .slice(0, MAX_CONCIERGE_MATCHES);
   if (eligibleMatches.length === 0) {
-    if (!context.liveComparison) context.status = "no_people_checked_in";
+    if (!context.liveComparison) context.status = "no_matches";
     return context;
   }
 
-  const allowedProfileIds = eligibleMatches.map((entry) => entry.otherId);
+  const allowedProfileIds = [...new Set(eligibleMatches.map((entry) => entry.otherId))];
   const allowedMatchIds = eligibleMatches.map((entry) => entry.match.id);
-  const [profiles, rawMessages, rawMeetings] = await Promise.all([
+  const allowedEventIds = [...new Set(
+    eligibleMatches.map((entry) => entry.match.event_id).filter((id): id is string => Boolean(id)),
+  )];
+  const [profiles, rawMessages, rawMeetings, events] = await Promise.all([
     source.getProfiles(allowedProfileIds),
-    source.getMessageFacts(userId, eventId, allowedMatchIds),
-    source.getMeetings(userId, eventId, allowedMatchIds),
+    source.getMessageFacts(userId, allowedMatchIds),
+    source.getMeetings(userId, allowedMatchIds),
+    allowedEventIds.length ? source.getEvents(allowedEventIds) : Promise.resolve([] as EventRow[]),
   ]);
   const allowedProfileIdSet = new Set(allowedProfileIds);
   const profileById = new Map(
@@ -560,13 +563,13 @@ export async function buildConciergeContext(
       .filter((profile) => allowedProfileIdSet.has(profile.id))
       .map((profile) => [profile.id, profile]),
   );
+  const eventById = new Map(events.map((event) => [event.id, event]));
   const otherIdByMatch = new Map(eligibleMatches.map((entry) => [entry.match.id, entry.otherId]));
 
   const messageFacts = rawMessages.filter((message) => {
     const otherId = message.match_id ? otherIdByMatch.get(message.match_id) : undefined;
     return Boolean(
       otherId
-      && message.event_id === eventId
       && isExactPair(userId, otherId, message.sender_id, message.recipient_id),
     );
   });
@@ -574,12 +577,11 @@ export async function buildConciergeContext(
     const otherId = otherIdByMatch.get(meeting.match_id);
     return Boolean(
       otherId
-      && meeting.event_id === eventId
       && isExactPair(userId, otherId, meeting.requester_id, meeting.recipient_id),
     );
   });
 
-  context.checkedInMatches = eligibleMatches.flatMap(({ match, otherId, score, confidence, breakdown, evidence, reciprocityLabel }) => {
+  context.matches = eligibleMatches.flatMap(({ match, otherId, score, confidence, breakdown, evidence, reciprocityLabel }) => {
     const profile = profileById.get(otherId);
     if (!profile) return [];
     const matchMessages = messageFacts.filter((message) => message.match_id === match.id);
@@ -588,10 +590,11 @@ export async function buildConciergeContext(
       trusted: {
         matchId: match.id,
         profileId: otherId,
-        eventId,
+        eventId: match.event_id ?? null,
         persistedScore: score,
         persistedConfidence: confidence,
       },
+      event: eventInfo(match.event_id ? eventById.get(match.event_id) : undefined),
       userAuthoredProfileData: profileData(profile),
       persistedMatchEvidence: {
         reason: match.match_reason ?? null,
@@ -609,8 +612,8 @@ export async function buildConciergeContext(
     }];
   });
 
-  const includedProfileIds = new Set(context.checkedInMatches.map((match) => match.trusted.profileId));
-  const includedMatchIds = new Set(context.checkedInMatches.map((match) => match.trusted.matchId));
+  const includedProfileIds = new Set(context.matches.map((match) => match.trusted.profileId));
+  const includedMatchIds = new Set(context.matches.map((match) => match.trusted.matchId));
   context.meetings = meetingFacts
     .filter((meeting) => includedMatchIds.has(meeting.match_id))
     .map((meeting) => {
@@ -620,7 +623,7 @@ export async function buildConciergeContext(
         trusted: {
           meetingId: meeting.id,
           matchId: meeting.match_id,
-          eventId,
+          eventId: meeting.event_id ?? null,
           otherProfileId,
         },
         otherPersonName: profileById.get(otherProfileId)?.full_name ?? null,
@@ -637,8 +640,8 @@ export async function buildConciergeContext(
       return leftTime - rightTime || left.trusted.meetingId.localeCompare(right.trusted.meetingId);
     });
 
-  if (context.checkedInMatches.length === 0 && !context.liveComparison) {
-    context.status = "no_people_checked_in";
+  if (context.matches.length === 0 && !context.liveComparison) {
+    context.status = "no_matches";
   }
   return context;
 }
@@ -678,27 +681,20 @@ export function createSupabaseContextSource(client: ConciergeQueryClient): Conci
       if (result.error) throw new Error("Concierge context profile lookup failed");
       return result.data;
     },
-    async getEvent(eventId) {
+    async getEvents(eventIds) {
+      if (eventIds.length === 0) return [];
       const result = await client.from<EventRow>("events")
         .select("id,name,date,end_date,start_time,end_time,venue,location")
-        .eq("id", eventId)
-        .maybeSingle();
-      if (result.error) throw new Error("Concierge context event lookup failed");
-      return result.data;
+        .in("id", eventIds);
+      return unwrap(result, "event lookup");
     },
-    async getMatches(userId, eventId) {
+    async getMatches(userId) {
+      // Platform-wide: every match row the user participates in, across every
+      // event. RLS ("Users can view their matches") already scopes to the user.
       const result = await client.from<MatchRow>("matches")
         .select("id,event_id,user_a_id,user_b_id,a_to_b_score,b_to_a_score,a_to_b_confidence,b_to_a_confidence,reciprocity_label,match_reason,ai_explanation,score_breakdown,match_evidence,match_details,shared_goals,shared_interests,shared_industries,shared_communities")
-        .eq("event_id", eventId)
         .or(`user_a_id.eq.${userId},user_b_id.eq.${userId}`);
       return unwrap(result, "match lookup");
-    },
-    async getCheckedInProfileIds(eventId) {
-      const result = await client.from<{ profile_id: string | null }>("matched_event_attendance")
-        .select("profile_id")
-        .eq("event_id", eventId)
-        .eq("is_checked_in", true);
-      return unwrap(result, "check-in lookup").map((row) => row.profile_id).filter((id): id is string => Boolean(id));
     },
     async getProfiles(profileIds) {
       if (profileIds.length === 0) return [];
@@ -707,20 +703,18 @@ export function createSupabaseContextSource(client: ConciergeQueryClient): Conci
         .in("id", profileIds);
       return unwrap(result, "matched profile lookup");
     },
-    async getMessageFacts(userId, eventId, matchIds) {
+    async getMessageFacts(userId, matchIds) {
       if (matchIds.length === 0) return [];
       const result = await client.from<MessageFactRow>("messages")
         .select("id,match_id,event_id,sender_id,recipient_id,message_type,created_at")
-        .eq("event_id", eventId)
         .in("match_id", matchIds)
         .or(`sender_id.eq.${userId},recipient_id.eq.${userId}`);
       return unwrap(result, "message fact lookup");
     },
-    async getMeetings(userId, eventId, matchIds) {
+    async getMeetings(userId, matchIds) {
       if (matchIds.length === 0) return [];
       const result = await client.from<MeetingRow>("meetings")
         .select("id,match_id,event_id,requester_id,recipient_id,status,requested_at,scheduled_at,duration_minutes,location_note,completed_at")
-        .eq("event_id", eventId)
         .in("match_id", matchIds)
         .or(`requester_id.eq.${userId},recipient_id.eq.${userId}`)
         .order("requested_at", { ascending: false });
@@ -732,7 +726,8 @@ export function createSupabaseContextSource(client: ConciergeQueryClient): Conci
 /**
  * Backed by a SERVICE-ROLE client (not the caller's JWT): the live comparison
  * needs an unmatched attendee's profile, which the caller's RLS cannot see.
- * Scoped to attendees checked in at the same event the caller is registered for.
+ * Scoped to attendees checked in at a given event -- only used when a caller
+ * passes an explicit event context.
  */
 export function createSupabaseLiveCandidateSource(serviceClient: ConciergeQueryClient): ConciergeLiveCandidateSource {
   return {
@@ -767,18 +762,16 @@ export function createSupabaseLiveCandidateSource(serviceClient: ConciergeQueryC
 
 export function summarizeConciergeContext(context: ConciergeContext) {
   const activeStatuses = new Set(["requested", "accepted", "scheduled"]);
+  const eventIds = [...new Set(context.matches.map((match) => match.trusted.eventId).filter(Boolean))];
   return {
     status: context.status,
     authenticatedUserId: context.trusted.authenticatedUserId,
-    event: {
-      id: context.trusted.event.id,
-      name: context.roomDisplayData.name,
-    },
-    checkedInMatchCount: context.checkedInMatches.length,
-    conversationCount: context.checkedInMatches.filter((match) => match.relationship.hasConversation).length,
+    matchCount: context.matches.length,
+    eventCount: eventIds.length,
+    conversationCount: context.matches.filter((match) => match.relationship.hasConversation).length,
     activeMeetingCount: context.meetings.filter((meeting) => activeStatuses.has(meeting.status)).length,
-    allowedMatchIds: context.checkedInMatches.map((match) => match.trusted.matchId),
-    allowedProfileIds: context.checkedInMatches.map((match) => match.trusted.profileId),
+    allowedMatchIds: context.matches.map((match) => match.trusted.matchId),
+    allowedProfileIds: context.matches.map((match) => match.trusted.profileId),
     liveComparisonProfileId: context.liveComparison?.trusted.profileId ?? null,
   };
 }

@@ -3,7 +3,8 @@
 An event networking app: attendees build a profile, a matching engine pairs them
 with other attendees at an event, and they connect, message, and schedule
 meetings. Organizers get a password-gated analytics dashboard. An AI "concierge"
-answers attendee questions and generates event insight summaries.
+answers attendee questions across all their matches (platform-wide, not one room)
+and generates event insight summaries.
 
 - **Live:** https://event-iq-six.vercel.app
 - **Backend:** Supabase project `qdknsjoddmrvwjrrwwiq` (Postgres + Auth + Storage + Edge Functions)
@@ -96,16 +97,17 @@ functions — e.g. `home_company_colleagues(p_event_id)` (Home "Your company is 
 the room" banner), which only returns checked-in attendees who share the caller's
 own company.
 
-The `concierge` function also does one narrow **service-role read**: when a
-question names a checked-in attendee the caller has _not_ matched with, it loads
-that attendee's profile with the service-role key (the caller's RLS can't see it)
-and runs the real `match-engine` scorer live, in-request, to estimate how the
-pair would score. This is read-only and ephemeral — no `matches` row is written,
-no AI explanation is generated — and the answer is flagged so the model says
-plainly that the two haven't officially matched yet. Scoped to attendees checked
-in at the same event, read straight from `event_registrations` (not the
-`auth.uid()`-gated `matched_event_attendance` view, which a service-role
-connection can't see through).
+The `concierge` function is **platform-wide**: it takes no `eventId`, pulls the
+caller's matches across _every_ OFFRIP event they've participated in (RLS scopes
+`matches` to the caller), keeps the `score >= 60` / `confidence >= 70` bar, and
+caps at `MAX_CONCIERGE_MATCHES` (50, top score first). Each match carries its own
+`event` object — there is no single "current room", and no check-in requirement.
+The frontend no longer needs a room selected before Concierge will answer.
+
+The live unmatched-comparison path (the service-role read that scores a named
+attendee you haven't matched with) stays in the code but is **dormant** in this
+flow — it needs an event roster to scope against, which the platform-wide request
+doesn't carry.
 
 ### Organizer rooms (self-serve)
 
@@ -169,7 +171,7 @@ the deploy-time default).
 | Function | Purpose | `verify_jwt` |
 |---|---|---|
 | `match-engine` | generate a caller's matches for an event | true |
-| `concierge` | AI attendee Q&A for an event | true |
+| `concierge` | platform-wide AI attendee Q&A (all the caller's matches; no eventId) | true |
 | `delete-account` | self-serve account deletion (deletes only `auth.uid()`) | true |
 | `admin-auth` | enterprise dashboard data + AI insights/copilot + report CRUD + `create-event` (owner-only room creation) | **false** — gated by a shared organizer password (`OOO_ADMIN_PASSWORD`), not a JWT |
 | `admin-run-matching` | one-off operator match-backfill utility; **not deployed**; delete after use | n/a |

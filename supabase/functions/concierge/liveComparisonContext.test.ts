@@ -63,7 +63,7 @@ function baseSource(overrides: Partial<ConciergeContextSource> = {}): ConciergeC
   const person = row("person-2", "Marcus Chen", { primary_goal: "Meet Investors", offers: ["Product Feedback"] });
   return {
     getCurrentProfile: async () => CURRENT_ROW,
-    getEvent: async () => ({ id: EVENT_ID, name: "OFFRIP Room" }),
+    getEvents: async () => [{ id: EVENT_ID, name: "OFFRIP Room" }],
     getMatches: async () => [{
       id: "match-1", event_id: EVENT_ID, user_a_id: USER_ID, user_b_id: "person-2",
       a_to_b_score: 90, b_to_a_score: 88, a_to_b_confidence: 90, b_to_a_confidence: 88,
@@ -71,12 +71,21 @@ function baseSource(overrides: Partial<ConciergeContextSource> = {}): ConciergeC
       score_breakdown: { aToB: {}, bToA: {} }, match_evidence: { aToB: [], bToA: [] }, match_details: null,
       shared_goals: [], shared_interests: [], shared_industries: [], shared_communities: [],
     }],
-    getCheckedInProfileIds: async () => [USER_ID, "person-2", CANDIDATE_ID],
     getProfiles: async () => [person],
     getMessageFacts: async () => [],
     getMeetings: async () => [],
     ...overrides,
   };
+}
+
+// Live comparison stays event-scoped: callers pass an explicit event context as
+// the trailing argument. buildConciergeContext(source, userId, question, live, eventId)
+function buildWithEvent(
+  src: ConciergeContextSource,
+  question: string,
+  live?: ConciergeLiveCandidateSource,
+) {
+  return buildConciergeContext(src, USER_ID, question, live, EVENT_ID);
 }
 
 function liveSource(overrides: Partial<ConciergeLiveCandidateSource> = {}): ConciergeLiveCandidateSource {
@@ -93,9 +102,7 @@ function liveSource(overrides: Partial<ConciergeLiveCandidateSource> = {}): Conc
 
 describe("concierge live (unmatched) comparison", () => {
   it("adds a liveComparison flagged isLiveComputed for a named unmatched checked-in person", async () => {
-    const context = await buildConciergeContext(
-      baseSource(), USER_ID, EVENT_ID, "How would I score with Nia Brooks?", liveSource(),
-    );
+    const context = await buildWithEvent(baseSource(), "How would I score with Nia Brooks?", liveSource());
 
     expect(context.status).toBe("ready");
     expect(context.liveComparison).not.toBeNull();
@@ -113,7 +120,7 @@ describe("concierge live (unmatched) comparison", () => {
 
   it("calls calculateMatchScore with real Profile shapes (current user, candidate)", async () => {
     const spy = vi.spyOn(scorer, "calculateMatchScore");
-    await buildConciergeContext(baseSource(), USER_ID, EVENT_ID, "tell me about nia", liveSource());
+    await buildWithEvent(baseSource(), "tell me about nia", liveSource());
 
     expect(spy).toHaveBeenCalledTimes(1);
     const [a, b] = spy.mock.calls[0];
@@ -127,10 +134,8 @@ describe("concierge live (unmatched) comparison", () => {
   });
 
   it("distinguishes a live comparison from a persisted match", async () => {
-    const context = await buildConciergeContext(
-      baseSource(), USER_ID, EVENT_ID, "How would I score with Nia Brooks?", liveSource(),
-    );
-    const persisted = context.checkedInMatches[0];
+    const context = await buildWithEvent(baseSource(), "How would I score with Nia Brooks?", liveSource());
+    const persisted = context.matches[0];
     expect((persisted as { isLiveComputed?: unknown }).isLiveComputed).toBeUndefined();
     expect(persisted.trusted).toHaveProperty("matchId");
     expect("persistedMatchEvidence" in persisted).toBe(true);
@@ -143,25 +148,23 @@ describe("concierge live (unmatched) comparison", () => {
   });
 
   it("does not add a live comparison when no candidate source is provided (unchanged behavior)", async () => {
-    const context = await buildConciergeContext(baseSource(), USER_ID, EVENT_ID, "How would I score with Nia Brooks?");
+    const context = await buildWithEvent(baseSource(), "How would I score with Nia Brooks?");
     expect(context.liveComparison).toBeNull();
   });
 
   it("does not add a live comparison for an ambiguous or absent name", async () => {
-    const context = await buildConciergeContext(
-      baseSource(), USER_ID, EVENT_ID, "who should I meet next?", liveSource(),
-    );
+    const context = await buildWithEvent(baseSource(), "who should I meet next?", liveSource());
     expect(context.liveComparison).toBeNull();
   });
 
   it("never fails the whole context build if the candidate lookup throws", async () => {
-    const context = await buildConciergeContext(
-      baseSource(), USER_ID, EVENT_ID, "How would I score with Nia Brooks?",
+    const context = await buildWithEvent(
+      baseSource(), "How would I score with Nia Brooks?",
       liveSource({ getScoringProfile: async () => { throw new Error("db down"); } }),
     );
     expect(context.status).toBe("ready");
     expect(context.liveComparison).toBeNull();
-    expect(context.checkedInMatches.length).toBe(1);
+    expect(context.matches.length).toBe(1);
   });
 
   it("system prompt tells the model to disclose a live comparison, not present it as a match", () => {

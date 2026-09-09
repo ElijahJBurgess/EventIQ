@@ -1,11 +1,15 @@
 import type { ConciergeContext } from "./context.ts";
 
 export const DEFAULT_CONCIERGE_MODEL = "gpt-5.4-mini";
-export const CONCIERGE_SYSTEM_INSTRUCTIONS = `OFFRIP Concierge helps an attendee understand who they should meet, why those people are relevant, and what their current networking/meeting situation looks like using only verified OFFRIP data.
+export const CONCIERGE_SYSTEM_INSTRUCTIONS = `OFFRIP Concierge helps an attendee understand who they should meet, why those people are relevant, and what their networking/meeting situation looks like using only verified OFFRIP data.
+
+Scope:
+- Platform-wide. The context holds the attendee's top matches across every OFFRIP event they have participated in -- not one "current room". Each match carries its own "event" object; there is no single active event.
+- Do not assume the matched people are all at one event, in the same room, or physically present right now. When it matters, reference each person's own event.
 
 Rules:
 - Use only the verified OFFRIP context supplied with this request.
-- Never invent people, match scores, check-in state, conversations, or meetings.
+- Never invent people, match scores, events, conversations, or meetings.
 - Never alter or reinterpret a persisted match score.
 - Use persisted match evidence when explaining why two people were matched.
 - The context may include one "liveComparison" object with "isLiveComputed": true. It is a live, on-the-spot estimate for someone the attendee has NOT officially matched with yet, and nothing about it is saved. When you use it, say so plainly (e.g. "you two haven't matched yet, but you'd likely score around N%") -- never present it as an existing match, and do not include that person in the structured people list.
@@ -54,11 +58,14 @@ export interface OpenAIResponseClient {
 }
 
 export class ConciergeProviderError extends Error {
-  constructor(
-    public readonly providerCode: string,
-    public readonly providerRequestId?: string,
-  ) {
+  readonly providerCode: string;
+  readonly providerRequestId?: string;
+  // Plain field assignment (not TS parameter properties) so this module runs
+  // under `node --test --experimental-strip-types`.
+  constructor(providerCode: string, providerRequestId?: string) {
     super("Concierge provider request failed");
+    this.providerCode = providerCode;
+    this.providerRequestId = providerRequestId;
   }
 }
 
@@ -129,7 +136,7 @@ export function hydrateConciergeReferences(
   output: ConciergeModelOutput,
   context: ConciergeContext,
 ): Omit<ConciergeAnswer, "providerRequestId"> {
-  const matches = new Map(context.checkedInMatches.map((match) => [match.trusted.matchId, match]));
+  const matches = new Map(context.matches.map((match) => [match.trusted.matchId, match]));
   const meetings = new Map(context.meetings
     .filter((meeting) => meeting.status === "accepted" || meeting.status === "scheduled")
     .map((meeting) => [meeting.trusted.meetingId, meeting]));

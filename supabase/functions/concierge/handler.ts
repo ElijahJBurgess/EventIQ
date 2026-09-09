@@ -5,7 +5,8 @@ export const MAX_HISTORY_TOTAL_LENGTH = 6_000;
 export const MAX_TIMEZONE_LENGTH = 100;
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const ALLOWED_BODY_KEYS = new Set(["question", "eventId", "requestId", "history", "timezone"]);
+// The concierge is platform-wide -- it no longer takes an eventId.
+const ALLOWED_BODY_KEYS = new Set(["question", "requestId", "history", "timezone"]);
 
 export interface ConciergeHistoryMessage {
   role: "user" | "assistant";
@@ -14,7 +15,6 @@ export interface ConciergeHistoryMessage {
 
 export interface ConciergeRequestBody {
   question: string;
-  eventId: string;
   requestId: string;
   history: ConciergeHistoryMessage[];
   timezone?: string;
@@ -24,12 +24,6 @@ interface AuthenticatedUser {
   id: string;
 }
 
-interface RegistrationQuery {
-  select(columns: string): RegistrationQuery;
-  eq(column: string, value: string): RegistrationQuery;
-  maybeSingle(): Promise<{ data: { id: string } | null; error: unknown | null }>;
-}
-
 export interface ConciergeSupabaseClient {
   auth: {
     getUser(token: string): Promise<{
@@ -37,7 +31,6 @@ export interface ConciergeSupabaseClient {
       error: unknown | null;
     }>;
   };
-  from(table: "event_registrations"): RegistrationQuery;
 }
 
 export interface ConciergeHandlerOptions {
@@ -46,7 +39,6 @@ export interface ConciergeHandlerOptions {
   gatherContext: (
     client: ConciergeSupabaseClient,
     authenticatedUserId: string,
-    eventId: string,
     question: string,
   ) => Promise<ConciergeContext>;
   answerQuestion: (
@@ -103,7 +95,6 @@ export function validateConciergeRequest(value: unknown):
 
   const question = typeof value.question === "string" ? value.question.trim() : "";
   if (!question || question.length > MAX_QUESTION_LENGTH) return { valid: false };
-  if (typeof value.eventId !== "string" || !UUID_PATTERN.test(value.eventId)) return { valid: false };
   if (typeof value.requestId !== "string" || !UUID_PATTERN.test(value.requestId)) return { valid: false };
 
   const rawHistory = value.history ?? [];
@@ -133,7 +124,6 @@ export function validateConciergeRequest(value: unknown):
     valid: true,
     body: {
       question,
-      eventId: value.eventId,
       requestId: value.requestId,
       history,
       ...(timezone ? { timezone } : {}),
@@ -192,37 +182,17 @@ export function createConciergeHandler({
       return jsonResponse({ success: false, error: "Invalid request." }, 400, origin, allowedOrigins);
     }
 
-    const { eventId, requestId, question, history, timezone } = validation.body;
-    try {
-      const { data: registration, error } = await supabase
-        .from("event_registrations")
-        .select("id")
-        .eq("event_id", eventId)
-        .eq("profile_id", authenticatedUser.id)
-        .eq("status", "registered")
-        .maybeSingle();
-
-      if (error) {
-        console.error("Concierge registration authorization failed");
-        return jsonResponse({ success: false, error: "Unable to process request." }, 500, origin, allowedOrigins);
-      }
-      if (!registration) {
-        return jsonResponse({ success: false, error: "Access denied." }, 403, origin, allowedOrigins);
-      }
-    } catch {
-      console.error("Concierge registration authorization failed");
-      return jsonResponse({ success: false, error: "Unable to process request." }, 500, origin, allowedOrigins);
-    }
+    const { requestId, question, history, timezone } = validation.body;
 
     let context: ConciergeContext;
     try {
-      context = await gatherContext(supabase, authenticatedUser.id, eventId, question);
+      context = await gatherContext(supabase, authenticatedUser.id, question);
     } catch {
       console.error("Concierge context gathering failed");
       return jsonResponse({ success: false, error: "Unable to process request." }, 500, origin, allowedOrigins);
     }
 
-    const telemetryBase = { requestId, userId: authenticatedUser.id, eventId };
+    const telemetryBase = { requestId, userId: authenticatedUser.id };
     if (context.status !== "ready") {
       try {
         await logSearch({ ...telemetryBase, status: "controlled_failure" });
@@ -232,7 +202,6 @@ export function createConciergeHandler({
       return jsonResponse({
         success: true,
         requestId,
-        eventId,
         context: summarizeConciergeContext(context),
         people: [],
         meetings: [],
@@ -278,7 +247,6 @@ export function createConciergeHandler({
     return jsonResponse({
       success: true,
       requestId,
-      eventId,
       context: summarizeConciergeContext(context),
       answer: answer.answer,
       people: answer.people,

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   invokeConciergeEdge,
   type ConciergeContextStatus,
@@ -15,7 +15,6 @@ export interface ConciergeMessage {
   text: string;
   tone?: "temporary" | "controlled" | "error";
   requestId?: string;
-  eventId?: string;
   history?: ConciergeHistoryItem[];
   timezone?: string;
   requestStatus?: "pending" | "succeeded" | "failed";
@@ -25,7 +24,6 @@ export interface ConciergeMessage {
 }
 
 interface UseConciergeSessionOptions {
-  selectedEventId?: string;
   invoke?: (payload: ConciergeRequestPayload) => Promise<ConciergeInvokeResult>;
   requestIdFactory?: () => string;
   timezoneFactory?: () => string | undefined;
@@ -60,9 +58,7 @@ function controlledStatusMessage(status: Exclude<ConciergeContextStatus, "ready"
     case "profile_completion_required":
       return "Complete your OFFRIP profile before using Concierge.";
     case "no_matches":
-      return "No persisted matches are ready for this Room yet.";
-    case "no_people_checked_in":
-      return "No checked-in matches are available in this Room yet.";
+      return "You don't have any OFFRIP matches yet. Once you're matched at an event, Concierge can help.";
   }
 }
 
@@ -72,8 +68,8 @@ function failureMessage(kind: ConciergeFailureKind) {
   switch (kind) {
     case "auth":
       return "Your session has expired. Sign in again to use Concierge.";
-    case "room_access":
-      return "You no longer have access to this Room. Choose another Room and try again.";
+    case "forbidden":
+      return "Concierge isn't available from here. Reload the app and try again.";
     case "rate_limit":
       return "Concierge is receiving too many requests. Please wait a moment and retry.";
     case "timeout":
@@ -105,19 +101,14 @@ function buildHistory(messages: ConciergeMessage[]): ConciergeHistoryItem[] {
 }
 
 export function useConciergeSession({
-  selectedEventId,
   invoke = invokeConciergeEdge,
   requestIdFactory = defaultRequestId,
   timezoneFactory = defaultTimezone,
-}: UseConciergeSessionOptions) {
+}: UseConciergeSessionOptions = {}) {
   const [draft, setDraft] = useState("");
   const [messages, setMessages] = useState<ConciergeMessage[]>([]);
   const [pendingRequestId, setPendingRequestId] = useState<string | null>(null);
   const [inlineError, setInlineError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (selectedEventId) setInlineError(null);
-  }, [selectedEventId]);
 
   const updateDraft = useCallback((value: string) => {
     setDraft(value);
@@ -174,10 +165,6 @@ export function useConciergeSession({
   const submit = useCallback(() => {
     if (pendingRequestId) return;
     const question = draft.trim();
-    if (!selectedEventId) {
-      setInlineError("Select a Room before asking Concierge a question.");
-      return;
-    }
     if (!question) {
       setInlineError("Enter a question for Concierge.");
       return;
@@ -192,7 +179,6 @@ export function useConciergeSession({
     const timezone = timezoneFactory();
     const payload: ConciergeRequestPayload = {
       question,
-      eventId: selectedEventId,
       requestId,
       history,
       ...(timezone ? { timezone } : {}),
@@ -202,22 +188,20 @@ export function useConciergeSession({
       role: "user",
       text: question,
       requestId,
-      eventId: selectedEventId,
       history,
       timezone,
       requestStatus: "pending",
     }]);
     setDraft("");
     void execute(payload);
-  }, [draft, execute, messages, pendingRequestId, requestIdFactory, selectedEventId, timezoneFactory]);
+  }, [draft, execute, messages, pendingRequestId, requestIdFactory, timezoneFactory]);
 
   const retry = useCallback((requestId: string) => {
     if (pendingRequestId) return;
     const original = messages.find((message) => message.role === "user" && message.requestId === requestId);
-    if (!original?.eventId || original.requestStatus !== "failed") return;
+    if (!original || original.requestStatus !== "failed") return;
     void execute({
       question: original.text,
-      eventId: original.eventId,
       requestId,
       history: original.history ?? [],
       ...(original.timezone ? { timezone: original.timezone } : {}),

@@ -4,7 +4,6 @@ interface ConciergeTabProps {
   messages: ConciergeMessage[];
   draft: string;
   onDraftChange: (value: string) => void;
-  selectedEventId?: string;
   loading: boolean;
   inlineError: string | null;
   onSubmit: () => void;
@@ -24,7 +23,6 @@ export default function ConciergeTab({
   messages,
   draft,
   onDraftChange,
-  selectedEventId,
   loading,
   inlineError,
   onSubmit,
@@ -36,17 +34,16 @@ export default function ConciergeTab({
     <section
       className="mx-auto max-w-3xl"
       aria-labelledby="concierge-heading"
-      data-selected-event-id={selectedEventId}
     >
       <header className="border-b border-black pb-6">
         <p className="mb-2 font-label text-[10px] uppercase tracking-[0.24em] text-black/50">
-          Your Room guide
+          Your OFFRIP guide
         </p>
         <h1 id="concierge-heading" className="font-display text-4xl leading-none tracking-tight sm:text-5xl">
           OFFRIP Concierge
         </h1>
         <p className="mt-3 max-w-xl text-sm leading-relaxed text-black/60">
-          Concierge helps you find the right people in your current Room using your OFFRIP matches and schedule.
+          Concierge helps you find the right people across all your OFFRIP matches, connections, and schedule.
         </p>
       </header>
 
@@ -58,7 +55,7 @@ export default function ConciergeTab({
       >
         {messages.length === 0 ? (
           <div className="flex min-h-[220px] flex-col items-center justify-center text-center sm:min-h-[272px]">
-            <p className="font-display text-2xl tracking-tight">Ask about your current Room.</p>
+            <p className="font-display text-2xl tracking-tight">Ask about your matches.</p>
             <p className="mt-2 max-w-sm text-sm leading-relaxed text-black/50">
               Choose a suggested question or write your own to connect Concierge to your OFFRIP context.
             </p>
@@ -142,7 +139,7 @@ export default function ConciergeTab({
             ))}
             {loading && (
               <div className="max-w-[85%] border border-black bg-white px-4 py-3 text-sm text-black/55" role="status">
-                Preparing secure Room context…
+                Preparing secure OFFRIP context…
               </div>
             )}
           </div>
@@ -175,7 +172,7 @@ export default function ConciergeTab({
             type="text"
             value={draft}
             onChange={(event) => onDraftChange(event.target.value)}
-            placeholder="Ask about people in your Room…"
+            placeholder="Ask about your matches…"
             className="min-w-0 flex-1 bg-transparent px-4 py-3 text-sm outline-none placeholder:text-black/35"
           />
           <button
@@ -189,7 +186,7 @@ export default function ConciergeTab({
         {inlineError ? (
           <p className="mt-2 text-xs text-offrip-orange" role="alert">{inlineError}</p>
         ) : (
-          <p className="mt-2 text-xs text-black/45">Concierge answers only from your selected Room, matches, connections, and meetings.</p>
+          <p className="mt-2 text-xs text-black/45">Concierge answers only from your OFFRIP matches, connections, and meetings.</p>
         )}
       </form>
     </section>
