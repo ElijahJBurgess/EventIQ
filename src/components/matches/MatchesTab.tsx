@@ -333,13 +333,13 @@ export default function MatchesTab({
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {[0, 1, 2, 3].map((i) => (
-            <div key={i} className="ooo-border bg-warm p-4 space-y-3">
-              <div className="flex items-center gap-3">
-                <Skeleton className="h-12 w-12 rounded-full" />
+            <div key={i} className="ooo-border bg-warm p-5 space-y-4">
+              <div className="flex items-center gap-4">
+                <Skeleton className="h-14 w-14 rounded-full" />
                 <div className="space-y-2 flex-1">
-                  <Skeleton className="h-4 w-1/2" />
+                  <Skeleton className="h-5 w-1/2" />
                   <Skeleton className="h-3 w-1/3" />
                 </div>
               </div>
@@ -386,7 +386,7 @@ export default function MatchesTab({
           );
         }
         return (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {visibleMatches.map((m, index) => (
               <MatchCard
                 key={m.id}
@@ -432,7 +432,7 @@ function MatchCard({
   const scoreColor = SCORE_CHIP_COLORS[index % SCORE_CHIP_COLORS.length];
   const composing = status === "composing" || status === "sending";
   const actionCell =
-    "flex items-center justify-center px-2 py-3 text-center font-offrip-display text-[10px] font-black uppercase tracking-widest transition-colors disabled:pointer-events-none";
+    "flex items-center justify-center px-2 py-4 text-center font-offrip-display text-[10px] font-black uppercase tracking-widest transition-colors disabled:pointer-events-none";
 
   const sendConnectMessage = async (rawContent: string) => {
     const content = rawContent.trim();
@@ -473,23 +473,23 @@ function MatchCard({
 
   return (
     <OffripCard className="flex flex-col">
-      <div className="p-4">
-        <div className="border border-offrip-black/10 p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 gap-3">
-              <Avatar className="h-12 w-12 shrink-0 rounded-full border-2 border-offrip-black">
+      <div className="p-5">
+        <div className="border border-offrip-black/10 p-6">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex min-w-0 gap-4">
+              <Avatar className="h-14 w-14 shrink-0 rounded-full border-2 border-offrip-black">
                 {other.avatar_url && <AvatarImage src={other.avatar_url} alt={name} />}
-                <AvatarFallback className={`rounded-full font-offrip-display text-sm font-bold ${avatarClass}`}>
+                <AvatarFallback className={`rounded-full font-offrip-display text-base font-bold ${avatarClass}`}>
                   {initials(other.full_name)}
                 </AvatarFallback>
               </Avatar>
               <div className="min-w-0">
-                <p className="truncate font-offrip-display font-bold uppercase">{name}</p>
+                <p className="truncate font-offrip-display text-xl font-bold uppercase leading-tight">{name}</p>
                 {subtitle && (
-                  <p className="mt-0.5 truncate font-offrip-body text-sm text-offrip-medium-gray">{subtitle}</p>
+                  <p className="mt-1.5 font-offrip-body text-sm text-offrip-medium-gray">{subtitle}</p>
                 )}
                 {other.location && (
-                  <p className="mt-0.5 flex items-center gap-1 font-offrip-body text-sm text-offrip-medium-gray">
+                  <p className="mt-1.5 flex items-center gap-1 font-offrip-body text-sm text-offrip-medium-gray">
                     <MapPin className="h-3 w-3 shrink-0" />
                     <span className="truncate">{other.location}</span>
                   </p>
@@ -500,7 +500,7 @@ function MatchCard({
           </div>
 
           {tags.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-5 flex flex-wrap gap-2">
               {tags.map((tag) => (
                 <span
                   key={tag}
@@ -514,16 +514,16 @@ function MatchCard({
         </div>
 
         {showReason && match.reason && (
-          <div className="mt-3 bg-offrip-light-gray p-4">
+          <div className="mt-5 bg-offrip-light-gray p-6">
             <p className="font-offrip-display text-[10px] font-bold uppercase tracking-widest text-offrip-medium-gray">
               Why OFFRIP matched you
             </p>
-            <p className="mt-2 font-offrip-body text-sm leading-relaxed text-offrip-black">{match.reason}</p>
+            <p className="mt-3 font-offrip-body text-sm leading-relaxed text-offrip-black">{match.reason}</p>
           </div>
         )}
 
         {composing && (
-          <div className="mt-3">
+          <div className="mt-5">
             <ConnectComposer
               defaultMessage={`Hi! Looking forward to connecting at ${eventName}.`}
               sending={status === "sending"}
