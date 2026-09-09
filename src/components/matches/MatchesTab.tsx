@@ -485,7 +485,13 @@ function MatchCard({
                 </AvatarFallback>
               </Avatar>
               <div className="min-w-0">
-                <p className="truncate font-offrip-display text-xl font-bold uppercase leading-tight">{name}</p>
+                <button
+                  type="button"
+                  onClick={() => onViewFullProfile(match.id)}
+                  className="block max-w-full truncate text-left font-offrip-display text-xl font-bold uppercase leading-tight hover:underline focus-visible:underline focus:outline-none"
+                >
+                  {name}
+                </button>
                 {subtitle && (
                   <p className="mt-1.5 font-offrip-body text-sm text-offrip-medium-gray">{subtitle}</p>
                 )}

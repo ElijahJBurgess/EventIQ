@@ -142,6 +142,12 @@ describe("People card", () => {
     expect(onViewFullProfile).toHaveBeenCalledWith("match-1");
   });
 
+  it("opens the full profile when the name is clicked", async () => {
+    const { onViewFullProfile } = renderTab();
+    fireEvent.click(await screen.findByRole("button", { name: "Jordan Lee" }));
+    expect(onViewFullProfile).toHaveBeenCalledWith("match-1");
+  });
+
   it("wires Save to the saveMatch toggle and reflects the saved state", async () => {
     renderTab();
     await screen.findByText("Jordan Lee");
