@@ -95,6 +95,17 @@ functions — e.g. `home_company_colleagues(p_event_id)` (Home "Your company is 
 the room" banner), which only returns checked-in attendees who share the caller's
 own company.
 
+The `concierge` function also does one narrow **service-role read**: when a
+question names a checked-in attendee the caller has _not_ matched with, it loads
+that attendee's profile with the service-role key (the caller's RLS can't see it)
+and runs the real `match-engine` scorer live, in-request, to estimate how the
+pair would score. This is read-only and ephemeral — no `matches` row is written,
+no AI explanation is generated — and the answer is flagged so the model says
+plainly that the two haven't officially matched yet. Scoped to attendees checked
+in at the same event, read straight from `event_registrations` (not the
+`auth.uid()`-gated `matched_event_attendance` view, which a service-role
+connection can't see through).
+
 `matches` rows are stored in **canonical pair order** — `user_a_id` is always the
 smaller UUID (`matches_user_a_before_b` CHECK). `match-engine` writes that order
 and upserts on `(event_id, user_a_id, user_b_id)`, so concurrent runs for the

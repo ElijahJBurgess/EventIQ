@@ -1,3 +1,12 @@
+import {
+  computeLiveMatch,
+  LIVE_COMPARISON_DISCLAIMER,
+  resolveNamedCandidateId,
+  SCORER_PROFILE_COLUMNS,
+  toScorerProfile,
+  type CheckedInName,
+} from "./liveComparison.ts";
+
 export type ConciergeContextStatus = "ready" | "profile_completion_required" | "no_matches" | "no_people_checked_in";
 
 export interface ProfileRow {
@@ -21,6 +30,13 @@ export interface ProfileRow {
   industry_focus?: string[] | null;
   location?: string | null;
 }
+
+/**
+ * A raw DB row carrying every column calculateMatchScore consumes. Fetched for
+ * the current user (own profile, RLS-OK) and for a live-comparison candidate
+ * (service role). `profileData()` still only reads the ProfileRow subset.
+ */
+export type ScoringProfileRow = ProfileRow & Record<string, unknown>;
 
 export interface EventRow {
   id: string;
@@ -147,6 +163,31 @@ export interface ConciergeMatchContext {
   relationship: ConciergeRelationshipFacts;
 }
 
+/**
+ * An on-the-spot, non-persisted comparison for someone the user has NOT matched
+ * with. Same score/confidence/reasons shape as a real match, but flagged so the
+ * model frames it honestly as "not an official match yet".
+ */
+export interface ConciergeLiveComparison {
+  isLiveComputed: true;
+  trusted: {
+    profileId: string;
+    eventId: string;
+    /** Viewer-directional: current user -> candidate. Not persisted anywhere. */
+    computedScore: number;
+    computedConfidence: number;
+  };
+  candidateProfileData: UserAuthoredProfileData;
+  liveMatchEvidence: {
+    reasons: string[];
+    reciprocityLabel: string;
+    reverseScore: number;
+    reverseConfidence: number;
+    scoreVersion: string;
+  };
+  disclaimer: string;
+}
+
 export interface ConciergeMeetingContext {
   trusted: {
     meetingId: string;
@@ -182,6 +223,15 @@ export interface ConciergeContext {
   };
   checkedInMatches: ConciergeMatchContext[];
   meetings: ConciergeMeetingContext[];
+  /** At most one live "how would we score" comparison for an unmatched person the question named. */
+  liveComparison: ConciergeLiveComparison | null;
+}
+
+export interface ConciergeLiveCandidateSource {
+  /** Every checked-in attendee's id + name at the event (for name resolution). */
+  getCheckedInNames(eventId: string): Promise<CheckedInName[]>;
+  /** Full scoring-column row for one profile id, or null. */
+  getScoringProfile(profileId: string): Promise<ScoringProfileRow | null>;
 }
 
 const RELEVANT_MEETING_STATUSES = new Set(["requested", "accepted", "scheduled", "completed", "declined", "cancelled"]);
@@ -242,7 +292,62 @@ function baseContext(userId: string, event: EventRow, status: ConciergeContextSt
     currentUser: null,
     checkedInMatches: [],
     meetings: [],
+    liveComparison: null,
   };
+}
+
+/**
+ * Best-effort live comparison for an unmatched person the question names. Never
+ * throws -- returns null on any problem (no name resolved, lookup failed, etc.).
+ * Read-only: no AI explanation, no DB write.
+ */
+async function tryLiveComparison(
+  liveCandidateSource: ConciergeLiveCandidateSource,
+  question: string,
+  eventId: string,
+  currentProfileRow: ScoringProfileRow,
+  alreadyMatchedProfileIds: ReadonlySet<string>,
+): Promise<ConciergeLiveComparison | null> {
+  try {
+    const checkedInNames = await liveCandidateSource.getCheckedInNames(eventId);
+    const unmatchedIds = new Set(
+      checkedInNames
+        .map((person) => person.id)
+        .filter((id) => id !== currentProfileRow.id && !alreadyMatchedProfileIds.has(id)),
+    );
+    if (unmatchedIds.size === 0) return null;
+
+    const candidateId = resolveNamedCandidateId(question, checkedInNames, unmatchedIds);
+    if (!candidateId) return null;
+
+    const candidateRow = await liveCandidateSource.getScoringProfile(candidateId);
+    if (!candidateRow) return null;
+
+    const live = computeLiveMatch(
+      toScorerProfile(currentProfileRow),
+      toScorerProfile(candidateRow),
+    );
+    return {
+      isLiveComputed: true,
+      trusted: {
+        profileId: candidateId,
+        eventId,
+        computedScore: live.computedScore,
+        computedConfidence: live.computedConfidence,
+      },
+      candidateProfileData: profileData(candidateRow),
+      liveMatchEvidence: {
+        reasons: live.reasons,
+        reciprocityLabel: live.reciprocityLabel,
+        reverseScore: live.reverseScore,
+        reverseConfidence: live.reverseConfidence,
+        scoreVersion: live.scoreVersion,
+      },
+      disclaimer: LIVE_COMPARISON_DISCLAIMER,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function isExactPair(userId: string, otherId: string, first: string | null, second: string | null) {
@@ -351,6 +456,8 @@ export async function buildConciergeContext(
   source: ConciergeContextSource,
   userId: string,
   eventId: string,
+  question = "",
+  liveCandidateSource?: ConciergeLiveCandidateSource,
 ): Promise<ConciergeContext> {
   const [currentProfile, event] = await Promise.all([
     source.getCurrentProfile(userId),
@@ -376,8 +483,27 @@ export async function buildConciergeContext(
     match.event_id === eventId
     && (match.user_a_id === userId || match.user_b_id === userId)
   ));
+
+  // A live comparison is about someone the user has NO match row with, so exclude
+  // every counterpart across all of the user's match rows for this event.
+  const alreadyMatchedProfileIds = new Set(
+    authorizedMatches
+      .map((match) => (match.user_a_id === userId ? match.user_b_id : match.user_a_id))
+      .filter((id): id is string => Boolean(id)),
+  );
+  if (liveCandidateSource && question.trim()) {
+    context.liveComparison = await tryLiveComparison(
+      liveCandidateSource,
+      question,
+      eventId,
+      currentProfile as ScoringProfileRow,
+      alreadyMatchedProfileIds,
+    );
+  }
+
   if (authorizedMatches.length === 0) {
-    context.status = "no_matches";
+    // Still answerable if we found a live comparison for a named unmatched person.
+    if (!context.liveComparison) context.status = "no_matches";
     return context;
   }
 
@@ -417,7 +543,7 @@ export async function buildConciergeContext(
     ))
     .slice(0, 10);
   if (eligibleMatches.length === 0) {
-    context.status = "no_people_checked_in";
+    if (!context.liveComparison) context.status = "no_people_checked_in";
     return context;
   }
 
@@ -511,7 +637,9 @@ export async function buildConciergeContext(
       return leftTime - rightTime || left.trusted.meetingId.localeCompare(right.trusted.meetingId);
     });
 
-  if (context.checkedInMatches.length === 0) context.status = "no_people_checked_in";
+  if (context.checkedInMatches.length === 0 && !context.liveComparison) {
+    context.status = "no_people_checked_in";
+  }
   return context;
 }
 
@@ -541,8 +669,10 @@ function unwrap<T>(result: QueryResult<T[]>, operation: string): T[] {
 export function createSupabaseContextSource(client: ConciergeQueryClient): ConciergeContextSource {
   return {
     async getCurrentProfile(userId) {
-      const result = await client.from<ProfileRow>("profiles")
-        .select("id,full_name,title,company,role_type,secondary_role_types,matching_goal,primary_goal,secondary_goals,desired_outcomes,needs,offers,areas_of_expertise,interests,communities,who_to_meet,connection_preference,industry_focus,location")
+      // The full scorer column set (own profile, RLS-OK) + title/company for
+      // profileData(), so a live unmatched comparison can run calculateMatchScore.
+      const result = await client.from<ScoringProfileRow>("profiles")
+        .select(`${SCORER_PROFILE_COLUMNS}, title, company`)
         .eq("id", userId)
         .maybeSingle();
       if (result.error) throw new Error("Concierge context profile lookup failed");
@@ -599,6 +729,42 @@ export function createSupabaseContextSource(client: ConciergeQueryClient): Conci
   };
 }
 
+/**
+ * Backed by a SERVICE-ROLE client (not the caller's JWT): the live comparison
+ * needs an unmatched attendee's profile, which the caller's RLS cannot see.
+ * Scoped to attendees checked in at the same event the caller is registered for.
+ */
+export function createSupabaseLiveCandidateSource(serviceClient: ConciergeQueryClient): ConciergeLiveCandidateSource {
+  return {
+    async getCheckedInNames(eventId) {
+      // Base table, NOT matched_event_attendance: that view is gated on
+      // auth.uid(), which is NULL for this service-role client, so it would
+      // always return nobody. Service role bypasses RLS on the base table.
+      const checkins = await serviceClient.from<{ profile_id: string | null }>("event_registrations")
+        .select("profile_id")
+        .eq("event_id", eventId)
+        .eq("status", "registered")
+        .eq("is_checked_in", true);
+      const ids = unwrap(checkins, "live check-in lookup")
+        .map((row) => row.profile_id)
+        .filter((id): id is string => Boolean(id));
+      if (ids.length === 0) return [];
+      const names = await serviceClient.from<{ id: string; full_name: string | null }>("profiles")
+        .select("id,full_name")
+        .in("id", ids);
+      return unwrap(names, "live name lookup").map((row) => ({ id: row.id, fullName: row.full_name ?? null }));
+    },
+    async getScoringProfile(profileId) {
+      const result = await serviceClient.from<ScoringProfileRow>("profiles")
+        .select(SCORER_PROFILE_COLUMNS)
+        .eq("id", profileId)
+        .maybeSingle();
+      if (result.error) throw new Error("Concierge context live candidate lookup failed");
+      return result.data;
+    },
+  };
+}
+
 export function summarizeConciergeContext(context: ConciergeContext) {
   const activeStatuses = new Set(["requested", "accepted", "scheduled"]);
   return {
@@ -613,5 +779,6 @@ export function summarizeConciergeContext(context: ConciergeContext) {
     activeMeetingCount: context.meetings.filter((meeting) => activeStatuses.has(meeting.status)).length,
     allowedMatchIds: context.checkedInMatches.map((match) => match.trusted.matchId),
     allowedProfileIds: context.checkedInMatches.map((match) => match.trusted.profileId),
+    liveComparisonProfileId: context.liveComparison?.trusted.profileId ?? null,
   };
 }

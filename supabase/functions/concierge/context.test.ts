@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildConciergeContext,
   createSupabaseContextSource,
+  createSupabaseLiveCandidateSource,
   summarizeConciergeContext,
   type ConciergeContextSource,
   type ConciergeQueryClient,
@@ -250,9 +251,20 @@ test("Supabase source selects no message content, email, LinkedIn, URLs, or unre
   const selectedText = selections.map((selection) => `${selection.table}:${selection.columns}`).join("\n").toLowerCase();
   assert.equal(selectedText.includes("content"), false);
   assert.equal(selectedText.includes("email"), false);
-  assert.equal(selectedText.includes("linkedin"), false);
   assert.equal(selectedText.includes("avatar_url"), false);
   assert.equal(selectedText.includes("bio"), false);
+  // getCurrentProfile now also fetches the scorer inputs for the live comparison
+  // (linkedin_url / profile_completed feed calculateMatchConfidence) -- but only
+  // from the user's OWN `profiles` row, and profileData() keeps them out of the
+  // model context (asserted below).
+  assert.equal(
+    selections.some((s) => s.table !== "profiles" && s.columns.toLowerCase().includes("linkedin")),
+    false,
+  );
+  assert.equal(
+    selections.some((s) => s.table !== "profiles" && s.columns.toLowerCase().includes("profile_completed")),
+    false,
+  );
   assert.equal(selections.some((selection) => selection.table === "profiles"), true);
   assert.equal(selections.some((selection) => selection.table === "attendee_profiles"), true);
   assert.equal(
@@ -265,4 +277,43 @@ test("Supabase source selects no message content, email, LinkedIn, URLs, or unre
   );
   assert.equal(selections.some((selection) => selection.table === "matched_event_attendance"), true);
   assert.equal(selections.some((selection) => selection.table === "event_registrations"), false);
+});
+
+test("live candidate source reads event_registrations, not the auth.uid()-gated attendance view", async () => {
+  const selections: Array<{ table: string; columns: string }> = [];
+  const client = {
+    from: <T,>(table: string) => {
+      const builder = {
+        select: (columns: string) => {
+          selections.push({ table, columns });
+          return builder;
+        },
+        eq: () => builder,
+        or: () => builder,
+        in: () => builder,
+        order: () => builder,
+        maybeSingle: async () => ({ data: null, error: null }),
+        then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
+          Promise.resolve({ data: [] as T[], error: null }).then(resolve, reject),
+      };
+      return builder;
+    },
+  } as unknown as ConciergeQueryClient;
+  const liveSource = createSupabaseLiveCandidateSource(client);
+  await liveSource.getCheckedInNames(EVENT_ID);
+  await liveSource.getScoringProfile("candidate-1");
+
+  // matched_event_attendance filters on auth.uid(), which is NULL for the
+  // service-role client this source uses, so it would always return nobody.
+  assert.equal(selections.some((selection) => selection.table === "matched_event_attendance"), false);
+  assert.equal(selections.some((selection) => selection.table === "event_registrations"), true);
+  assert.equal(selections.some((selection) => selection.table === "profiles"), true);
+});
+
+test("the serialized model context never carries email, linkedin, or bio even when the raw rows have them", async () => {
+  const context = await buildConciergeContext(source(), USER_ID, EVENT_ID);
+  const serialized = JSON.stringify(context).toLowerCase();
+  assert.equal(serialized.includes("linkedin"), false);
+  assert.equal(serialized.includes("@example.com"), false);
+  assert.equal(serialized.includes("\"bio\""), false);
 });

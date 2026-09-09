@@ -160,6 +160,7 @@ test("returns a trusted hydrated answer for a registered user", async () => {
       activeMeetingCount: 0,
       allowedMatchIds: ["match-1"],
       allowedProfileIds: ["person-1"],
+      liveComparisonProfileId: null,
     },
     answer: "Meet Marcus because he aligns with your fundraising goal.",
     people: [{ profileId: "person-1", matchId: "match-1", name: "Marcus Lee", title: "Investor", company: "Northstar", matchScore: 91, reason: "Fundraising fit" }],

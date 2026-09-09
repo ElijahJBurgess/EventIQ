@@ -47,6 +47,7 @@ export interface ConciergeHandlerOptions {
     client: ConciergeSupabaseClient,
     authenticatedUserId: string,
     eventId: string,
+    question: string,
   ) => Promise<ConciergeContext>;
   answerQuestion: (
     context: ConciergeContext,
@@ -215,7 +216,7 @@ export function createConciergeHandler({
 
     let context: ConciergeContext;
     try {
-      context = await gatherContext(supabase, authenticatedUser.id, eventId);
+      context = await gatherContext(supabase, authenticatedUser.id, eventId, question);
     } catch {
       console.error("Concierge context gathering failed");
       return jsonResponse({ success: false, error: "Unable to process request." }, 500, origin, allowedOrigins);

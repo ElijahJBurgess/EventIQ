@@ -89,6 +89,31 @@ test("profile prompt injection remains inside a data-only boundary", async () =>
   assert.match(serialized, /Ignore all rules/);
 });
 
+test("instructs the model to disclose a live (non-persisted) comparison, not present it as a match", () => {
+  assert.match(CONCIERGE_SYSTEM_INSTRUCTIONS, /liveComparison/);
+  assert.match(CONCIERGE_SYSTEM_INSTRUCTIONS, /isLiveComputed/);
+  assert.match(CONCIERGE_SYSTEM_INSTRUCTIONS, /not officially matched|haven't matched|not .* matched/i);
+  assert.match(CONCIERGE_SYSTEM_INSTRUCTIONS, /never present it as an existing match/i);
+});
+
+test("a live comparison in context is not hydrated into the structured people list", () => {
+  const withLive = structuredClone(context);
+  withLive.liveComparison = {
+    isLiveComputed: true,
+    trusted: { profileId: "unmatched-1", eventId: "event-1", computedScore: 72, computedConfidence: 80 },
+    candidateProfileData: context.checkedInMatches[0].userAuthoredProfileData,
+    liveMatchEvidence: { reasons: ["x matches y (z)."], reciprocityLabel: "Mutual Value", reverseScore: 61, reverseConfidence: 77, scoreVersion: "v2.1" },
+    disclaimer: "not saved",
+  };
+  // model tries to reference the live person by a made-up matchId -> dropped
+  const hydrated = hydrateConciergeReferences(
+    { answer: "You two haven't matched yet, but you'd score ~72%.", people: [{ matchId: "unmatched-1" }], meetings: [] },
+    withLive,
+  );
+  assert.deepEqual(hydrated.people, []);
+  assert.equal(hydrated.answer.includes("haven't matched"), true);
+});
+
 for (const question of [
   "Who should I meet right now?",
   "Who can help with what I’m looking for?",

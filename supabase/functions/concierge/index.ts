@@ -2,6 +2,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   buildConciergeContext,
   createSupabaseContextSource,
+  createSupabaseLiveCandidateSource,
   type ConciergeQueryClient,
 } from "./context.ts";
 import { createConciergeHandler, type ConciergeSupabaseClient } from "./handler.ts";
@@ -26,11 +27,17 @@ const openAIApiKey = Deno.env.get("OOO_Intellegence_Open_API_Key");
 const conciergeModel = Deno.env.get("CONCIERGE_OPENAI_MODEL") ?? DEFAULT_CONCIERGE_MODEL;
 
 const openAI = openAIApiKey ? createOpenAIResponsesClient(openAIApiKey) : null;
-const telemetryClient = supabaseUrl && supabaseServiceRoleKey
+const serviceRoleClient = supabaseUrl && supabaseServiceRoleKey
   ? createClient(supabaseUrl, supabaseServiceRoleKey, {
       auth: { autoRefreshToken: false, persistSession: false },
-    }) as unknown as ConciergeTelemetryClient
+    })
   : null;
+const telemetryClient = serviceRoleClient as unknown as ConciergeTelemetryClient | null;
+// Used only to read an unmatched attendee's profile for the live comparison
+// (the caller's RLS cannot see it) -- scoped to same-event checked-in attendees.
+const liveCandidateSource = serviceRoleClient
+  ? createSupabaseLiveCandidateSource(serviceRoleClient as unknown as ConciergeQueryClient)
+  : undefined;
 
 const handler = createConciergeHandler({
   allowedOrigins,
@@ -41,10 +48,12 @@ const handler = createConciergeHandler({
       auth: { autoRefreshToken: false, persistSession: false },
     }) as unknown as ConciergeSupabaseClient;
   },
-  gatherContext: (client, authenticatedUserId, eventId) => buildConciergeContext(
+  gatherContext: (client, authenticatedUserId, eventId, question) => buildConciergeContext(
     createSupabaseContextSource(client as unknown as ConciergeQueryClient),
     authenticatedUserId,
     eventId,
+    question,
+    liveCandidateSource,
   ),
   answerQuestion: (context, question, history, timezone) => {
     if (!openAI) throw new Error("OpenAI environment is unavailable");
