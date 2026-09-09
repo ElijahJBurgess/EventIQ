@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { fetchMatchDetail, type MatchDetailResult } from "@/lib/matchDetail";
 import { buildFullProfileExplanation, type ClickPair } from "@/lib/matchExplanation";
 import { sendConnectRequest } from "@/lib/connectRequest";
+import ConnectComposer from "@/components/matches/ConnectComposer";
 import OffripButton from "@/components/offrip/Button";
 import OffripCard from "@/components/offrip/Card";
 import OffripChip from "@/components/offrip/Chip";
@@ -115,7 +116,7 @@ function OfferList({ items, emptyMessage }: { items: string[]; emptyMessage: str
 export default function FullProfileView({ matchId, currentUserId, onBack, backLabel = "Back to Matches" }: FullProfileViewProps) {
   // undefined = loading, null = not found (or an error -- both render the same honest "couldn't load" state)
   const [detail, setDetail] = useState<MatchDetailResult | null | undefined>(undefined);
-  const [introStatus, setIntroStatus] = useState<"idle" | "sending" | "sent">("idle");
+  const [introStatus, setIntroStatus] = useState<"idle" | "composing" | "sending" | "sent">("idle");
   const [pendingMeeting, setPendingMeeting] = useState<PendingMeetingRequest | null>(null);
   const [respondingToMeeting, setRespondingToMeeting] = useState<"accepted" | "declined" | null>(null);
 
@@ -175,24 +176,25 @@ export default function FullProfileView({ matchId, currentUserId, onBack, backLa
   const scoreBand = detail.match.score === null ? null : getMatchBand(detail.match.score);
   const roleCompany = [otherPerson.role_type, otherPerson.company].filter(Boolean).join(" · ");
 
-  const handleMakeIntro = async () => {
-    if (introStatus !== "idle") return;
+  const sendIntro = async (rawContent: string) => {
+    const content = rawContent.trim();
+    if (!content || introStatus === "sending" || introStatus === "sent") return;
     setIntroStatus("sending");
 
-    // Same real mechanism as MatchesTab's "Request to Connect": insert a
-    // messages row (message_type: "connect_request") then a match_actions
-    // row. "already_sent" (a unique-constraint violation under the hood)
-    // shows the same sent state, just without a fresh success toast.
+    // Same real mechanism as MatchesTab's "Message" action: insert a messages
+    // row (message_type: "connect_request") then a match_actions row.
+    // "already_sent" (a unique-constraint violation under the hood) shows the
+    // same sent state, just without a fresh success toast.
     const result = await sendConnectRequest({
       matchId: detail.match.id,
       eventId: detail.match.eventId,
       senderId: currentUserId,
       recipientId: otherPerson.id,
-      content: "Hi! I'd love to connect.",
+      content,
     });
 
     if (result.status === "error") {
-      setIntroStatus("idle");
+      setIntroStatus("composing");
       toast.error("Couldn't send the intro — try again.");
       return;
     }
@@ -288,14 +290,23 @@ export default function FullProfileView({ matchId, currentUserId, onBack, backLa
             )}
           </div>
 
-          <OffripButton
-            onClick={handleMakeIntro}
-            disabled={introStatus !== "idle"}
-            className="w-full justify-center"
-          >
-            {introStatus === "sent" && <Check className="h-4 w-4" />}
-            {introStatus === "sent" ? "Intro Sent" : introStatus === "sending" ? "Sending…" : "Make the Intro"}
-          </OffripButton>
+          {introStatus === "composing" || introStatus === "sending" ? (
+            <ConnectComposer
+              defaultMessage="Hi! I'd love to connect."
+              sending={introStatus === "sending"}
+              onSend={sendIntro}
+              onCancel={() => setIntroStatus("idle")}
+            />
+          ) : (
+            <OffripButton
+              onClick={() => setIntroStatus("composing")}
+              disabled={introStatus === "sent"}
+              className="w-full justify-center"
+            >
+              {introStatus === "sent" && <Check className="h-4 w-4" />}
+              {introStatus === "sent" ? "Intro Sent" : "Make the Intro"}
+            </OffripButton>
+          )}
         </div>
 
         {/* Right column */}
