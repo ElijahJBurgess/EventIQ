@@ -37,6 +37,7 @@ import { Input } from "@/components/ui/input";
 import { buildConnectionSummary } from "@/lib/connectionSummary";
 import { getViewerMatchMetrics } from "@/lib/checkedInMatches";
 import { selectHomeStatsEvent } from "@/lib/homeStatsEvent";
+import { buildEventCardSubtitle } from "@/lib/eventCardSubtitle";
 import { getMatchBand } from "@/lib/matchPresentation";
 
 type Tab = "home" | "profile" | "events" | "matches" | "concierge" | "connections" | "messages" | "myday";
@@ -1518,6 +1519,7 @@ function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (
 
   const renderEvent = (ev: EventRow) => {
     const previewAttendees = attendeesByEvent.get(ev.id) ?? [];
+    const subtitle = buildEventCardSubtitle(ev);
     return (
     <div key={ev.id} className="border border-black/10 bg-white p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:border-black transition-colors">
       <div className="flex items-center gap-4 min-w-0">
@@ -1535,7 +1537,9 @@ function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (
         )}
         <div className="min-w-0">
           <p className="font-display text-lg">{ev.name}</p>
-          <p className="text-xs text-black/40 normal-case font-offrip-body mt-1">{ev.venue} · {ev.location} · {ev.date}</p>
+          {subtitle && (
+            <p className="text-xs text-black/40 normal-case font-offrip-body mt-1">{subtitle}</p>
+          )}
         </div>
       </div>
       {joined.has(ev.id) ? (
