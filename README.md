@@ -118,7 +118,7 @@ the deploy-time default).
 | `match-engine` | generate a caller's matches for an event | true |
 | `concierge` | AI attendee Q&A for an event | true |
 | `delete-account` | self-serve account deletion (deletes only `auth.uid()`) | true |
-| `admin-auth` | enterprise dashboard data + AI insights/copilot + report CRUD | **false** — gated by a shared organizer password (`OOO_ADMIN_PASSWORD`), not a JWT |
+| `admin-auth` | enterprise dashboard data + AI insights/copilot + report CRUD + `create-event` (owner-only room creation) | **false** — gated by a shared organizer password (`OOO_ADMIN_PASSWORD`), not a JWT |
 | `admin-run-matching` | one-off operator match-backfill utility; **not deployed**; delete after use | n/a |
 | `admin-gen-link` | **decommissioned** — inert `410` stub; the slug still needs deleting from the dashboard | n/a |
 

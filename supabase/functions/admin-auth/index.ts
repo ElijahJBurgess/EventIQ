@@ -13,6 +13,7 @@ import {
   KNOWN_REPORT_SECTIONS,
   type ReportSection,
 } from "./report.ts";
+import { buildEventInsertRow } from "./createEvent.ts";
 
 // Browser callers are restricted to an explicit origin allow-list. Non-browser
 // callers (no Origin header) are unaffected — CORS is a browser-only control.
@@ -323,6 +324,19 @@ Deno.serve(async (request) => {
         .single();
       if (error) throw error;
       return json({ valid: true, report: inserted });
+    }
+
+    if (action === "create-event") {
+      const result = buildEventInsertRow(payload as Record<string, unknown>);
+      if (!result.ok) return json({ valid: true, error: result.error });
+
+      const { data: inserted, error } = await supabase
+        .from("events")
+        .insert(result.row)
+        .select("id, name, venue, location, date, end_date, event_type, is_published, is_demo")
+        .single();
+      if (error) throw error;
+      return json({ valid: true, event: inserted });
     }
 
     return json({ valid: true });

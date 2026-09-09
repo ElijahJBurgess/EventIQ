@@ -18,6 +18,7 @@ export default defineConfig({
       "supabase/functions/admin-auth/stats.test.ts",
       "supabase/functions/admin-auth/insights.test.ts",
       "supabase/functions/admin-auth/report.test.ts",
+      "supabase/functions/admin-auth/createEvent.test.ts",
       "supabase/functions/delete-account/deletion.test.ts",
     ],
   },

@@ -43,6 +43,125 @@ async function hashPassword(password: string) {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+const CREATE_ROOM_ERRORS: Record<string, string> = {
+  name_required: "Room name is required.",
+  invalid_event_type: "That event type isn't allowed.",
+  invalid_date: "Dates must look like 2026-09-08.",
+};
+
+function CreateRoomForm({ accessHash, onCreated }: { accessHash: string; onCreated: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [venue, setVenue] = useState("");
+  const [location, setLocation] = useState("");
+  const [date, setDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [isPublished, setIsPublished] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState<{ kind: "success" | "error"; text: string } | null>(null);
+
+  const fieldClass = "mt-2 w-full ooo-border bg-card px-4 py-3 normal-case font-sans";
+  const labelClass = "block font-label text-xs";
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    if (submitting || !name.trim()) return;
+    setSubmitting(true);
+    setMessage(null);
+
+    const { data, error } = await supabase.functions.invoke("admin-auth", {
+      body: {
+        passwordHash: accessHash,
+        action: "create-event",
+        name,
+        venue,
+        location,
+        date,
+        endDate,
+        isPublished,
+      },
+    });
+    setSubmitting(false);
+
+    if (error || !data || data.valid === false) {
+      setMessage({ kind: "error", text: "Couldn't create the room. Your organizer session may have expired." });
+      return;
+    }
+    if (typeof data.error === "string") {
+      setMessage({ kind: "error", text: CREATE_ROOM_ERRORS[data.error] ?? "Couldn't create the room." });
+      return;
+    }
+
+    setMessage({ kind: "success", text: `Created "${(data.event as { name: string } | undefined)?.name ?? name.trim()}".` });
+    setName("");
+    setVenue("");
+    setLocation("");
+    setDate("");
+    setEndDate("");
+    setIsPublished(false);
+    onCreated();
+  };
+
+  return (
+    <section className="ooo-border bg-card mb-8 p-5 sm:p-6">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-xl">Create a room</h2>
+          <p className="normal-case font-offrip-body text-sm text-muted-foreground mt-1">
+            Owner-only, for today. Rooms are otherwise created by direct database access.
+          </p>
+        </div>
+        <Button type="button" variant="outline" size="sm" onClick={() => setOpen((value) => !value)}>
+          {open ? "Close" : "New room"}
+        </Button>
+      </div>
+
+      {open && (
+        <form onSubmit={submit} className="mt-5 space-y-4">
+          <label className={labelClass}>
+            Name <span className="text-destructive">*</span>
+            <input className={fieldClass} value={name} onChange={(e) => setName(e.target.value)} disabled={submitting} />
+          </label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className={labelClass}>
+              Venue
+              <input className={fieldClass} value={venue} onChange={(e) => setVenue(e.target.value)} disabled={submitting} />
+            </label>
+            <label className={labelClass}>
+              Location
+              <input className={fieldClass} value={location} onChange={(e) => setLocation(e.target.value)} disabled={submitting} />
+            </label>
+            <label className={labelClass}>
+              Start date
+              <input type="date" className={fieldClass} value={date} onChange={(e) => setDate(e.target.value)} disabled={submitting} />
+            </label>
+            <label className={labelClass}>
+              End date
+              <input type="date" className={fieldClass} value={endDate} onChange={(e) => setEndDate(e.target.value)} disabled={submitting} />
+            </label>
+          </div>
+          <label className="flex items-center gap-2 font-label text-xs">
+            <input type="checkbox" checked={isPublished} onChange={(e) => setIsPublished(e.target.checked)} disabled={submitting} />
+            Publish immediately (visible to attendees)
+          </label>
+          {message && (
+            <p
+              className={`normal-case font-sans text-sm ${message.kind === "error" ? "text-destructive" : "text-emerald-600"}`}
+              role={message.kind === "error" ? "alert" : "status"}
+            >
+              {message.text}
+            </p>
+          )}
+          <Button type="submit" disabled={submitting || !name.trim()}>
+            {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
+            {submitting ? "Creating…" : "Create room"}
+          </Button>
+        </form>
+      )}
+    </section>
+  );
+}
+
 const ENTERPRISE_TABS: Array<{ value: EnterpriseTab; label: string }> = [
   { value: "overview", label: "Overview" },
   { value: "audience", label: "Audience" },
@@ -146,6 +265,8 @@ export default function OrganizerAdmin() {
             <p className="normal-case font-offrip-body text-black/40 mt-2 mb-8">
               See who showed up, how the room connected, and what happened next.
             </p>
+
+            <CreateRoomForm accessHash={accessHash} onCreated={() => loadStats(accessHash)} />
 
             {loadingStats ? (
               <div className="flex items-center gap-2 normal-case font-sans text-muted-foreground">
