@@ -44,7 +44,7 @@ interface EnrichedMatch {
   alreadyConnected: boolean;
 }
 
-// Cycled by card position so the People grid reads like the Home cards.
+// Cycled by card position so the Matches grid reads like the Home cards.
 const OFFRIP_AVATAR_PALETTE = [
   "bg-offrip-aqua text-offrip-black",
   "bg-offrip-orange text-offrip-white",
@@ -285,7 +285,7 @@ export default function MatchesTab({
       <div className="mb-8">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h1 className="font-display text-4xl">People worth knowing</h1>
+            <h1 className="font-display text-4xl">Matches worth knowing</h1>
             <p className="text-sm text-black/40 normal-case font-offrip-body mt-1 max-w-2xl">
               {selectedEvent ? `Matches you should meet at ${selectedEvent.name}` : "Join an event to discover matches you should meet"}
             </p>
@@ -302,7 +302,7 @@ export default function MatchesTab({
               </Button>
               <Button onClick={refreshRoom} disabled={refreshing || running} variant="outline" size="sm">
                 {refreshing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                {refreshing ? "Refreshing…" : "Refresh Room"}
+                {refreshing ? "Refreshing…" : "Refresh Event"}
               </Button>
               <Button onClick={runMatching} disabled={running || refreshing} variant="secondary" size="sm">
                 {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
@@ -381,7 +381,7 @@ export default function MatchesTab({
                   <Button onClick={onGoHome} variant="outline" size="sm">Back to Home</Button>
                 )}
                 {onExploreRooms && (
-                  <Button onClick={onExploreRooms} variant="secondary" size="sm">Explore Rooms</Button>
+                  <Button onClick={onExploreRooms} variant="secondary" size="sm">Explore Events</Button>
                 )}
               </div>
             </div>

@@ -104,7 +104,7 @@ async function findCard() {
   return within(card.parentElement as HTMLElement);
 }
 
-describe("People card", () => {
+describe("Matches card", () => {
   it("shows role · company, location, and up to 3 shared tags", async () => {
     renderTab();
     const card = await findCard();

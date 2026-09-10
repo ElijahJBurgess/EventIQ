@@ -364,7 +364,7 @@ export default function Page1BasicInfo({
     <div>
       <h1 className="text-4xl font-black">Start with you.</h1>
       <p className="text-sm text-black/50 normal-case font-offrip-body mt-2 mb-8">
-        Help the room get to know you.
+        Help the event get to know you.
       </p>
 
       <div className="space-y-5">

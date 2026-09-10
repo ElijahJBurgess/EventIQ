@@ -126,11 +126,11 @@ describe("OrganizerAdmin — enterprise tabs", () => {
   it("renders the Relationships tab patterns", async () => {
     renderAdmin();
     await screen.findByText("PROFILES CREATED");
-    expect(screen.queryByText("HOW THE ROOM CONNECTED")).not.toBeInTheDocument();
+    expect(screen.queryByText("HOW THE EVENT CONNECTED")).not.toBeInTheDocument();
 
     fireEvent.mouseDown(screen.getByRole("tab", { name: /relationships/i }));
 
-    expect(await screen.findByText("HOW THE ROOM CONNECTED")).toBeInTheDocument();
+    expect(await screen.findByText("HOW THE EVENT CONNECTED")).toBeInTheDocument();
     expect(screen.getByText("Founders ↔ Investors")).toBeInTheDocument();
     expect(screen.getByText("CONNECTION HEATMAP")).toBeInTheDocument();
     expect(screen.getByText("CONNECTION & MEETING STATUS")).toBeInTheDocument();
@@ -139,11 +139,11 @@ describe("OrganizerAdmin — enterprise tabs", () => {
   it("renders the Audience tab breakdowns", async () => {
     renderAdmin();
     await screen.findByText("PROFILES CREATED");
-    expect(screen.queryByText("WHO WAS IN THE ROOM?")).not.toBeInTheDocument();
+    expect(screen.queryByText("WHO WAS IN THE EVENT?")).not.toBeInTheDocument();
 
     fireEvent.mouseDown(screen.getByRole("tab", { name: /audience/i }));
 
-    expect(await screen.findByText("WHO WAS IN THE ROOM?")).toBeInTheDocument();
+    expect(await screen.findByText("WHO WAS IN THE EVENT?")).toBeInTheDocument();
     expect(screen.getByText("BY FUNCTION")).toBeInTheDocument();
     expect(screen.getByText("Open to opportunities")).toBeInTheDocument();
   });

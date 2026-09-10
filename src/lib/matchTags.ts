@@ -1,5 +1,5 @@
 /**
- * The short tag chips shown on a People card: the match's shared industries
+ * The short tag chips shown on a Matches card: the match's shared industries
  * first, then its shared interests, de-duplicated case-insensitively and capped
  * (~3) so the card stays scannable. Same source data the card has always used —
  * just flattened into one list instead of a "Shared: …" blob plus interests.

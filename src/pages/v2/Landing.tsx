@@ -61,13 +61,13 @@ export default function Landing() {
       <div className="flex-1 grid md:grid-cols-2">
         <div className="flex flex-col justify-center px-8 md:px-16 py-16 md:py-20">
           <div className="text-[11px] tracking-widest font-display text-offrip-aqua mb-6">
-            Relationship intelligence for the rooms that matter.
+            Relationship intelligence for the events that matter.
           </div>
           <h1 className="font-display font-black text-5xl md:text-7xl leading-[0.92] tracking-tight uppercase text-white mb-6">
             Know<br />who to<br /><span className="text-offrip-orange">know.</span><br />Off rip.
           </h1>
           <p className="text-white/60 text-base leading-relaxed max-w-sm mb-6 font-offrip-body">
-            Know the room before you work it. Tell us what you're looking for and we'll find the people worth knowing.
+            Know the event before you work it. Tell us what you're looking for and we'll find the matches worth knowing.
           </p>
           <p className="text-white/30 text-sm max-w-sm mb-6 font-offrip-body">Less random networking. Better intros.</p>
           <div className="flex flex-col sm:flex-row gap-3 max-w-sm">
@@ -80,7 +80,7 @@ export default function Landing() {
               className="flex-1 bg-white/10 border border-white/20 text-white placeholder:text-white/30 px-4 py-3 text-sm font-offrip-body outline-none focus:border-offrip-aqua transition-colors"
             />
             <button onClick={startSignup} className="bg-white text-black text-[11px] tracking-widest px-6 py-3 hover:bg-offrip-aqua transition-colors whitespace-nowrap">
-              Get in the room
+              Get in the event
             </button>
           </div>
           <div className="flex flex-wrap gap-2 mt-10">
@@ -92,7 +92,7 @@ export default function Landing() {
             <div className="w-full text-[9px] text-white/25 tracking-widest font-display uppercase">
               Demo metrics · sample data
             </div>
-            {[["1,842", "People in the room", "text-white"], ["94%", "Match accuracy", "text-offrip-aqua"], ["412", "Outcomes reported", "text-white"]].map(([value, label, color]) => (
+            {[["1,842", "People in the event", "text-white"], ["94%", "Match accuracy", "text-offrip-aqua"], ["412", "Outcomes reported", "text-white"]].map(([value, label, color]) => (
               <div key={label}>
                 <div className={`font-display font-black text-2xl ${color}`}>{value}</div>
                 <div className="text-[10px] text-white/40 tracking-wider font-display mt-0.5">{label}</div>

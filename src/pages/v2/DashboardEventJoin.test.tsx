@@ -99,7 +99,7 @@ async function openRoomsTab() {
     </MemoryRouter>,
   );
   const nav = await screen.findByRole("navigation", { name: "Attendee navigation" });
-  fireEvent.click(within(nav).getByRole("button", { name: "Rooms" }));
+  fireEvent.click(within(nav).getByRole("button", { name: "Events" }));
   return screen.findByText("Room Today");
 }
 

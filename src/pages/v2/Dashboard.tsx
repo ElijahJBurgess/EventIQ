@@ -48,8 +48,8 @@ const NAV_ITEMS: NavItem[] = ["home", "events", "matches", "concierge", "connect
 
 const NAV_LABELS: Record<NavItem, string> = {
   home: "Home",
-  events: "Rooms",
-  matches: "People",
+  events: "Events",
+  matches: "Matches",
   concierge: "Concierge",
   connections: "Connections",
   messages: "Messages",
@@ -265,7 +265,7 @@ export default function DashboardV2() {
                 </DropdownMenuItem>
                 {profile?.is_organizer && (
                   <DropdownMenuItem onSelect={() => navigate("/v2/organizer")}>
-                    Organizer Rooms
+                    Organizer Events
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem disabled>Privacy Policy</DropdownMenuItem>
@@ -559,7 +559,7 @@ function HomeTab({
         return;
       }
 
-      // "Your company is in the room": other checked-in attendees at this event
+      // "Your company is in the event": other checked-in attendees at this event
       // whose company matches the viewer's own. Skipped when the viewer has no
       // company set. The RPC already filters by company; the client re-filters
       // as a backstop. Cast because home_company_colleagues isn't in the
@@ -845,12 +845,12 @@ function HomeTab({
               </p>
             </div>
             <OffripButton onClick={() => onSeeRoom(stats.eventId)} className="shrink-0 !bg-offrip-white !text-offrip-black hover:!bg-offrip-aqua">
-              See the Room
+              See the Event
             </OffripButton>
           </div>
           {companyInRoomText && (
             <div className="mt-4 border-2 border-offrip-black bg-offrip-lime p-5">
-              <p className="font-offrip-display text-xs font-bold uppercase tracking-widest">Your company is in the room</p>
+              <p className="font-offrip-display text-xs font-bold uppercase tracking-widest">Your company is in the event</p>
               <p className="mt-1 font-offrip-body text-sm text-offrip-black">{companyInRoomText}</p>
             </div>
           )}
@@ -1498,7 +1498,7 @@ function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (
         profile_id: userId,
         registration_type: "attendee",
         status: "registered",
-        // Joining a room now counts as checking in — there is no separate
+        // Joining an event now counts as checking in — there is no separate
         // on-site confirmation step. `checkIn` below stays only as a harmless
         // no-op backfill for rows created before this change.
         is_checked_in: true,
@@ -1583,7 +1583,7 @@ function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (
       </div>
       {joined.has(ev.id) ? (
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <span className="text-[10px] bg-offrip-aqua px-3 py-2">Active room</span>
+          <span className="text-[10px] bg-offrip-aqua px-3 py-2">Active event</span>
           {isEventHappeningToday(ev) && (
             checkedIn.has(ev.id) ? (
               <span className="text-[10px] bg-offrip-lime px-3 py-2">✓ Checked in</span>
@@ -1598,7 +1598,7 @@ function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (
             )
           )}
           <button onClick={() => onViewMatches(ev.id)} className="text-[10px] bg-black text-white px-4 py-2.5 hover:bg-offrip-aqua hover:text-black transition-colors">
-            See the room →
+            See the event →
           </button>
         </div>
       ) : (
@@ -1617,7 +1617,7 @@ function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (
   return (
     <div>
       <div className="mb-8">
-        <h1 className="font-offrip-display text-3xl font-black uppercase tracking-tight sm:text-4xl">Your rooms</h1>
+        <h1 className="font-offrip-display text-3xl font-black uppercase tracking-tight sm:text-4xl">Your events</h1>
         <p className="mt-1 text-sm text-black/40 normal-case font-offrip-body">Where you're showing up and who you should know when you get there.</p>
       </div>
       {events.length === 0 && <p className="text-sm text-muted-foreground normal-case font-sans">No published events yet. Check back soon.</p>}

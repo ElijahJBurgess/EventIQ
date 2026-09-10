@@ -104,7 +104,7 @@ export default function RelationshipsTab({ event }: { event: EventStats }) {
   return (
     <div className="space-y-8">
       <div>
-        <div className="mb-1 font-display text-2xl font-black tracking-tight">HOW THE ROOM CONNECTED</div>
+        <div className="mb-1 font-display text-2xl font-black tracking-tight">HOW THE EVENT CONNECTED</div>
         <p className="font-offrip-body text-sm normal-case tracking-normal text-black/40">
           Cross-group relationship patterns
         </p>

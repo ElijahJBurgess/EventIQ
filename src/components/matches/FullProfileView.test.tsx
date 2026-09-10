@@ -78,7 +78,7 @@ describe("FullProfileView back navigation", () => {
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 
-  it("preserves the existing People back label by default", async () => {
+  it("preserves the existing Matches back label by default", async () => {
     render(<FullProfileView matchId="match-id" currentUserId="current-user" onBack={vi.fn()} />);
     expect(await screen.findByRole("button", { name: "← Back to Matches" })).toBeInTheDocument();
   });

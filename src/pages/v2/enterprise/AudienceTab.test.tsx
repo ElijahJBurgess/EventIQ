@@ -66,9 +66,9 @@ function eventStats(overrides: Partial<EventStats> = {}): EventStats {
 afterEach(cleanup);
 
 describe("AudienceTab — header", () => {
-  it("names the room by checked-in attendee count and event", () => {
+  it("names the event by checked-in attendee count and event name", () => {
     render(<AudienceTab event={eventStats()} />);
-    expect(screen.getByText("WHO WAS IN THE ROOM?")).toBeInTheDocument();
+    expect(screen.getByText("WHO WAS IN THE EVENT?")).toBeInTheDocument();
     expect(screen.getByText(/37 attendees · Preview Event/)).toBeInTheDocument();
   });
 });
@@ -84,7 +84,7 @@ describe("AudienceTab — by function", () => {
 });
 
 describe("AudienceTab — what did people come for", () => {
-  it("lists each intent with its share of the room", () => {
+  it("lists each intent with its share of the event", () => {
     render(<AudienceTab event={eventStats()} />);
     expect(screen.getByText("WHAT DID PEOPLE COME FOR?")).toBeInTheDocument();
     expect(screen.getByText("Meet Collaborators")).toBeInTheDocument();

@@ -59,7 +59,7 @@ afterEach(cleanup);
 describe("RelationshipsTab — pair cards", () => {
   it("shows all five relationship pairs", () => {
     render(<RelationshipsTab event={eventStats()} />);
-    expect(screen.getByText("HOW THE ROOM CONNECTED")).toBeInTheDocument();
+    expect(screen.getByText("HOW THE EVENT CONNECTED")).toBeInTheDocument();
     for (const label of [
       "Founders ↔ Investors",
       "Recruiters ↔ Candidates",

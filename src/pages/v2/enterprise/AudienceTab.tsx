@@ -116,7 +116,7 @@ export default function AudienceTab({ event }: { event: EventStats }) {
   return (
     <div className="space-y-8">
       <div>
-        <div className="mb-1 font-display text-2xl font-black tracking-tight">WHO WAS IN THE ROOM?</div>
+        <div className="mb-1 font-display text-2xl font-black tracking-tight">WHO WAS IN THE EVENT?</div>
         <p className="font-offrip-body text-sm normal-case tracking-normal text-black/40">
           {attendeeCount} attendees · {event.name}
         </p>
@@ -156,7 +156,7 @@ export default function AudienceTab({ event }: { event: EventStats }) {
                   display={`${intent.pct}%`}
                   widthPct={intent.widthPct}
                   color="#DCE86A"
-                  detail={`${intent.count} attendees · ${intent.pct}% of the room.`}
+                  detail={`${intent.count} attendees · ${intent.pct}% of the event.`}
                 />
               ))
             )}

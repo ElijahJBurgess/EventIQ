@@ -25,7 +25,7 @@ interface OrganizerRoom {
 const ROOM_COLUMNS = "id,name,venue,location,date,end_date,event_type,is_published";
 
 const CREATE_ERRORS: Record<string, string> = {
-  name_required: "Room name is required.",
+  name_required: "Event name is required.",
   invalid_event_type: "That event type isn't allowed.",
   invalid_date: "Dates must look like 2026-09-09.",
 };
@@ -92,7 +92,7 @@ export default function OrganizerRooms() {
     if (!built.ok || !built.row) {
       setMessage({
         kind: "error",
-        text: CREATE_ERRORS[built.error ?? ""] ?? "Couldn't create the room.",
+        text: CREATE_ERRORS[built.error ?? ""] ?? "Couldn't create the event.",
       });
       return;
     }
@@ -108,7 +108,7 @@ export default function OrganizerRooms() {
     if (error || !data) {
       setMessage({
         kind: "error",
-        text: "Couldn't create the room. Your account may not have organizer access.",
+        text: "Couldn't create the event. Your account may not have organizer access.",
       });
       return;
     }
@@ -139,17 +139,17 @@ export default function OrganizerRooms() {
       </header>
 
       <main className="max-w-3xl mx-auto px-6 py-8">
-        <h1 className="text-3xl">Your rooms</h1>
+        <h1 className="text-3xl">Your events</h1>
         <p className="normal-case font-offrip-body text-sm text-muted-foreground mt-1">
-          Rooms you organize. You only see and manage your own — not other organizers' rooms or the
+          Events you organize. You only see and manage your own — not other organizers' events or the
           owner analytics dashboard.
         </p>
 
         <section className="ooo-border bg-card mt-6 p-5 sm:p-6">
-          <h2 className="text-xl">Create a room</h2>
+          <h2 className="text-xl">Create an event</h2>
           <form onSubmit={submit} className="mt-5 space-y-4">
             <label className={labelClass} htmlFor="room-name">
-              Room name <span className="text-destructive">*</span>
+              Event name <span className="text-destructive">*</span>
               <input
                 id="room-name"
                 className={fieldClass}
@@ -237,16 +237,16 @@ export default function OrganizerRooms() {
             )}
             <Button type="submit" disabled={submitting}>
               {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-              {submitting ? "Creating…" : "Create room"}
+              {submitting ? "Creating…" : "Create event"}
             </Button>
           </form>
         </section>
 
         <section className="mt-8">
-          <h2 className="text-xl">Rooms you organize</h2>
+          <h2 className="text-xl">Events you organize</h2>
           {rooms.length === 0 ? (
             <p className="normal-case font-offrip-body text-sm text-muted-foreground mt-3">
-              You haven't created any rooms yet.
+              You haven't created any events yet.
             </p>
           ) : (
             <ul className="mt-4 space-y-3">

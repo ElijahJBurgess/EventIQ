@@ -21,7 +21,7 @@ export function companyColleagueNames(
 }
 
 /**
- * The "Your company is in the room" banner sentence, or null when there is
+ * The "Your company is in the event" banner sentence, or null when there is
  * nothing to show. One colleague is named; two or more are counted.
  */
 export function formatCompanyInRoom(names: string[], company: string | null | undefined): string | null {

@@ -71,13 +71,13 @@ describe("OrganizerRooms — visibility", () => {
     mocks.isOrganizer = false;
     renderPage();
     expect(await screen.findByText("Attendee dashboard")).toBeInTheDocument();
-    expect(screen.queryByLabelText(/room name/i)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/event name/i)).not.toBeInTheDocument();
   });
 
   it("shows the create-room form to an organizer", async () => {
     renderPage();
-    expect(await screen.findByRole("heading", { name: /your rooms/i })).toBeInTheDocument();
-    expect(screen.getByLabelText(/room name/i)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /your events/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/event name/i)).toBeInTheDocument();
     expect(screen.getByLabelText(/event type/i)).toBeInTheDocument();
   });
 });
@@ -85,20 +85,20 @@ describe("OrganizerRooms — visibility", () => {
 describe("OrganizerRooms — create", () => {
   it("blocks submit with a blank name and never calls insert", async () => {
     renderPage();
-    await screen.findByRole("heading", { name: /your rooms/i });
-    fireEvent.click(screen.getByRole("button", { name: /create room/i }));
-    expect(await screen.findByText(/room name is required/i)).toBeInTheDocument();
+    await screen.findByRole("heading", { name: /your events/i });
+    fireEvent.click(screen.getByRole("button", { name: /create event/i }));
+    expect(await screen.findByText(/event name is required/i)).toBeInTheDocument();
     expect(mocks.insert).not.toHaveBeenCalled();
   });
 
   it("inserts with organizer_id set to the signed-in user and the chosen type", async () => {
     renderPage();
-    await screen.findByRole("heading", { name: /your rooms/i });
+    await screen.findByRole("heading", { name: /your events/i });
 
-    fireEvent.change(screen.getByLabelText(/room name/i), { target: { value: "Founders Mixer" } });
+    fireEvent.change(screen.getByLabelText(/event name/i), { target: { value: "Founders Mixer" } });
     fireEvent.change(screen.getByLabelText(/venue/i), { target: { value: "The Wing" } });
     fireEvent.change(screen.getByLabelText(/event type/i), { target: { value: "Conference" } });
-    fireEvent.click(screen.getByRole("button", { name: /create room/i }));
+    fireEvent.click(screen.getByRole("button", { name: /create event/i }));
 
     await waitFor(() => expect(mocks.insert).toHaveBeenCalledTimes(1));
     expect(mocks.insert).toHaveBeenCalledWith(
@@ -116,17 +116,17 @@ describe("OrganizerRooms — create", () => {
   it("surfaces an RLS / server rejection", async () => {
     mocks.insertResult = { data: null, error: { message: "new row violates row-level security policy" } };
     renderPage();
-    await screen.findByRole("heading", { name: /your rooms/i });
+    await screen.findByRole("heading", { name: /your events/i });
 
-    fireEvent.change(screen.getByLabelText(/room name/i), { target: { value: "Blocked Room" } });
-    fireEvent.click(screen.getByRole("button", { name: /create room/i }));
+    fireEvent.change(screen.getByLabelText(/event name/i), { target: { value: "Blocked Room" } });
+    fireEvent.click(screen.getByRole("button", { name: /create event/i }));
 
-    expect(await screen.findByText(/couldn.t create the room/i)).toBeInTheDocument();
+    expect(await screen.findByText(/couldn.t create the event/i)).toBeInTheDocument();
   });
 
   it("only offers the eight allowed event types", async () => {
     renderPage();
-    await screen.findByRole("heading", { name: /your rooms/i });
+    await screen.findByRole("heading", { name: /your events/i });
     const options = Array.from(
       screen.getByLabelText(/event type/i).querySelectorAll("option"),
     ).map((option) => option.textContent);

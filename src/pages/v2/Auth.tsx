@@ -68,7 +68,7 @@ export default function AuthV2() {
     }
   };
 
-  const heading = mode === "signin" ? "Welcome back." : mode === "signup" ? "Get in the room." : "Reset your password.";
+  const heading = mode === "signin" ? "Welcome back." : mode === "signup" ? "Get in the event." : "Reset your password.";
   const description = mode === "signin"
     ? "Pick up where you left off."
     : mode === "signup"

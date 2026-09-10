@@ -67,7 +67,7 @@ function ControlledPeople() {
   const [selectedEventId, setSelectedEventId] = useState<string | undefined>("room-a");
   return (
     <>
-      <output aria-label="Dashboard selected Room">{selectedEventId}</output>
+      <output aria-label="Dashboard selected Event">{selectedEventId}</output>
       <MatchesTab
         userId="current-user"
         selectedEventId={selectedEventId}
@@ -84,19 +84,19 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-describe("MatchesTab controlled Room state", () => {
-  it("uses Dashboard selection, reports Room changes, and preserves checked-in filtering", async () => {
+describe("MatchesTab controlled Event state", () => {
+  it("uses Dashboard selection, reports Event changes, and preserves checked-in filtering", async () => {
     render(<ControlledPeople />);
 
     expect(await screen.findByText("Checked Person A")).toBeInTheDocument();
     expect(screen.getByText("86%")).toBeInTheDocument();
     expect(screen.getByText("Founder · A Co")).toBeInTheDocument();
     expect(screen.queryByText("Absent Person")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Dashboard selected Room")).toHaveTextContent("room-a");
+    expect(screen.getByLabelText("Dashboard selected Event")).toHaveTextContent("room-a");
 
     fireEvent.change(screen.getByLabelText("Event"), { target: { value: "room-b" } });
 
-    await waitFor(() => expect(screen.getByLabelText("Dashboard selected Room")).toHaveTextContent("room-b"));
+    await waitFor(() => expect(screen.getByLabelText("Dashboard selected Event")).toHaveTextContent("room-b"));
     expect(await screen.findByText("Checked Person B")).toBeInTheDocument();
     expect(screen.getByText("74%")).toBeInTheDocument();
     expect(screen.queryByText("Confidence 78%")).not.toBeInTheDocument();

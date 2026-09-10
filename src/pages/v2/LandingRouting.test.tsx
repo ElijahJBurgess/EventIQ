@@ -89,7 +89,7 @@ describe("Landing intentional app entry", () => {
     expect(screen.getByRole("heading", { level: 1, name: /Know.*Off rip/i })).toBeInTheDocument();
     expect(mocks.maybeSingle).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: "Get in the room" }));
+    fireEvent.click(screen.getByRole("button", { name: "Get in the event" }));
     await waitFor(() => expect(screen.getByText("OFFRIP dashboard")).toBeInTheDocument());
   });
 });

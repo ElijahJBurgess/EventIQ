@@ -35,7 +35,7 @@ export function formatEventDateRange(date: string | null | undefined, endDate: s
 }
 
 /**
- * The room-card subtitle: venue, location and a readable date, joined by " · "
+ * The event-card subtitle: venue, location and a readable date, joined by " · "
  * with blank/null parts dropped — no leading, trailing, or doubled separators.
  */
 export function buildEventCardSubtitle(ev: EventCardSubtitleInput): string {

@@ -44,7 +44,7 @@ async function hashPassword(password: string) {
 }
 
 const CREATE_ROOM_ERRORS: Record<string, string> = {
-  name_required: "Room name is required.",
+  name_required: "Event name is required.",
   invalid_event_type: "That event type isn't allowed.",
   invalid_date: "Dates must look like 2026-09-08.",
 };
@@ -84,11 +84,11 @@ function CreateRoomForm({ accessHash, onCreated }: { accessHash: string; onCreat
     setSubmitting(false);
 
     if (error || !data || data.valid === false) {
-      setMessage({ kind: "error", text: "Couldn't create the room. Your organizer session may have expired." });
+      setMessage({ kind: "error", text: "Couldn't create the event. Your organizer session may have expired." });
       return;
     }
     if (typeof data.error === "string") {
-      setMessage({ kind: "error", text: CREATE_ROOM_ERRORS[data.error] ?? "Couldn't create the room." });
+      setMessage({ kind: "error", text: CREATE_ROOM_ERRORS[data.error] ?? "Couldn't create the event." });
       return;
     }
 
@@ -106,13 +106,13 @@ function CreateRoomForm({ accessHash, onCreated }: { accessHash: string; onCreat
     <section className="ooo-border bg-card mb-8 p-5 sm:p-6">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl">Create a room</h2>
+          <h2 className="text-xl">Create an event</h2>
           <p className="normal-case font-offrip-body text-sm text-muted-foreground mt-1">
-            Owner-only, for today. Rooms are otherwise created by direct database access.
+            Owner-only, for today. Events are otherwise created by direct database access.
           </p>
         </div>
         <Button type="button" variant="outline" size="sm" onClick={() => setOpen((value) => !value)}>
-          {open ? "Close" : "New room"}
+          {open ? "Close" : "New event"}
         </Button>
       </div>
 
@@ -154,7 +154,7 @@ function CreateRoomForm({ accessHash, onCreated }: { accessHash: string; onCreat
           )}
           <Button type="submit" disabled={submitting || !name.trim()}>
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            {submitting ? "Creating…" : "Create room"}
+            {submitting ? "Creating…" : "Create event"}
           </Button>
         </form>
       )}
@@ -263,7 +263,7 @@ export default function OrganizerAdmin() {
             <p className="font-display text-[10px] text-black/30 mb-2 tracking-widest">Current event intelligence</p>
             <h1 className="text-4xl">Relationship overview</h1>
             <p className="normal-case font-offrip-body text-black/40 mt-2 mb-8">
-              See who showed up, how the room connected, and what happened next.
+              See who showed up, how the event connected, and what happened next.
             </p>
 
             <CreateRoomForm accessHash={accessHash} onCreated={() => loadStats(accessHash)} />

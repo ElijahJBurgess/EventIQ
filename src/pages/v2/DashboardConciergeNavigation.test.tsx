@@ -150,7 +150,7 @@ describe("Dashboard Concierge navigation", () => {
     );
   });
 
-  it("uses one canonical Room for Rooms and Matches, and a platform-wide Concierge", async () => {
+  it("uses one canonical Event for Events and Matches, and a platform-wide Concierge", async () => {
     render(
       <MemoryRouter>
         <DashboardV2 />
@@ -158,8 +158,8 @@ describe("Dashboard Concierge navigation", () => {
     );
 
     const desktopNav = await screen.findByRole("navigation", { name: "Attendee navigation" });
-    fireEvent.click(within(desktopNav).getByRole("button", { name: "Rooms" }));
-    const seeRoomButtons = await screen.findAllByRole("button", { name: "See the room →" });
+    fireEvent.click(within(desktopNav).getByRole("button", { name: "Events" }));
+    const seeRoomButtons = await screen.findAllByRole("button", { name: "See the event →" });
 
     fireEvent.click(seeRoomButtons[0]);
     expect(screen.getByText("People event: room-a")).toBeInTheDocument();
@@ -192,7 +192,7 @@ describe("Dashboard Concierge navigation", () => {
     expect(screen.getByText("Marcus is your strongest match.")).toBeInTheDocument();
 
     fireEvent.click(within(desktopNav).getByRole("button", { name: "Home" }));
-    fireEvent.click(within(desktopNav).getByRole("button", { name: "People" }));
+    fireEvent.click(within(desktopNav).getByRole("button", { name: "Matches" }));
     expect(screen.getByText("People event: room-b")).toBeInTheDocument();
     fireEvent.click(within(mobileNav).getByRole("button", { name: "Concierge" }));
     expect(screen.getByText("Who should I meet?")).toBeInTheDocument();
