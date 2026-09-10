@@ -60,6 +60,10 @@ export default function Page5EventSelection({ profileId, onContinue }: Page5Even
         profile_id: profileId,
         registration_type: "attendee",
         status: "registered",
+        // Joining an event counts as checking in — there is no separate
+        // on-site confirmation step (matches the Dashboard join path).
+        is_checked_in: true,
+        checked_in_at: new Date().toISOString(),
       }, {
         onConflict: "event_id,profile_id",
         ignoreDuplicates: true,
@@ -88,7 +92,7 @@ export default function Page5EventSelection({ profileId, onContinue }: Page5Even
     <div>
       <h1 className="text-3xl sm:text-4xl font-black">Which event are you at?</h1>
       <p className="text-sm text-muted-foreground normal-case font-sans mt-2 mb-8">
-        Choose an event to continue, or skip if you are not attending one right now.
+        Join an event to finish setting up. You can join more later.
       </p>
 
       {loading ? (
@@ -130,22 +134,11 @@ export default function Page5EventSelection({ profileId, onContinue }: Page5Even
 
           {loadError && (
             <p className="py-6 text-center text-sm text-destructive normal-case font-sans">
-              We could not load events right now. You can still skip and continue.
+              We could not load events right now. Please refresh and try again.
             </p>
           )}
         </div>
       )}
-
-      <div className="mt-8 border-t-2 border-primary pt-6 text-center">
-        <button
-          type="button"
-          onClick={onContinue}
-          disabled={joiningEventId !== null}
-          className="text-sm text-muted-foreground underline underline-offset-4 normal-case font-sans hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Skip for now
-        </button>
-      </div>
     </div>
   );
 }

@@ -3,7 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import DashboardV2 from "./Dashboard";
 
-const TODAY = new Date().toISOString().slice(0, 10);
+// Local calendar date (not the UTC date from toISOString) so the fixture event
+// lines up with Dashboard's local-midnight "today" in every timezone.
+const now = new Date();
+const TODAY = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 
 const mocks = vi.hoisted(() => ({
   navigate: vi.fn(),

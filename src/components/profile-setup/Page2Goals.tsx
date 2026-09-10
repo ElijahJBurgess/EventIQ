@@ -194,7 +194,7 @@ export default function Page2Goals({ formData, setFormData, onNext, onBack }: Pr
     <div>
       <h1 className="text-3xl sm:text-4xl font-black">What are you looking to make happen?</h1>
       <p className="text-sm text-muted-foreground normal-case font-sans mt-2 mb-8">
-        Tell us what you need and what you bring to the event.
+        Tell us what you need and what you bring to the table.
       </p>
 
       <div className="space-y-8">
