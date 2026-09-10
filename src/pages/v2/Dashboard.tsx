@@ -548,11 +548,10 @@ function HomeTab({
         return;
       }
 
-      // The event to source Home stats from: the one live today if the user is
-      // checked into one, otherwise the event they most recently checked into
-      // (eventIds is ordered by checked_in_at desc) so Home doesn't go blank
-      // between events.
-      const activeEvent = selectHomeStatsEvent(events ?? [], eventIds, new Date());
+      // The event to source Home stats from: the one the user most recently
+      // checked into (eventIds is ordered by checked_in_at desc). Home follows
+      // the latest check-in and doesn't go blank between events.
+      const activeEvent = selectHomeStatsEvent(events ?? [], eventIds);
 
       if (!activeEvent) {
         if (!cancelled) setStats(null);
@@ -804,6 +803,7 @@ function HomeTab({
         <div className="mt-6 space-y-3">
           <div className="border-2 border-offrip-black bg-offrip-light-gray p-6 text-center">
             <p className="font-offrip-body text-offrip-medium-gray">Join an event to see what's happening.</p>
+            <OffripButton variant="secondary" onClick={onSeeRooms} className="mt-4">Browse Events</OffripButton>
           </div>
           <div className="border-2 border-offrip-black bg-offrip-white p-6 text-center">
             <p className="font-offrip-body text-offrip-medium-gray">No event happening right now.</p>
