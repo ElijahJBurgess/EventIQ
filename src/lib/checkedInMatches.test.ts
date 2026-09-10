@@ -25,19 +25,28 @@ describe("selectTopCheckedInMatches", () => {
     expect(getViewerMatchMetrics(row("person", 88, 91), userId)).toEqual({ score: 88, confidence: 91 });
   });
 
-  it("keeps checked-in filtering and applies score/confidence thresholds", () => {
-    const rows = [row("qualified", 60, 70), row("low-score", 59, 100), row("low-confidence", 100, 69), row("absent", 99, 99)];
-    const result = selectTopCheckedInMatches(rows, userId, new Set(["qualified", "low-score", "low-confidence"]));
-    expect(result.rows.map((match) => match.user_b_id)).toEqual(["qualified"]);
+  it("keeps checked-in filtering but applies no score/confidence floor", () => {
+    // Matches Home's behavior: any real (non-null) match to a checked-in
+    // attendee is eligible, regardless of how low its score/confidence is.
+    const rows = [row("high", 90, 90), row("low-score", 53, 80), row("low-confidence", 80, 30), row("absent", 99, 99)];
+    const result = selectTopCheckedInMatches(rows, userId, new Set(["high", "low-score", "low-confidence"]));
+    expect(result.rows.map((match) => match.user_b_id)).toEqual(["high", "low-confidence", "low-score"]);
+    expect(result.eligibleCount).toBe(3);
+  });
+
+  it("includes a low-score match that the old 60/70 floor would have dropped", () => {
+    const result = selectTopCheckedInMatches([row("faint", 53, 80)], userId, new Set(["faint"]));
+    expect(result.rows.map((match) => match.user_b_id)).toEqual(["faint"]);
+    expect(result.rows[0].viewerScore).toBe(53);
     expect(result.eligibleCount).toBe(1);
   });
 
   it("sorts by viewer score and returns at most 10", () => {
-    const rows = Array.from({ length: 14 }, (_, index) => row(`person-${index}`, 60 + index, 80));
+    const rows = Array.from({ length: 14 }, (_, index) => row(`person-${index}`, 20 + index, 80));
     const result = selectTopCheckedInMatches(rows.reverse(), userId, new Set(rows.map((match) => match.user_b_id)));
     expect(result.eligibleCount).toBe(14);
     expect(result.rows).toHaveLength(10);
-    expect(result.rows.map((match) => match.viewerScore)).toEqual([73, 72, 71, 70, 69, 68, 67, 66, 65, 64]);
+    expect(result.rows.map((match) => match.viewerScore)).toEqual([33, 32, 31, 30, 29, 28, 27, 26, 25, 24]);
   });
 
   it("excludes rows with missing V2 scores or confidence", () => {

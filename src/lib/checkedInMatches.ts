@@ -39,9 +39,7 @@ export function selectTopCheckedInMatches<T extends DirectionalScoredMatchRow>(
         !metrics ||
         !checkedInProfileIds.has(otherId) ||
         metrics.score === null ||
-        metrics.confidence === null ||
-        metrics.score < 60 ||
-        metrics.confidence < 70
+        metrics.confidence === null
       ) {
         return [];
       }
