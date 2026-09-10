@@ -270,7 +270,10 @@ export default function Page3RoleQuestions({
       >
         Back
       </button>
-      {!hasRequiredQuestions && (
+      {/* Only offer "Skip for now" when there is real optional content to skip.
+          When the selected role has no questions at all it would just duplicate
+          "Continue". */}
+      {!hasRequiredQuestions && questionBlocks.length > 0 && (
         <button
           onClick={handleSkip}
           className="w-full sm:w-auto bg-card text-muted-foreground ooo-border px-8 py-3 shadow-card hover-lift font-label"
@@ -524,7 +527,7 @@ export default function Page3RoleQuestions({
       ) : (
         <div className="ooo-card bg-warm p-6 text-center">
           <p className="normal-case font-sans text-sm leading-6">
-            You're all set on this step. Complete your profile after setup to unlock even better matches.
+            No additional questions for your role — you're ready to move on.
           </p>
         </div>
       )}

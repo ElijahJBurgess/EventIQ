@@ -140,6 +140,7 @@ export type Database = {
       }
       connection_notes: {
         Row: {
+          archived: boolean
           id: string
           match_id: string
           note: string
@@ -147,6 +148,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          archived?: boolean
           id?: string
           match_id: string
           note?: string
@@ -154,6 +156,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          archived?: boolean
           id?: string
           match_id?: string
           note?: string

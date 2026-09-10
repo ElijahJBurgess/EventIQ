@@ -1119,6 +1119,7 @@ interface ConnectionRow {
   statusColor: string;
   isPendingOnMe: boolean;
   hasCompletedMeeting: boolean;
+  isArchived: boolean;
   upcomingMeeting: { scheduledAt: string; location: string | null } | null;
 }
 
@@ -1141,6 +1142,8 @@ function ConnectionsTab({
   const [notesOpenFor, setNotesOpenFor] = useState<string | null>(null);
   const [notesByMatch, setNotesByMatch] = useState<Record<string, string>>({});
   const [savingNotes, setSavingNotes] = useState<string | null>(null);
+  const [connectionFilter, setConnectionFilter] = useState<"active" | "archived">("active");
+  const [archivingMatchId, setArchivingMatchId] = useState<string | null>(null);
 
   const loadConnections = useCallback(async () => {
     const [{ data: messages }, { data: meetings }] = await Promise.all([
@@ -1177,11 +1180,14 @@ function ConnectionsTab({
     const [{ data: profiles }, { data: events }, { data: notes }] = await Promise.all([
       otherIds.length ? supabase.from("attendee_profiles").select("id,full_name,avatar_url").in("id", otherIds) : Promise.resolve({ data: [] }),
       eventIds.length ? supabase.from("events").select("id,name").in("id", eventIds) : Promise.resolve({ data: [] }),
-      supabase.from("connection_notes").select("match_id,note").eq("user_id", userId),
+      supabase.from("connection_notes").select("match_id,note,archived").eq("user_id", userId),
     ]);
     const profileMap = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
     const eventMap = new Map((events ?? []).map((event) => [event.id, event.name]));
     const meetingsByMatch = new Map(meetingRows.map((m) => [m.match_id, m]));
+    const archivedMatchIds = new Set(
+      (notes ?? []).filter((n) => n.archived).map((n) => n.match_id),
+    );
 
     const rows: ConnectionRow[] = summary.people.map((person) => {
       const profile = profileMap.get(person.personId);
@@ -1199,6 +1205,7 @@ function ConnectionsTab({
         statusColor: person.statusColor,
         isPendingOnMe: person.isPendingOnMe,
         hasCompletedMeeting: person.hasCompletedMeeting,
+        isArchived: person.matchId ? archivedMatchIds.has(person.matchId) : false,
         upcomingMeeting: scheduledMeeting?.status === "scheduled" && scheduledMeeting.scheduled_at
           ? { scheduledAt: scheduledMeeting.scheduled_at, location: scheduledMeeting.location_note }
           : null,
@@ -1247,6 +1254,32 @@ function ConnectionsTab({
     toast.success("Note saved");
   };
 
+  const toggleArchive = async (matchId: string, nextArchived: boolean) => {
+    if (archivingMatchId) return;
+    setArchivingMatchId(matchId);
+    const { error } = await supabase
+      .from("connection_notes")
+      .upsert(
+        {
+          match_id: matchId,
+          user_id: userId,
+          note: notesByMatch[matchId] ?? "",
+          archived: nextArchived,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "match_id,user_id" },
+      );
+    setArchivingMatchId(null);
+    if (error) {
+      toast.error("Couldn't update this connection — try again.");
+      return;
+    }
+    setConnections((prev) =>
+      prev.map((row) => (row.matchId === matchId ? { ...row, isArchived: nextArchived } : row)),
+    );
+    toast.success(nextArchived ? "Connection archived" : "Connection moved back to active");
+  };
+
   if (openThread) {
     return (
       <div className="-mx-6 -my-8">
@@ -1282,14 +1315,41 @@ function ConnectionsTab({
           </div>
         ))}
       </div>
-      <div className="font-display text-lg mb-4">Connections in motion</div>
-      {loadingConnections ? (
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="font-display text-lg">
+          {connectionFilter === "archived" ? "Archived connections" : "Connections in motion"}
+        </div>
+        <div className="flex border border-black/10" role="group" aria-label="Connection filter">
+          {(["active", "archived"] as const).map((value) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setConnectionFilter(value)}
+              aria-pressed={connectionFilter === value}
+              className={`px-3 py-1.5 text-[10px] tracking-widest font-display capitalize transition-colors ${
+                connectionFilter === value ? "bg-black text-white" : "text-black/40 hover:text-black"
+              }`}
+            >
+              {value}
+            </button>
+          ))}
+        </div>
+      </div>
+      {(() => {
+        const visibleConnections = connections.filter((connection) =>
+          connectionFilter === "archived" ? connection.isArchived : !connection.isArchived,
+        );
+        return loadingConnections ? (
         <p className="text-sm text-black/40 normal-case font-offrip-body">Loading connections…</p>
-      ) : connections.length === 0 ? (
-        <div className="border border-black/10 p-8 text-center text-sm text-black/40 normal-case font-offrip-body">Your accepted connections and conversations will appear here.</div>
+      ) : visibleConnections.length === 0 ? (
+        <div className="border border-black/10 p-8 text-center text-sm text-black/40 normal-case font-offrip-body">
+          {connectionFilter === "archived"
+            ? "No archived connections. Archive one to tuck it away here."
+            : "Your accepted connections and conversations will appear here."}
+        </div>
       ) : (
         <div className="space-y-3">
-          {connections.map((connection) => (
+          {visibleConnections.map((connection) => (
             <div key={connection.id} className="border border-black/10 p-4 hover:border-black transition-colors">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
                 <button
@@ -1328,6 +1388,18 @@ function ConnectionsTab({
                       })}
                     >
                       Message
+                    </Button>
+                  )}
+                  {connection.matchId && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={archivingMatchId !== null}
+                      onClick={() => toggleArchive(connection.matchId!, !connection.isArchived)}
+                    >
+                      {archivingMatchId === connection.matchId
+                        ? "Saving…"
+                        : connection.isArchived ? "Unarchive" : "Archive"}
                     </Button>
                   )}
                 </div>
@@ -1401,7 +1473,8 @@ function ConnectionsTab({
             </div>
           ))}
         </div>
-      )}
+      );
+      })()}
     </div>
   );
 }

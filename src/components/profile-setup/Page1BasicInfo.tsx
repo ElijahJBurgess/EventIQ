@@ -79,6 +79,7 @@ type StringField = "fullName" | "jobTitle" | "company" | "location" | "linkedinU
 
 interface FieldErrors {
   fullName?: string;
+  avatarUrl?: string;
   jobTitle?: string;
   company?: string;
   roleType?: string;
@@ -279,6 +280,10 @@ export default function Page1BasicInfo({
       next.fullName = "Full name must be at least 2 characters";
     }
 
+    if (!formData.avatarUrl.trim()) {
+      next.avatarUrl = "Profile photo is required";
+    }
+
     if (!formData.jobTitle.trim()) {
       next.jobTitle = "Job title is required";
     }
@@ -315,7 +320,9 @@ export default function Page1BasicInfo({
       next.location = "Select a city from the results or use the custom location option";
     }
 
-    if (formData.linkedinUrl.trim() && !LINKEDIN_PATTERN.test(formData.linkedinUrl.trim())) {
+    if (!formData.linkedinUrl.trim()) {
+      next.linkedinUrl = "LinkedIn URL is required";
+    } else if (!LINKEDIN_PATTERN.test(formData.linkedinUrl.trim())) {
       next.linkedinUrl = "Enter a valid LinkedIn URL (e.g. linkedin.com/in/yourname)";
     }
 
@@ -384,8 +391,7 @@ export default function Page1BasicInfo({
 
         <div>
           <label className={labelClass}>
-            Profile photo{" "}
-            <span className="text-muted-foreground font-normal normal-case">(optional)</span>
+            Profile photo <span className="text-destructive">*</span>
           </label>
           <div className="flex items-center gap-4">
             {formData.avatarUrl && (
@@ -413,6 +419,7 @@ export default function Page1BasicInfo({
             />
           </div>
           {photoError && <p className={errorClass}>{photoError}</p>}
+          {errors.avatarUrl && <p className={errorClass}>{errors.avatarUrl}</p>}
         </div>
 
         <div>
@@ -504,8 +511,7 @@ export default function Page1BasicInfo({
 
         <div>
           <label className={labelClass}>
-            LinkedIn URL{" "}
-            <span className="text-muted-foreground font-normal normal-case">(optional)</span>
+            LinkedIn URL <span className="text-destructive">*</span>
           </label>
           <input
             className={inputClass}

@@ -4,6 +4,8 @@ import { findMissingRequiredProfileFields, REQUIRED_ARRAY_FIELDS } from "./requi
 
 const complete: ProfileSetupFormData = {
   ...initialProfileSetupFormData,
+  avatarUrl: "https://example.com/photo.jpg",
+  linkedinUrl: "linkedin.com/in/jordanlee",
   roleType: "Founder / Co-founder",
   primaryFunction: "Product",
   seniority: "Senior",
@@ -23,6 +25,16 @@ const complete: ProfileSetupFormData = {
 describe("findMissingRequiredProfileFields", () => {
   it("returns no findings when every required field is set", () => {
     expect(findMissingRequiredProfileFields(complete)).toEqual([]);
+  });
+
+  it("flags a missing profile photo", () => {
+    const findings = findMissingRequiredProfileFields({ ...complete, avatarUrl: "" });
+    expect(findings).toEqual([{ field: "avatarUrl", message: "Profile photo is required", page: 1 }]);
+  });
+
+  it("flags a missing LinkedIn URL", () => {
+    const findings = findMissingRequiredProfileFields({ ...complete, linkedinUrl: "" });
+    expect(findings).toEqual([{ field: "linkedinUrl", message: "LinkedIn URL is required", page: 1 }]);
   });
 
   it("flags a blank identity with the signup wording", () => {

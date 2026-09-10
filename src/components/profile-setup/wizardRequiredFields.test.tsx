@@ -17,10 +17,12 @@ vi.mock("@/integrations/supabase/client", () => ({
 const complete: ProfileSetupFormData = {
   ...initialProfileSetupFormData,
   fullName: "Jordan Lee",
+  avatarUrl: "https://example.com/photo.jpg",
   jobTitle: "VP Engineering",
   company: "TechCo",
   location: "San Francisco, CA",
   locationSelectionType: "database",
+  linkedinUrl: "linkedin.com/in/jordanlee",
   roleType: "Founder / Co-founder",
   secondaryRoleTypes: ["Investor"],
   primaryFunction: "Product",
@@ -73,6 +75,27 @@ describe("wizard blocks Next when a now-required multi-select is empty", () => {
     clickContinue();
     expect(harnessOnNext).not.toHaveBeenCalled();
     expect(screen.getByText("Select at least 1 additional function")).toBeInTheDocument();
+  });
+
+  it("Page 1 — no profile photo", () => {
+    render(<Harness page={1} formData={{ ...complete, avatarUrl: "" }} />);
+    clickContinue();
+    expect(harnessOnNext).not.toHaveBeenCalled();
+    expect(screen.getByText("Profile photo is required")).toBeInTheDocument();
+  });
+
+  it("Page 1 — no LinkedIn URL", () => {
+    render(<Harness page={1} formData={{ ...complete, linkedinUrl: "" }} />);
+    clickContinue();
+    expect(harnessOnNext).not.toHaveBeenCalled();
+    expect(screen.getByText("LinkedIn URL is required")).toBeInTheDocument();
+  });
+
+  it("Page 1 — LinkedIn URL still format-checked once present", () => {
+    render(<Harness page={1} formData={{ ...complete, linkedinUrl: "https://twitter.com/x" }} />);
+    clickContinue();
+    expect(harnessOnNext).not.toHaveBeenCalled();
+    expect(screen.getByText(/Enter a valid LinkedIn URL/)).toBeInTheDocument();
   });
 
   it("Page 1 — passes when everything required is set", () => {
