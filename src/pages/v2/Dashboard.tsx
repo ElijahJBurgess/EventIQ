@@ -1498,6 +1498,11 @@ function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (
         profile_id: userId,
         registration_type: "attendee",
         status: "registered",
+        // Joining a room now counts as checking in — there is no separate
+        // on-site confirmation step. `checkIn` below stays only as a harmless
+        // no-op backfill for rows created before this change.
+        is_checked_in: true,
+        checked_in_at: new Date().toISOString(),
       }, {
         onConflict: "event_id,profile_id",
         ignoreDuplicates: true,
@@ -1510,6 +1515,7 @@ function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (
     }
 
     setJoined((current) => new Set(current).add(eventId));
+    setCheckedIn((current) => new Set(current).add(eventId));
 
     try {
       const { error: matchingError } = await supabase.functions.invoke("match-engine", {
@@ -1525,6 +1531,10 @@ function EventsTab({ userId, onViewMatches }: { userId: string; onViewMatches: (
     await load();
   };
 
+  // Legacy path. Joining now checks the user in (see `join`), so this only
+  // matters for registrations created before that change. The `is_checked_in`
+  // = false filter makes it a no-op (0 rows, no error) on an already-checked-in
+  // row, so calling it is always safe.
   const checkIn = async (eventId: string) => {
     if (checkedIn.has(eventId) || checkingInEventId !== null) return;
     setCheckingInEventId(eventId);
