@@ -12,6 +12,16 @@ const mocks = vi.hoisted(() => ({
     data: unknown;
     error: unknown;
   },
+  update: vi.fn(),
+  updateEq: vi.fn(),
+  updateResult: { data: null as unknown, error: null as unknown },
+  deleteEq: vi.fn(),
+  deleteResult: { error: null as unknown },
+  rpc: vi.fn(),
+  rpcResult: {
+    data: [{ match_count: 0, message_count: 0, meeting_count: 0 }] as unknown,
+    error: null as unknown,
+  },
 }));
 
 vi.mock("@/v2/AuthProvider", () => ({
@@ -40,9 +50,34 @@ vi.mock("@/integrations/supabase/client", () => {
         })),
       };
     });
+    builder.update = vi.fn((payload: unknown) => {
+      mocks.update(payload);
+      return {
+        eq: vi.fn((column: string, value: unknown) => {
+          mocks.updateEq(column, value);
+          return {
+            select: vi.fn(() => ({ single: vi.fn(async () => mocks.updateResult) })),
+          };
+        }),
+      };
+    });
+    builder.delete = vi.fn(() => ({
+      eq: vi.fn((column: string, value: unknown) => {
+        mocks.deleteEq(column, value);
+        return Promise.resolve(mocks.deleteResult);
+      }),
+    }));
     return builder;
   };
-  return { supabase: { from: vi.fn((table: string) => makeBuilder(table)) } };
+  return {
+    supabase: {
+      from: vi.fn((table: string) => makeBuilder(table)),
+      rpc: vi.fn((name: string, args: unknown) => {
+        mocks.rpc(name, args);
+        return Promise.resolve(mocks.rpcResult);
+      }),
+    },
+  };
 });
 
 function renderPage() {
@@ -62,7 +97,25 @@ beforeEach(() => {
   mocks.myRooms = [];
   mocks.insert.mockReset();
   mocks.insertResult = { data: { id: "new-room", name: "Founders Mixer" }, error: null };
+  mocks.update.mockReset();
+  mocks.updateEq.mockReset();
+  mocks.updateResult = { data: null, error: null };
+  mocks.deleteEq.mockReset();
+  mocks.deleteResult = { error: null };
+  mocks.rpc.mockReset();
+  mocks.rpcResult = { data: [{ match_count: 0, message_count: 0, meeting_count: 0 }], error: null };
 });
+
+const EVENT_ONE = {
+  id: "evt-1",
+  name: "Founders Mixer",
+  venue: "The Wing",
+  location: "Austin, TX",
+  date: "2026-10-01",
+  end_date: null,
+  event_type: "Networking Event",
+  is_published: true,
+};
 
 afterEach(cleanup);
 
@@ -140,5 +193,135 @@ describe("OrganizerRooms — create", () => {
       "Concert",
       "Other",
     ]);
+  });
+});
+
+describe("OrganizerRooms — edit", () => {
+  it("pre-fills the form from the row and updates that row via update().eq('id', …)", async () => {
+    mocks.myRooms = [EVENT_ONE];
+    mocks.updateResult = { data: { ...EVENT_ONE, name: "Founders Mixer 2026" }, error: null };
+    renderPage();
+    await screen.findByText("Founders Mixer");
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+
+    expect(await screen.findByRole("heading", { name: /edit event/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/event name/i)).toHaveValue("Founders Mixer");
+    expect(screen.getByLabelText(/venue/i)).toHaveValue("The Wing");
+    expect(screen.getByLabelText(/event type/i)).toHaveValue("Networking Event");
+
+    fireEvent.change(screen.getByLabelText(/event name/i), { target: { value: "Founders Mixer 2026" } });
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(1));
+    expect(mocks.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Founders Mixer 2026",
+        venue: "The Wing",
+        event_type: "Networking Event",
+        is_published: true,
+      }),
+    );
+    // organizer_id is never part of an edit payload — ownership can't be reassigned.
+    expect(mocks.update.mock.calls[0][0]).not.toHaveProperty("organizer_id");
+    expect(mocks.updateEq).toHaveBeenCalledWith("id", "evt-1");
+    expect(await screen.findByText("Founders Mixer 2026")).toBeInTheDocument();
+  });
+
+  it("reuses the creation validation on edit — a blank name blocks the update", async () => {
+    mocks.myRooms = [EVENT_ONE];
+    renderPage();
+    await screen.findByText("Founders Mixer");
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await screen.findByRole("heading", { name: /edit event/i });
+    fireEvent.change(screen.getByLabelText(/event name/i), { target: { value: "   " } });
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+
+    expect(await screen.findByText(/event name is required/i)).toBeInTheDocument();
+    expect(mocks.update).not.toHaveBeenCalled();
+  });
+});
+
+describe("OrganizerRooms — hide / unhide", () => {
+  it("Hide flips only is_published to false and touches no other column", async () => {
+    mocks.myRooms = [EVENT_ONE];
+    mocks.updateResult = { data: { ...EVENT_ONE, is_published: false }, error: null };
+    renderPage();
+    await screen.findByText("Founders Mixer");
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide" }));
+
+    await waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(1));
+    // Exact match — the entire update payload is { is_published: false }.
+    expect(mocks.update).toHaveBeenCalledWith({ is_published: false });
+    expect(mocks.updateEq).toHaveBeenCalledWith("id", "evt-1");
+    expect(await screen.findByRole("button", { name: "Unhide" })).toBeInTheDocument();
+    expect(screen.getByText("DRAFT")).toBeInTheDocument();
+  });
+
+  it("Unhide flips is_published back to true", async () => {
+    mocks.myRooms = [{ ...EVENT_ONE, is_published: false }];
+    mocks.updateResult = { data: { ...EVENT_ONE, is_published: true }, error: null };
+    renderPage();
+    await screen.findByText("Founders Mixer");
+
+    fireEvent.click(screen.getByRole("button", { name: "Unhide" }));
+
+    await waitFor(() => expect(mocks.update).toHaveBeenCalledTimes(1));
+    expect(mocks.update).toHaveBeenCalledWith({ is_published: true });
+    expect(await screen.findByRole("button", { name: "Hide" })).toBeInTheDocument();
+  });
+});
+
+describe("OrganizerRooms — delete", () => {
+  it("shows the cascade impact and gates the delete on an exact, case-sensitive name match", async () => {
+    mocks.myRooms = [EVENT_ONE];
+    mocks.rpcResult = { data: [{ match_count: 42, message_count: 15, meeting_count: 3 }], error: null };
+    renderPage();
+    await screen.findByText("Founders Mixer");
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() =>
+      expect(mocks.rpc).toHaveBeenCalledWith("event_deletion_impact", { p_event_id: "evt-1" }),
+    );
+    expect(await screen.findByText(/42 matches/)).toBeInTheDocument();
+    expect(screen.getByText(/15 messages/)).toBeInTheDocument();
+    expect(screen.getByText(/3 meetings/)).toBeInTheDocument();
+
+    const confirmButton = screen.getByRole("button", { name: /delete permanently/i });
+    expect(confirmButton).toBeDisabled();
+
+    const confirmInput = screen.getByLabelText(/type the event name/i);
+    fireEvent.change(confirmInput, { target: { value: "founders mixer" } });
+    expect(confirmButton).toBeDisabled();
+    fireEvent.click(confirmButton);
+    expect(mocks.deleteEq).not.toHaveBeenCalled();
+
+    fireEvent.change(confirmInput, { target: { value: "Founders Mixer" } });
+    expect(confirmButton).toBeEnabled();
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => expect(mocks.deleteEq).toHaveBeenCalledWith("id", "evt-1"));
+    await waitFor(() => expect(screen.queryByText("Founders Mixer")).not.toBeInTheDocument());
+    expect(screen.getByText(/deleted/i)).toBeInTheDocument();
+  });
+
+  it("still requires the typed name when the impact counts fail to load (no silent zero)", async () => {
+    mocks.myRooms = [EVENT_ONE];
+    mocks.rpcResult = { data: null, error: { message: "not authorized to inspect this event" } };
+    renderPage();
+    await screen.findByText("Founders Mixer");
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(await screen.findByText(/couldn't load/i)).toBeInTheDocument();
+    expect(screen.queryByText(/0 matches/)).not.toBeInTheDocument();
+    const confirmButton = screen.getByRole("button", { name: /delete permanently/i });
+    expect(confirmButton).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/type the event name/i), { target: { value: "Founders Mixer" } });
+    expect(confirmButton).toBeEnabled();
   });
 });

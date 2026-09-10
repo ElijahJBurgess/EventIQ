@@ -81,6 +81,7 @@ export default function MatchesTab({
   const [running, setRunning] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [joinedEvents, setJoinedEvents] = useState<JoinedEvent[]>([]);
+  const [removedEvent, setRemovedEvent] = useState(false);
   const [eligibleCount, setEligibleCount] = useState(0);
   const [savedMatchIds, setSavedMatchIds] = useState<Set<string>>(new Set());
   const [showSavedOnly, setShowSavedOnly] = useState(false);
@@ -137,7 +138,13 @@ export default function MatchesTab({
 
       if (eventIds.length === 0) {
         setJoinedEvents([]);
-        if (selectedEventId !== undefined) onSelectedEventChange(undefined);
+        // A previously-selected event with no registrations left means it was
+        // deleted (its event_registrations rows cascade away) — surface that
+        // rather than the generic "you haven't joined anything" copy. Keep the
+        // now-stale selectedEventId so `selectedEvent` stays null and the
+        // banner renders; clearing it here would re-run this effect and reset
+        // the flag.
+        setRemovedEvent(Boolean(selectedEventId));
         setMatches([]);
         setLoading(false);
         return;
@@ -158,10 +165,24 @@ export default function MatchesTab({
 
       const nextEvents = (events as JoinedEvent[] | null) ?? [];
       setJoinedEvents(nextEvents);
-      const nextSelectedEventId = selectedEventId && nextEvents.some((event) => event.id === selectedEventId)
-        ? selectedEventId
-        : nextEvents[0]?.id;
-      if (nextSelectedEventId !== selectedEventId) onSelectedEventChange(nextSelectedEventId);
+
+      const selectionStillValid = Boolean(selectedEventId) && nextEvents.some((event) => event.id === selectedEventId);
+      if (selectionStillValid) {
+        setRemovedEvent(false);
+        return;
+      }
+      if (selectedEventId) {
+        // The event the user was viewing is no longer among their joined
+        // events — the organizer deleted or unpublished it. Hold the (now
+        // invalid) selection so `selectedEvent` resolves null, and show the
+        // "removed by the organizer" message instead of silently switching.
+        setRemovedEvent(true);
+        setMatches([]);
+        setLoading(false);
+        return;
+      }
+      setRemovedEvent(false);
+      if (nextEvents[0]?.id !== selectedEventId) onSelectedEventChange(nextEvents[0]?.id);
     };
 
     loadJoinedEvents();
@@ -311,14 +332,15 @@ export default function MatchesTab({
             </div>
           )}
         </div>
-        {joinedEvents.length > 1 && (
+        {(joinedEvents.length > 1 || (removedEvent && joinedEvents.length >= 1)) && (
           <label className="mt-4 block text-xs font-label">
             Event
             <select
-              value={selectedEventId ?? ""}
+              value={selectedEvent ? selectedEventId ?? "" : ""}
               onChange={(event) => onSelectedEventChange(event.target.value)}
               className="mt-2 w-full sm:max-w-xs ooo-border bg-card px-3 py-2 normal-case font-sans"
             >
+              {removedEvent && <option value="" disabled>Select an event</option>}
               {joinedEvents.map((event) => (
                 <option key={event.id} value={event.id}>{event.name}</option>
               ))}
@@ -366,7 +388,9 @@ export default function MatchesTab({
             return (
               <div className="border border-black/10 bg-white p-8 text-center">
                 <p className="text-sm text-muted-foreground normal-case font-sans">
-                  You haven't joined any events yet. Join an event to start finding matches.
+                  {removedEvent
+                    ? "This event was removed by the organizer. Please join another event."
+                    : "You haven't joined any events yet. Join an event to start finding matches."}
                 </p>
               </div>
             );

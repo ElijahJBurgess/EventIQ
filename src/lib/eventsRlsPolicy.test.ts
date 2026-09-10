@@ -88,3 +88,26 @@ describe("events RLS — UPDATE / DELETE", () => {
     expect(canDeleteEvent(organizerA, draftB)).toBe(false);
   });
 });
+
+describe("events RLS — hide / unhide (is_published toggle)", () => {
+  it("an organizer can hide their own published event", () => {
+    expect(
+      canUpdateEvent(organizerA, publishedA, { organizer_id: "user-a", is_published: false }),
+    ).toBe(true);
+  });
+
+  it("an organizer can unhide their own draft", () => {
+    expect(
+      canUpdateEvent(organizerA, draftA, { organizer_id: "user-a", is_published: true }),
+    ).toBe(true);
+  });
+
+  it("a different organizer cannot hide or unhide someone else's event", () => {
+    expect(
+      canUpdateEvent(organizerB, publishedA, { organizer_id: "user-a", is_published: false }),
+    ).toBe(false);
+    expect(
+      canUpdateEvent(organizerB, draftA, { organizer_id: "user-a", is_published: true }),
+    ).toBe(false);
+  });
+});

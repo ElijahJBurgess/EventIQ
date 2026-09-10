@@ -452,6 +452,10 @@ function HomeTab({
   onViewFullProfile: (matchId: string) => void;
 }) {
   const [stats, setStats] = useState<HomeStatsData | null | undefined>(undefined);
+  // True when the viewer has checked-in event registration(s) but none resolve
+  // to a visible event — the organizer deleted or unpublished it out from under
+  // them. Distinct from `stats === null` (no events at all).
+  const [eventRemoved, setEventRemoved] = useState(false);
   const [homeMeetings, setHomeMeetings] = useState<HomeMeeting[] | undefined>(undefined);
 
   useEffect(() => {
@@ -523,7 +527,7 @@ function HomeTab({
 
       if (registrationError) {
         toast.error("Couldn't load your event activity — try refreshing.");
-        if (!cancelled) setStats(null);
+        if (!cancelled) { setEventRemoved(false); setStats(null); }
         return;
       }
 
@@ -532,7 +536,7 @@ function HomeTab({
         .filter((eventId): eventId is string => Boolean(eventId));
 
       if (eventIds.length === 0) {
-        if (!cancelled) setStats(null);
+        if (!cancelled) { setEventRemoved(false); setStats(null); }
         return;
       }
 
@@ -544,7 +548,7 @@ function HomeTab({
 
       if (eventsError) {
         toast.error("Couldn't load your event activity — try refreshing.");
-        if (!cancelled) setStats(null);
+        if (!cancelled) { setEventRemoved(false); setStats(null); }
         return;
       }
 
@@ -554,7 +558,10 @@ function HomeTab({
       const activeEvent = selectHomeStatsEvent(events ?? [], eventIds);
 
       if (!activeEvent) {
-        if (!cancelled) setStats(null);
+        // Checked-in registration(s) exist but none point to a visible event —
+        // the organizer deleted or unpublished it. Show a clear message rather
+        // than the generic "join an event" empty state.
+        if (!cancelled) { setEventRemoved(true); setStats(null); }
         return;
       }
 
@@ -691,6 +698,7 @@ function HomeTab({
         .filter((connection): connection is HomeConnection => connection !== null);
 
       if (!cancelled) {
+        setEventRemoved(false);
         setStats({
           eventId: activeEvent.id,
           eventName: activeEvent.name,
@@ -799,6 +807,15 @@ function HomeTab({
       </div>
       {stats === undefined ? (
         <p className="mt-3 font-offrip-body text-offrip-medium-gray">Your day is loading.</p>
+      ) : eventRemoved ? (
+        <div className="mt-6 space-y-3">
+          <div className="border-2 border-offrip-black bg-offrip-light-gray p-6 text-center">
+            <p className="font-offrip-body text-offrip-medium-gray">
+              This event was removed by the organizer. Please join another event.
+            </p>
+            <OffripButton variant="secondary" onClick={onSeeRooms} className="mt-4">Browse Events</OffripButton>
+          </div>
+        </div>
       ) : stats === null ? (
         <div className="mt-6 space-y-3">
           <div className="border-2 border-offrip-black bg-offrip-light-gray p-6 text-center">
