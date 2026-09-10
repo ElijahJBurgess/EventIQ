@@ -26,9 +26,18 @@ export interface EventInsertRow {
   is_demo: false;
 }
 
+// Same shape without `is_demo` — an edit must never flip that flag.
+export type EventUpdateRow = Omit<EventInsertRow, "is_demo">;
+
+export type EventValidationError = "name_required" | "invalid_event_type" | "invalid_date";
+
 export type CreateEventResult =
   | { ok: true; row: EventInsertRow }
-  | { ok: false; error: "name_required" | "invalid_event_type" | "invalid_date" };
+  | { ok: false; error: EventValidationError };
+
+export type UpdateEventResult =
+  | { ok: true; row: EventUpdateRow }
+  | { ok: false; error: EventValidationError };
 
 function trimmedText(value: unknown, max = 200): string | null {
   if (typeof value !== "string") return null;
@@ -72,4 +81,14 @@ export function buildEventInsertRow(payload: Record<string, unknown>): CreateEve
       is_demo: false,
     },
   };
+}
+
+// The "update-event" action's row shaping. Same validation as creation — an
+// edit on the owner dashboard must behave exactly like an edit on the
+// self-serve page — just without `is_demo` in the payload.
+export function buildEventUpdateRow(payload: Record<string, unknown>): UpdateEventResult {
+  const result = buildEventInsertRow(payload);
+  if (!result.ok) return result;
+  const { is_demo: _isDemo, ...row } = result.row;
+  return { ok: true, row };
 }

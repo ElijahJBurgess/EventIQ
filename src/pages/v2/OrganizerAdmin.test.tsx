@@ -10,6 +10,23 @@ vi.mock("@/integrations/supabase/client", () => ({
   supabase: { functions: { invoke: (...args: unknown[]) => invoke(...args) } },
 }));
 
+// A row shape for the "list-events" / "update-event" / "set-event-published"
+// admin-auth actions (distinct from the analytics EventStats shape).
+function adminEvent(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "evt",
+    name: "Preview Event",
+    venue: "The Foundry",
+    location: "Atlanta, GA",
+    date: "2026-08-01",
+    end_date: null,
+    event_type: "Conference",
+    is_published: true,
+    is_demo: false,
+    ...overrides,
+  };
+}
+
 // The Overview tab renders a Recharts bar chart; jsdom can't lay it out, and
 // this suite only cares about tab wiring, so stub the chart primitives.
 vi.mock("recharts", () => ({
@@ -89,15 +106,46 @@ function renderAdmin() {
   );
 }
 
+const adminEventState: { rows: Array<Record<string, unknown>> } = { rows: [] };
+const deletionImpact = { matches: 42, messages: 15, meetings: 3 };
+
 beforeEach(() => {
   invoke.mockReset();
-  invoke.mockImplementation((_fn: string, opts: { body: { action: string } }) => {
-    if (opts.body.action === "insights") {
+  adminEventState.rows = [adminEvent()];
+  invoke.mockImplementation((_fn: string, opts: { body: Record<string, unknown> }) => {
+    const { action } = opts.body;
+    if (action === "insights") {
       return Promise.resolve({ data: { valid: true, insights: ["Check-in was 37 of 38."], cached: true }, error: null });
     }
-    if (opts.body.action === "list-reports") {
+    if (action === "list-reports") {
       return Promise.resolve({ data: { valid: true, reports: [] }, error: null });
     }
+    if (action === "list-events") {
+      return Promise.resolve({ data: { valid: true, events: adminEventState.rows }, error: null });
+    }
+    if (action === "update-event") {
+      const updated = adminEvent({
+        id: opts.body.eventId,
+        name: opts.body.name,
+        venue: opts.body.venue,
+        location: opts.body.location,
+        is_published: opts.body.isPublished === true,
+      });
+      return Promise.resolve({ data: { valid: true, event: updated }, error: null });
+    }
+    if (action === "set-event-published") {
+      return Promise.resolve({
+        data: { valid: true, event: adminEvent({ id: opts.body.eventId, is_published: opts.body.isPublished === true }) },
+        error: null,
+      });
+    }
+    if (action === "event-deletion-impact") {
+      return Promise.resolve({ data: { valid: true, ...deletionImpact }, error: null });
+    }
+    if (action === "delete-event") {
+      return Promise.resolve({ data: { valid: true, deleted: true }, error: null });
+    }
+    // event-stats (analytics) + fallback
     return Promise.resolve({ data: { valid: true, events: [eventStats()] }, error: null });
   });
   localStorage.setItem(
@@ -121,6 +169,33 @@ describe("OrganizerAdmin — enterprise tabs", () => {
 
     expect(await screen.findByText("PROFILES CREATED")).toBeInTheDocument();
     expect(screen.getByText("CONVERSATIONS STARTED")).toBeInTheDocument();
+  });
+
+  it("puts the Events tab first, and the create-event form no longer sits in the page body", async () => {
+    renderAdmin();
+    await screen.findByText("PROFILES CREATED");
+
+    const tabs = screen.getAllByRole("tab").map((tab) => tab.textContent);
+    expect(tabs).toEqual(["Events", "Overview", "Audience", "Relationships", "Outcomes", "Insights", "Reports"]);
+
+    // Overview is the landing tab — the create form is not visible here.
+    expect(screen.queryByRole("heading", { name: /create an event/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /new event/i })).not.toBeInTheDocument();
+  });
+
+  it("moves the create form and an all-events management list into the Events tab", async () => {
+    renderAdmin();
+    await screen.findByText("PROFILES CREATED");
+
+    fireEvent.mouseDown(screen.getByRole("tab", { name: /^events$/i }));
+
+    expect(await screen.findByRole("heading", { name: /create an event/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /new event/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /all events/i })).toBeInTheDocument();
+    expect(await screen.findByText("Preview Event")).toBeInTheDocument();
+    await waitFor(() =>
+      expect(invoke.mock.calls.some((c) => c[1].body.action === "list-events" && c[1].body.passwordHash === "a".repeat(64))).toBe(true),
+    );
   });
 
   it("renders the Relationships tab patterns", async () => {
@@ -187,5 +262,116 @@ describe("OrganizerAdmin — enterprise tabs", () => {
     renderAdmin();
     expect(await screen.findByText(/organizer access/i)).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: /overview/i })).not.toBeInTheDocument();
+  });
+});
+
+describe("OrganizerAdmin — Events tab management", () => {
+  async function openEventsTab() {
+    renderAdmin();
+    await screen.findByText("PROFILES CREATED");
+    fireEvent.mouseDown(screen.getByRole("tab", { name: /^events$/i }));
+    await screen.findByText("Preview Event");
+  }
+
+  it("edits an event through the update-event admin-auth action (password hash, not a JWT)", async () => {
+    await openEventsTab();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(await screen.findByRole("heading", { name: /edit event/i })).toBeInTheDocument();
+    const nameInput = screen.getByLabelText(/event name/i);
+    expect(nameInput).toHaveValue("Preview Event");
+    fireEvent.change(nameInput, { target: { value: "Preview Event 2026" } });
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() =>
+      expect(
+        invoke.mock.calls.some(
+          (c) =>
+            c[1].body.action === "update-event" &&
+            c[1].body.eventId === "evt" &&
+            c[1].body.name === "Preview Event 2026" &&
+            c[1].body.passwordHash === "a".repeat(64),
+        ),
+      ).toBe(true),
+    );
+    expect(await screen.findByText("Preview Event 2026")).toBeInTheDocument();
+  });
+
+  it("blocks a blank-name edit before any admin-auth call (shared validation)", async () => {
+    await openEventsTab();
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    await screen.findByRole("heading", { name: /edit event/i });
+    fireEvent.change(screen.getByLabelText(/event name/i), { target: { value: "   " } });
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+
+    expect(await screen.findByText(/event name is required/i)).toBeInTheDocument();
+    expect(invoke.mock.calls.some((c) => c[1].body.action === "update-event")).toBe(false);
+  });
+
+  it("hides an event via set-event-published", async () => {
+    await openEventsTab();
+    fireEvent.click(screen.getByRole("button", { name: "Hide" }));
+
+    await waitFor(() =>
+      expect(
+        invoke.mock.calls.some(
+          (c) => c[1].body.action === "set-event-published" && c[1].body.eventId === "evt" && c[1].body.isPublished === false,
+        ),
+      ).toBe(true),
+    );
+    expect(await screen.findByRole("button", { name: "Unhide" })).toBeInTheDocument();
+    expect(screen.getByText("DRAFT")).toBeInTheDocument();
+  });
+
+  it("shows cascade counts and gates delete on an exact, case-sensitive name match", async () => {
+    await openEventsTab();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() =>
+      expect(invoke.mock.calls.some((c) => c[1].body.action === "event-deletion-impact" && c[1].body.eventId === "evt")).toBe(true),
+    );
+    expect(await screen.findByText(/42 matches/)).toBeInTheDocument();
+    expect(screen.getByText(/15 messages/)).toBeInTheDocument();
+    expect(screen.getByText(/3 meetings/)).toBeInTheDocument();
+
+    const confirmButton = screen.getByRole("button", { name: /delete permanently/i });
+    const confirmInput = screen.getByLabelText(/type the event name/i);
+    expect(confirmButton).toBeDisabled();
+    fireEvent.change(confirmInput, { target: { value: "preview event" } });
+    expect(confirmButton).toBeDisabled();
+    fireEvent.click(confirmButton);
+    expect(invoke.mock.calls.some((c) => c[1].body.action === "delete-event")).toBe(false);
+
+    fireEvent.change(confirmInput, { target: { value: "Preview Event" } });
+    expect(confirmButton).toBeEnabled();
+    fireEvent.click(confirmButton);
+
+    await waitFor(() =>
+      expect(
+        invoke.mock.calls.some(
+          (c) => c[1].body.action === "delete-event" && c[1].body.eventId === "evt" && c[1].body.confirmName === "Preview Event",
+        ),
+      ).toBe(true),
+    );
+    await waitFor(() => expect(screen.queryByText("Preview Event")).not.toBeInTheDocument());
+  });
+
+  it("manages an event this dashboard did not create (no ownership restriction)", async () => {
+    // A self-serve event owned by some other organizer — the list-events action
+    // returns it because the dashboard is password-gated, not RLS-scoped.
+    adminEventState.rows = [adminEvent({ id: "self-serve-evt", name: "Someone Else's Mixer" })];
+    renderAdmin();
+    await screen.findByText("PROFILES CREATED");
+    fireEvent.mouseDown(screen.getByRole("tab", { name: /^events$/i }));
+
+    expect(await screen.findByText("Someone Else's Mixer")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Hide" }));
+    await waitFor(() =>
+      expect(
+        invoke.mock.calls.some(
+          (c) => c[1].body.action === "set-event-published" && c[1].body.eventId === "self-serve-evt",
+        ),
+      ).toBe(true),
+    );
   });
 });

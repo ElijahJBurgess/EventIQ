@@ -100,7 +100,14 @@ export interface EventStats {
   topLocations: LabelCount[];
 }
 
-export type EnterpriseTab = "overview" | "audience" | "relationships" | "outcomes" | "insights" | "reports";
+export type EnterpriseTab =
+  | "events"
+  | "overview"
+  | "audience"
+  | "relationships"
+  | "outcomes"
+  | "insights"
+  | "reports";
 
 export interface FunnelRow extends FunnelStage {
   /** Share of the first stage's value, 0–100. */

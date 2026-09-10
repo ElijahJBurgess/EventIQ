@@ -10,6 +10,7 @@ import AudienceTab from "./enterprise/AudienceTab";
 import RelationshipsTab from "./enterprise/RelationshipsTab";
 import InsightsTab from "./enterprise/InsightsTab";
 import ReportsTab from "./enterprise/ReportsTab";
+import EventsAdminTab from "./enterprise/EventsAdminTab";
 
 const ADMIN_SESSION_KEY = "ooo-organizer-admin-session";
 const ADMIN_SESSION_DURATION_MS = 72 * 60 * 60 * 1_000;
@@ -163,6 +164,7 @@ function CreateRoomForm({ accessHash, onCreated }: { accessHash: string; onCreat
 }
 
 const ENTERPRISE_TABS: Array<{ value: EnterpriseTab; label: string }> = [
+  { value: "events", label: "Events" },
   { value: "overview", label: "Overview" },
   { value: "audience", label: "Audience" },
   { value: "relationships", label: "Relationships" },
@@ -180,6 +182,9 @@ export default function OrganizerAdmin() {
   const [events, setEvents] = useState<EventStats[]>([]);
   const [loadingStats, setLoadingStats] = useState(Boolean(accessHash));
   const [activeTab, setActiveTab] = useState<EnterpriseTab>("overview");
+  // Bumped when the create form adds an event, so the Events tab's management
+  // list refetches.
+  const [eventsReloadNonce, setEventsReloadNonce] = useState(0);
 
   const loadStats = useCallback(async (passwordHash: string) => {
     setLoadingStats(true);
@@ -244,6 +249,14 @@ export default function OrganizerAdmin() {
     });
   };
 
+  // Shown inside each analytics tab when event-stats returns nothing (the
+  // Events tab still works — create + manage — with zero published events).
+  const noPublishedEvents = (
+    <section className="ooo-card bg-card p-6 normal-case font-sans text-muted-foreground">
+      No published events found.
+    </section>
+  );
+
   return (
     <div className="min-h-screen bg-white">
       <header className="border-b border-white/10 bg-black text-white sticky top-0 z-20">
@@ -266,16 +279,10 @@ export default function OrganizerAdmin() {
               See who showed up, how the event connected, and what happened next.
             </p>
 
-            <CreateRoomForm accessHash={accessHash} onCreated={() => loadStats(accessHash)} />
-
             {loadingStats ? (
               <div className="flex items-center gap-2 normal-case font-sans text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" /> Loading event totals…
               </div>
-            ) : events.length === 0 ? (
-              <section className="ooo-card bg-card p-6 normal-case font-sans text-muted-foreground">
-                No published events found.
-              </section>
             ) : (
               <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as EnterpriseTab)}>
                 <TabsList className="inline-flex gap-1 rounded-none border border-black bg-white p-1">
@@ -290,7 +297,19 @@ export default function OrganizerAdmin() {
                   ))}
                 </TabsList>
 
+                <TabsContent value="events" className="mt-8 space-y-12">
+                  <CreateRoomForm
+                    accessHash={accessHash}
+                    onCreated={() => {
+                      loadStats(accessHash);
+                      setEventsReloadNonce((nonce) => nonce + 1);
+                    }}
+                  />
+                  <EventsAdminTab accessHash={accessHash} reloadNonce={eventsReloadNonce} />
+                </TabsContent>
+
                 <TabsContent value="overview" className="mt-8 space-y-12">
+                  {events.length === 0 && noPublishedEvents}
                   {events.map((event) => {
                     const checkedInPercentage = event.totalRegistrations === 0
                       ? 0
@@ -309,6 +328,7 @@ export default function OrganizerAdmin() {
                 </TabsContent>
 
                 <TabsContent value="audience" className="mt-8 space-y-12">
+                  {events.length === 0 && noPublishedEvents}
                   {events.map((event) => (
                     <div key={event.id}>
                       <h2 className="text-2xl">{event.name}</h2>
@@ -321,6 +341,7 @@ export default function OrganizerAdmin() {
                 </TabsContent>
 
                 <TabsContent value="relationships" className="mt-8 space-y-12">
+                  {events.length === 0 && noPublishedEvents}
                   {events.map((event) => (
                     <div key={event.id}>
                       <h2 className="text-2xl">{event.name}</h2>
@@ -333,6 +354,7 @@ export default function OrganizerAdmin() {
                 </TabsContent>
 
                 <TabsContent value="outcomes" className="mt-8 space-y-6">
+                  {events.length === 0 && noPublishedEvents}
                   {events.map((event) => {
                     const selfReportsValuablePercentage = event.selfReportsTotal === 0
                       ? 0
@@ -395,6 +417,7 @@ export default function OrganizerAdmin() {
                 </TabsContent>
 
                 <TabsContent value="insights" className="mt-8 space-y-12">
+                  {events.length === 0 && noPublishedEvents}
                   {events.map((event) => (
                     <div key={event.id}>
                       <h2 className="text-2xl">{event.name}</h2>
@@ -407,6 +430,7 @@ export default function OrganizerAdmin() {
                 </TabsContent>
 
                 <TabsContent value="reports" className="mt-8 space-y-12">
+                  {events.length === 0 && noPublishedEvents}
                   {events.map((event) => (
                     <div key={event.id}>
                       <h2 className="text-2xl">{event.name}</h2>

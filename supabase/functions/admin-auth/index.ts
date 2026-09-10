@@ -13,7 +13,10 @@ import {
   KNOWN_REPORT_SECTIONS,
   type ReportSection,
 } from "./report.ts";
-import { buildEventInsertRow } from "./createEvent.ts";
+import { buildEventInsertRow, buildEventUpdateRow } from "./createEvent.ts";
+
+// Columns the Events management tab needs to list and pre-fill an edit form.
+const EVENT_ADMIN_COLUMNS = "id, name, venue, location, date, end_date, event_type, is_published, is_demo";
 
 // Browser callers are restricted to an explicit origin allow-list. Non-browser
 // callers (no Origin header) are unaffected — CORS is a browser-only control.
@@ -333,10 +336,98 @@ Deno.serve(async (request) => {
       const { data: inserted, error } = await supabase
         .from("events")
         .insert(result.row)
-        .select("id, name, venue, location, date, end_date, event_type, is_published, is_demo")
+        .select(EVENT_ADMIN_COLUMNS)
         .single();
       if (error) throw error;
       return json({ valid: true, event: inserted });
+    }
+
+    // Every event, published or not — the management list must be able to
+    // unhide drafts. Password-gated, no organizer_id filter: the owner
+    // manages any event, including ones made via the self-serve page.
+    if (action === "list-events") {
+      const { data, error } = await supabase
+        .from("events")
+        .select(EVENT_ADMIN_COLUMNS)
+        .order("date", { ascending: true, nullsFirst: false })
+        .order("name", { ascending: true });
+      if (error) throw error;
+      return json({ valid: true, events: data ?? [] });
+    }
+
+    if (action === "update-event") {
+      const eventId = (payload as { eventId?: unknown }).eventId;
+      if (typeof eventId !== "string") return json({ valid: true, error: "no_event" });
+
+      const result = buildEventUpdateRow(payload as Record<string, unknown>);
+      if (!result.ok) return json({ valid: true, error: result.error });
+
+      const { data: updated, error } = await supabase
+        .from("events")
+        .update(result.row)
+        .eq("id", eventId)
+        .select(EVENT_ADMIN_COLUMNS)
+        .single();
+      if (error) throw error;
+      return json({ valid: true, event: updated });
+    }
+
+    if (action === "set-event-published") {
+      const eventId = (payload as { eventId?: unknown }).eventId;
+      if (typeof eventId !== "string") return json({ valid: true, error: "no_event" });
+
+      const { data: updated, error } = await supabase
+        .from("events")
+        .update({ is_published: (payload as { isPublished?: unknown }).isPublished === true })
+        .eq("id", eventId)
+        .select(EVENT_ADMIN_COLUMNS)
+        .single();
+      if (error) throw error;
+      return json({ valid: true, event: updated });
+    }
+
+    if (action === "event-deletion-impact") {
+      const eventId = (payload as { eventId?: unknown }).eventId;
+      if (typeof eventId !== "string") return json({ valid: true, error: "no_event" });
+
+      const [matchesResult, messagesResult, meetingsResult] = await Promise.all([
+        supabase.from("matches").select("*", { count: "exact", head: true }).eq("event_id", eventId),
+        supabase.from("messages").select("*", { count: "exact", head: true }).eq("event_id", eventId),
+        supabase.from("meetings").select("*", { count: "exact", head: true }).eq("event_id", eventId),
+      ]);
+      if (matchesResult.error) throw matchesResult.error;
+      if (messagesResult.error) throw messagesResult.error;
+      if (meetingsResult.error) throw meetingsResult.error;
+      return json({
+        valid: true,
+        matches: matchesResult.count ?? 0,
+        messages: messagesResult.count ?? 0,
+        meetings: meetingsResult.count ?? 0,
+      });
+    }
+
+    if (action === "delete-event") {
+      const eventId = (payload as { eventId?: unknown }).eventId;
+      const confirmName = (payload as { confirmName?: unknown }).confirmName;
+      if (typeof eventId !== "string") return json({ valid: true, error: "no_event" });
+
+      const { data: eventRow, error: lookupError } = await supabase
+        .from("events")
+        .select("id, name")
+        .eq("id", eventId)
+        .maybeSingle();
+      if (lookupError) throw lookupError;
+      if (!eventRow) return json({ valid: true, error: "no_event" });
+
+      // Defence in depth: the client already gates the button on an exact
+      // name match, re-check it here so an API-level call can't skip it.
+      if (typeof confirmName !== "string" || confirmName !== eventRow.name) {
+        return json({ valid: true, error: "name_mismatch" });
+      }
+
+      const { error } = await supabase.from("events").delete().eq("id", eventId);
+      if (error) throw error;
+      return json({ valid: true, deleted: true });
     }
 
     return json({ valid: true });

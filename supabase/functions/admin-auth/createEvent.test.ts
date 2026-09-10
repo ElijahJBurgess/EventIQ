@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildEventInsertRow, DEFAULT_EVENT_TYPE } from "./createEvent.ts";
+import { buildEventInsertRow, buildEventUpdateRow, DEFAULT_EVENT_TYPE } from "./createEvent.ts";
 
 describe("buildEventInsertRow", () => {
   it("builds a row from a full valid payload", () => {
@@ -94,5 +94,51 @@ describe("buildEventInsertRow", () => {
     }
     const truthyButNotBoolean = buildEventInsertRow({ name: "Room", isPublished: "yes" });
     if (truthyButNotBoolean.ok) expect(truthyButNotBoolean.row.is_published).toBe(false);
+  });
+});
+
+describe("buildEventUpdateRow", () => {
+  it("shapes a valid payload the same as create, minus is_demo", () => {
+    const result = buildEventUpdateRow({
+      name: "  Renamed Event ",
+      venue: " New Venue ",
+      location: "",
+      date: "2026-10-01",
+      endDate: "2026-10-02",
+      eventType: "Conference",
+      isPublished: true,
+    });
+    expect(result).toEqual({
+      ok: true,
+      row: {
+        name: "Renamed Event",
+        venue: "New Venue",
+        location: null,
+        date: "2026-10-01",
+        end_date: "2026-10-02",
+        event_type: "Conference",
+        is_published: true,
+      },
+    });
+    if (result.ok) expect(result.row).not.toHaveProperty("is_demo");
+  });
+
+  it("rejects the same invalid payloads as create", () => {
+    expect(buildEventUpdateRow({}).ok).toBe(false);
+    expect(buildEventUpdateRow({})).toEqual({ ok: false, error: "name_required" });
+    expect(buildEventUpdateRow({ name: "X", eventType: "Party" })).toEqual({
+      ok: false,
+      error: "invalid_event_type",
+    });
+    expect(buildEventUpdateRow({ name: "X", date: "10/01/2026" })).toEqual({
+      ok: false,
+      error: "invalid_date",
+    });
+  });
+
+  it("defaults event_type when the payload omits it (parity with create)", () => {
+    const result = buildEventUpdateRow({ name: "X" });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.row.event_type).toBe(DEFAULT_EVENT_TYPE);
   });
 });
