@@ -268,7 +268,6 @@ export default function DashboardV2() {
                     Organizer Events
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem disabled>Privacy Policy</DropdownMenuItem>
                 <DropdownMenuItem onSelect={async () => { await signOut(); navigate("/v2/auth"); }}>
                   Sign Out
                 </DropdownMenuItem>

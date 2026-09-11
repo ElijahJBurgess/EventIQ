@@ -12,6 +12,7 @@ const ResetPasswordV2 = lazy(() => import("./pages/v2/ResetPassword.tsx"));
 const OrganizerAdmin = lazy(() => import("./pages/v2/OrganizerAdmin.tsx"));
 const OrganizerRooms = lazy(() => import("./pages/v2/OrganizerRooms.tsx"));
 const OffripPreview = lazy(() => import("./pages/OffripPreview.tsx"));
+const TermsOfService = lazy(() => import("./pages/TermsOfService.tsx"));
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
 
 function LoadingScreen() {
@@ -35,6 +36,7 @@ const App = () => (
             />
             <Route path="/v2/setup" element={<ProtectedRoute><ProfileSetupV2 /></ProtectedRoute>} />
             <Route path="/v2" element={<ProtectedRoute requireCompletedProfile><DashboardV2 /></ProtectedRoute>} />
+            <Route path="/terms" element={<TermsOfService />} />
             <Route
               path="/offrip-preview"
               element={import.meta.env.DEV ? <OffripPreview /> : <Navigate to="/" replace />}
