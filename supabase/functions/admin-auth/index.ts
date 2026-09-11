@@ -18,6 +18,15 @@ import { buildEventInsertRow, buildEventUpdateRow } from "./createEvent.ts";
 // Columns the Events management tab needs to list and pre-fill an edit form.
 const EVENT_ADMIN_COLUMNS = "id, name, venue, location, date, end_date, event_type, is_published, is_demo";
 
+// admin-auth is gated by one shared password (OOO_ADMIN_PASSWORD), not a
+// per-admin login -- there is no authenticated user id to attribute a
+// dashboard-created event to. Fall back to the platform owner's profile so
+// "create-event" no longer leaves organizer_id NULL (which made every
+// dashboard-created event permanently unmanageable from /v2/organizer,
+// since its RLS policy requires organizer_id = auth.uid()). Overridable via
+// env for environments where the owner's account differs.
+const DEFAULT_EVENT_OWNER_EMAIL = Deno.env.get("ADMIN_DEFAULT_EVENT_OWNER_EMAIL") ?? "chanise@oooevents.org";
+
 // Browser callers are restricted to an explicit origin allow-list. Non-browser
 // callers (no Origin header) are unaffected — CORS is a browser-only control.
 const LOCAL_ORIGINS = ["http://localhost:8080", "http://127.0.0.1:8080"];
@@ -333,9 +342,26 @@ Deno.serve(async (request) => {
       const result = buildEventInsertRow(payload as Record<string, unknown>);
       if (!result.ok) return json({ valid: true, error: result.error });
 
+      // Attribute the event to the default owner so it's manageable from
+      // /v2/organizer afterward. Best-effort: if the lookup fails (owner
+      // email misconfigured/missing), still create the event rather than
+      // blocking the dashboard, just without an organizer_id -- the prior
+      // (buggy) behavior.
+      let organizerId: string | null = null;
+      const { data: owner, error: ownerError } = await supabase
+        .from("profiles")
+        .select("id")
+        .eq("email", DEFAULT_EVENT_OWNER_EMAIL)
+        .maybeSingle();
+      if (ownerError || !owner) {
+        console.error(`create-event: could not resolve default owner "${DEFAULT_EVENT_OWNER_EMAIL}"`, ownerError);
+      } else {
+        organizerId = owner.id;
+      }
+
       const { data: inserted, error } = await supabase
         .from("events")
-        .insert(result.row)
+        .insert({ ...result.row, organizer_id: organizerId })
         .select(EVENT_ADMIN_COLUMNS)
         .single();
       if (error) throw error;
