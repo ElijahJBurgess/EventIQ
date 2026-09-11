@@ -532,9 +532,7 @@ export async function buildConciergeContext(
     .filter((entry): entry is typeof entry & { otherId: string; score: number; confidence: number } => Boolean(
       entry.otherId
       && entry.score !== null
-      && entry.score >= 60
       && entry.confidence !== null
-      && entry.confidence >= 70
     ))
     .sort((left, right) => (
       right.score - left.score

@@ -145,26 +145,36 @@ test("includes a match even though its counterpart is not checked in anywhere", 
   assert.equal(context.matches[0].userAuthoredProfileData.name, "Never Checked In");
 });
 
-test("keeps the score >= 60 / confidence >= 70 quality filter", async () => {
+test("v1: no score/confidence quality bar -- every valid-score match is eligible, highest score first", async () => {
   const context = await buildConciergeContext(source({
     getMatches: async () => [
       match(0, 99, {
-        id: "keep", user_a_id: "person-0", user_b_id: USER_ID,
+        id: "high", user_a_id: "person-0", user_b_id: USER_ID,
         b_to_a_score: 74, b_to_a_confidence: 78, reciprocity_label: "They Can Help You",
         score_breakdown: { aToB: { goals: 99 }, bToA: { goals: 74 } },
       }),
-      match(1, 95, { id: "low-score", b_to_a_score: 40, a_to_b_score: 59 }),
-      match(2, 94, { id: "low-conf", a_to_b_score: 88, a_to_b_confidence: 69 }),
+      match(1, 95, { id: "low-score", b_to_a_score: 40, a_to_b_score: 12 }),
+      match(2, 94, { id: "low-conf", a_to_b_score: 88, a_to_b_confidence: 5 }),
     ],
     getProfiles: async () => [profile("person-0", "Person 0"), profile("person-1"), profile("person-2")],
   }), USER_ID);
 
-  assert.deepEqual(context.matches.map((entry) => entry.trusted.matchId), ["keep"]);
-  assert.equal(context.matches[0].trusted.persistedScore, 74);
-  assert.equal(context.matches[0].trusted.persistedConfidence, 78);
-  assert.deepEqual(context.matches[0].persistedMatchEvidence.scoreBreakdown, { goals: 74 });
-  assert.deepEqual(context.matches[0].persistedMatchEvidence.matchEvidence, [{ side: "b" }]);
-  assert.equal(context.matches[0].persistedMatchEvidence.reciprocityLabel, "You Can Help Them");
+  // A previously-excluded low score (12) and a previously-excluded low
+  // confidence (5) both now surface, sorted highest score first alongside
+  // the previously-passing entry.
+  assert.deepEqual(context.matches.map((entry) => entry.trusted.matchId), ["low-conf", "high", "low-score"]);
+  assert.deepEqual(context.matches.map((entry) => entry.trusted.persistedScore), [88, 74, 12]);
+
+  const high = context.matches.find((entry) => entry.trusted.matchId === "high")!;
+  assert.equal(high.trusted.persistedScore, 74);
+  assert.equal(high.trusted.persistedConfidence, 78);
+  assert.deepEqual(high.persistedMatchEvidence.scoreBreakdown, { goals: 74 });
+  assert.deepEqual(high.persistedMatchEvidence.matchEvidence, [{ side: "b" }]);
+  assert.equal(high.persistedMatchEvidence.reciprocityLabel, "You Can Help Them");
+
+  const lowScore = context.matches.find((entry) => entry.trusted.matchId === "low-score")!;
+  assert.equal(lowScore.trusted.persistedScore, 12);
+  assert.equal(lowScore.trusted.persistedConfidence, 85);
 });
 
 test(`caps the surfaced matches at ${MAX_CONCIERGE_MATCHES}, highest score first`, async () => {
@@ -257,13 +267,20 @@ test("returns no_matches when the user has no match rows anywhere", async () => 
   assert.deepEqual(context.matches, []);
 });
 
-test("returns no_matches when every match is below the quality bar", async () => {
-  const context = await buildConciergeContext(source({
+test("v1: a low score/confidence match is no longer excluded -- only a genuinely unscored match is", async () => {
+  const lowButValid = await buildConciergeContext(source({
     getMatches: async () => [match(0, 50, { id: "weak", a_to_b_score: 50, a_to_b_confidence: 50 })],
     getProfiles: async () => [profile("person-0")],
   }), USER_ID);
-  assert.equal(context.status, "no_matches");
-  assert.deepEqual(context.matches, []);
+  assert.equal(lowButValid.status, "ready");
+  assert.deepEqual(lowButValid.matches.map((entry) => entry.trusted.matchId), ["weak"]);
+
+  const unscored = await buildConciergeContext(source({
+    getMatches: async () => [match(0, 0, { id: "unscored", a_to_b_score: null, a_to_b_confidence: null })],
+    getProfiles: async () => [profile("person-0")],
+  }), USER_ID);
+  assert.equal(unscored.status, "no_matches");
+  assert.deepEqual(unscored.matches, []);
 });
 
 test("treats no meetings as a valid ready context with an empty array", async () => {
