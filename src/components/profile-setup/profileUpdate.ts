@@ -1,3 +1,6 @@
+import { cleanRoleDetailsForIdentities } from "./roleDetailsUtils";
+import { calculateCompletionScore } from "./profileCompletion";
+import type { Json } from "@/integrations/supabase/types";
 import type { ProfileSetupFormData } from "./types";
 
 // "Pick one" profile fields where a blank value is not valid. Four of them have a
@@ -23,20 +26,31 @@ function emptyToNull(value: string): string | null {
 /**
  * The column set written to `profiles` by BOTH the onboarding wizard
  * (`ProfileSetup.onSubmit`) and the profile editor (`EditProfileScreen.saveChanges`).
- * Callers spread the result and add their own extras — `role_details` for both,
- * plus `profile_completed` / `profile_completion_score` for onboarding.
+ * Cleans answers and calculates completion for both callers. Onboarding adds
+ * its separate `profile_completed` lifecycle flag.
  *
  * Free-text fields (name, title, company, location, linkedin_url, avatar_url)
  * are passed through as-is; only the {@link PICK_ONE_FIELDS} are '' -> null
  * coerced.
  */
 export function buildProfileUpdatePayload(formData: ProfileSetupFormData) {
+  const cleaned = cleanRoleDetailsForIdentities(formData.roleDetails, formData.roleType,
+    formData.secondaryRoleTypes, formData.primaryGoal, formData.secondaryGoals);
+  const roleDetails = [formData.roleType, ...formData.secondaryRoleTypes].includes("Other") && formData.customRoleType.trim()
+    ? { ...cleaned, Other: { customTitle: formData.customRoleType.trim() } }
+    : cleaned;
   return {
+    role_details: roleDetails as Json,
+    profile_completion_score: calculateCompletionScore({ ...formData, roleDetails }),
     full_name: formData.fullName,
     avatar_url: formData.avatarUrl,
     title: formData.jobTitle,
     company: formData.company,
     location: formData.location,
+    location_city: formData.locationSelectionType === "custom" || !formData.location.trim()
+      ? null : emptyToNull(formData.locationCity),
+    location_state_code: formData.locationSelectionType === "custom" || !formData.location.trim()
+      ? null : emptyToNull(formData.locationStateCode)?.toUpperCase() ?? null,
     linkedin_url: formData.linkedinUrl,
     role_type: emptyToNull(formData.roleType),
     secondary_role_types: formData.secondaryRoleTypes,

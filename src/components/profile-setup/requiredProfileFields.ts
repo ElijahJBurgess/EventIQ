@@ -1,6 +1,7 @@
 import type { ProfileSetupFormData } from "./types";
 
 type TextFieldName =
+  | "location"
   | "avatarUrl"
   | "linkedinUrl"
   | "roleType"
@@ -84,5 +85,13 @@ export function findMissingRequiredProfileFields(
   for (const entry of REQUIRED_ARRAY_FIELDS) {
     if ((formData[entry.field] ?? []).length === 0) missing.push(entry);
   }
+  const locationError = getLocationValidationError(formData);
+  if (locationError) missing.push({ field: "location", message: locationError, page: 1 });
   return missing.sort((left, right) => left.page - right.page);
+}
+
+/** Existing locations are explicitly marked on hydration; new typing must be confirmed. */
+export function getLocationValidationError(formData: ProfileSetupFormData): string | undefined {
+  if (!formData.location.trim()) return "Location is required";
+  if (!formData.locationSelectionType) return "Select a city from the results or use the custom location option";
 }

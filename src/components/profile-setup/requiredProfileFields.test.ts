@@ -4,6 +4,8 @@ import { findMissingRequiredProfileFields, REQUIRED_ARRAY_FIELDS } from "./requi
 
 const complete: ProfileSetupFormData = {
   ...initialProfileSetupFormData,
+  location: "Atlanta, GA",
+  locationSelectionType: "existing",
   avatarUrl: "https://example.com/photo.jpg",
   linkedinUrl: "linkedin.com/in/jordanlee",
   roleType: "Founder / Co-founder",
@@ -106,4 +108,10 @@ describe("findMissingRequiredProfileFields", () => {
       "connectionPreference",
     ]);
   });
+});
+
+
+it.each(["", "Changed city"])("rejects cleared or unconfirmed location %s in editor validation", (location) => {
+  expect(findMissingRequiredProfileFields({ ...complete, location, locationSelectionType: "" }))
+    .toContainEqual({ field: "location", page: 1, message: location ? "Select a city from the results or use the custom location option" : "Location is required" });
 });
