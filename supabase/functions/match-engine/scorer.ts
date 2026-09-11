@@ -1,6 +1,6 @@
 // OFFRIP Matching Rubric V2. Scores are directional: viewer -> candidate.
 
-export const SCORE_VERSION = "v2.1";
+export const SCORE_VERSION = "v2.2";
 
 export interface Profile {
   id: string;
@@ -114,6 +114,30 @@ const WEIGHTS: Record<ComponentName, number> = {
 };
 
 const norm = (value: string) => value.trim().toLowerCase();
+// Only recognized US state abbreviations make legacy "City, ST" structured.
+// Arbitrary custom/country text stays unresolved.
+const US_STATE_CODES = new Set("AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC".split(" "));
+function comparableLocation(profile: Profile): { city: string; state: string } | null {
+  const city = norm(profile.location_city ?? "").replace(/\s+/g, " ");
+  const state = (profile.location_state_code ?? "").trim().toUpperCase();
+  if (city && US_STATE_CODES.has(state)) return { city, state };
+  const parts = (profile.location ?? "").split(",").map((part) => part.trim());
+  if (parts.length === 2 && parts[0] && US_STATE_CODES.has(parts[1].toUpperCase())) {
+    return { city: norm(parts[0]).replace(/\s+/g, " "), state: parts[1].toUpperCase() };
+  }
+  return null;
+}
+
+/** null means insufficient evidence for either same-city or outside-city credit. */
+function sameLocation(left: Profile, right: Profile): boolean | null {
+  const a = comparableLocation(left);
+  const b = comparableLocation(right);
+  if (a && b) return a.city === b.city && a.state === b.state;
+  if (a || b) return null;
+  const textA = norm(left.location ?? "").replace(/\s+/g, " ");
+  const textB = norm(right.location ?? "").replace(/\s+/g, " ");
+  return textA && textB && textA === textB ? true : null;
+}
 const present = (values?: string[] | null) => (values ?? []).filter((value) => value.trim().length > 0);
 const roles = (profile: Profile) => present([profile.role_type ?? "", ...profile.secondary_role_types]);
 const functions = (profile: Profile) => present([profile.primary_function ?? "", ...(profile.additional_functions ?? [])]);
@@ -265,10 +289,9 @@ function targetPersonFit(viewer: Profile, candidate: Profile): ComponentBreakdow
       return { score: 60, weight: WEIGHTS.targetPersonFit, evidence: [evidence("targetPersonFit", 60, "industry_preference", viewer.industry_preference, "industries", candidateIndustry, "requested industry preference")] };
     }
   }
-  const viewerCity = viewer.location_city ?? viewer.location;
-  const candidateCity = candidate.location_city ?? candidate.location;
-  if (viewer.location_preference && viewerCity && candidateCity) {
-    const same = norm(viewerCity) === norm(candidateCity);
+  const candidateCity = candidate.location?.trim() || [candidate.location_city, candidate.location_state_code].filter(Boolean).join(", ");
+  const same = sameLocation(viewer, candidate);
+  if (viewer.location_preference && same !== null) {
     if ((viewer.location_preference === "prioritize_city" && same) || (viewer.location_preference === "prioritize_outside_city" && !same)) {
       return { score: 60, weight: WEIGHTS.targetPersonFit, evidence: [evidence("targetPersonFit", 60, "location_preference", viewer.location_preference, "location", candidateCity, "requested location preference")] };
     }
@@ -470,10 +493,9 @@ function contextFit(viewer: Profile, candidate: Profile): ComponentBreakdown {
   }
   parts.push({ score: industryScore, weight: 40, item: industryScore && candidateIndustries[0] ? evidence("contextFit", industryScore, "industry_preference", industryPreference!, "industries", candidateIndustries[0], "industry preference fulfillment") : undefined });
   let locationScore: number | null = null;
-  const viewerCity = viewer.location_city ?? viewer.location;
-  const candidateCity = candidate.location_city ?? candidate.location;
-  if (viewer.location_preference && viewerCity && candidateCity) {
-    const same = norm(viewerCity) === norm(candidateCity);
+  const candidateCity = candidate.location?.trim() || [candidate.location_city, candidate.location_state_code].filter(Boolean).join(", ");
+  const same = sameLocation(viewer, candidate);
+  if (viewer.location_preference && same !== null) {
     locationScore = viewer.location_preference === "prioritize_city" ? (same ? 100 : 0) : viewer.location_preference === "prioritize_outside_city" ? (same ? 0 : 100) : 100;
   }
   parts.push({ score: locationScore, weight: 30, item: locationScore && candidateCity ? evidence("contextFit", locationScore, "location_preference", viewer.location_preference!, "location", candidateCity, "location preference fulfillment") : undefined });

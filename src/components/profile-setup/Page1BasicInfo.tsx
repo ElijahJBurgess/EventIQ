@@ -9,7 +9,7 @@ import {
   PROFILE_PHOTO_BUCKET,
 } from "@/lib/profilePhotoStorage";
 import PillSelect from "./PillSelect";
-import { REQUIRED_PROFILE_FIELD_MESSAGES } from "./requiredProfileFields";
+import { REQUIRED_PROFILE_FIELD_MESSAGES, getLocationValidationError } from "./requiredProfileFields";
 import type { ProfileSetupPageProps } from "./types";
 
 const ROLE_TYPES = [
@@ -114,10 +114,11 @@ export default function Page1BasicInfo({
   const [locationQuery, setLocationQuery] = useState(formData.location);
   const [cityResults, setCityResults] = useState<CitySearchResult[]>([]);
   const [isSearchingCities, setIsSearchingCities] = useState(false);
+  const [citySearchError, setCitySearchError] = useState(false);
+  const [searchAttempt, setSearchAttempt] = useState(0);
   const [showCityResults, setShowCityResults] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const locationSearchRef = useRef<HTMLDivElement>(null);
-  const initializedExistingLocationRef = useRef(false);
 
   const inputClass = "w-full border border-black/20 bg-white px-4 py-3 text-sm normal-case font-offrip-body outline-none focus:border-black transition-colors";
   const labelClass = "text-[10px] tracking-widest font-display text-black/40 mb-1 block";
@@ -125,22 +126,6 @@ export default function Page1BasicInfo({
 
   const update = (field: StringField) => (value: string) =>
     setFormData((prev) => ({ ...prev, [field]: value }));
-
-  useEffect(() => {
-    if (initializedExistingLocationRef.current) return;
-    initializedExistingLocationRef.current = true;
-    if (!formData.location || formData.locationSelectionType) return;
-
-    const [city = formData.location, stateCode = ""] = formData.location
-      .split(",")
-      .map((part) => part.trim());
-    setFormData((prev) => ({
-      ...prev,
-      locationCity: city,
-      locationStateCode: stateCode,
-      locationSelectionType: "existing",
-    }));
-  }, [formData.location, formData.locationSelectionType, setFormData]);
 
   useEffect(() => {
     const closeResults = (event: MouseEvent) => {
@@ -164,24 +149,36 @@ export default function Page1BasicInfo({
     let cancelled = false;
     const timer = window.setTimeout(async () => {
       setIsSearchingCities(true);
-      const { data, error } = await supabase.rpc("search_us_cities", {
-        search_query: query,
-        result_limit: 10,
-      });
-
-      if (cancelled) return;
-      setCityResults(error ? [] : (data as CitySearchResult[]));
-      setIsSearchingCities(false);
-      setShowCityResults(true);
+      setCitySearchError(false);
+      try {
+        const { data, error } = await supabase.rpc("search_us_cities", {
+          search_query: query,
+          result_limit: 10,
+        });
+        if (cancelled) return;
+        setCityResults(error ? [] : (data ?? []) as CitySearchResult[]);
+        setCitySearchError(Boolean(error));
+      } catch {
+        if (cancelled) return;
+        setCityResults([]);
+        setCitySearchError(true);
+      } finally {
+        if (!cancelled) {
+          setIsSearchingCities(false);
+          setShowCityResults(true);
+        }
+      }
     }, 250);
 
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [formData.locationSelectionType, locationQuery]);
+  }, [formData.locationSelectionType, locationQuery, searchAttempt]);
 
   const updateLocationQuery = (value: string) => {
+    setCitySearchError(false);
+    setCityResults([]);
     setLocationQuery(value);
     setShowCityResults(value.trim().length >= 2);
     setIsSearchingCities(value.trim().length >= 2);
@@ -210,14 +207,13 @@ export default function Page1BasicInfo({
 
   const useCustomLocation = () => {
     const location = locationQuery.trim();
-    const [city = location, stateCode = ""] = location.split(",").map((part) => part.trim());
     setLocationQuery(location);
     setShowCityResults(false);
     setFormData((prev) => ({
       ...prev,
       location,
-      locationCity: city,
-      locationStateCode: stateCode,
+      locationCity: "",
+      locationStateCode: "",
       locationSelectionType: "custom",
     }));
   };
@@ -314,11 +310,8 @@ export default function Page1BasicInfo({
       next.seniority = "Select your current level of seniority";
     }
 
-    if (!formData.location.trim()) {
-      next.location = "Location is required";
-    } else if (!formData.locationSelectionType) {
-      next.location = "Select a city from the results or use the custom location option";
-    }
+    next.location = getLocationValidationError(formData);
+    if (!next.location) delete next.location;
 
     if (!formData.linkedinUrl.trim()) {
       next.linkedinUrl = "LinkedIn URL is required";
@@ -493,8 +486,14 @@ export default function Page1BasicInfo({
               ) : (
                 <div className="p-3">
                   <p className="text-sm text-muted-foreground normal-case font-sans">
-                    No matching US cities found.
+                    {citySearchError ? "City search failed. Try again or use a custom location." : "No matching US cities found."}
                   </p>
+                  {citySearchError && (
+                    <button type="button" className="block mt-2 text-sm underline" onClick={() => {
+                      setIsSearchingCities(true);
+                      setSearchAttempt((attempt) => attempt + 1);
+                    }}>Retry city search</button>
+                  )}
                   <button
                     type="button"
                     className="mt-2 text-sm font-bold normal-case underline"

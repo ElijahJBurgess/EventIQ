@@ -4,12 +4,10 @@ import Page2Goals from "@/components/profile-setup/Page2Goals";
 import Page3WhoAndFilters from "@/components/profile-setup/Page3WhoAndFilters";
 import Page3RoleQuestions from "@/components/profile-setup/Page3RoleQuestions";
 import ProgressIndicator from "@/components/profile-setup/ProgressIndicator";
-import { cleanRoleDetailsForIdentities } from "@/components/profile-setup/roleDetailsUtils";
 import { initialProfileSetupFormData, type ProfileSetupFormData } from "@/components/profile-setup/types";
 import { buildProfileUpdatePayload } from "@/components/profile-setup/profileUpdate";
 import { findMissingRequiredProfileFields } from "@/components/profile-setup/requiredProfileFields";
 import { supabase } from "@/integrations/supabase/client";
-import type { Json } from "@/integrations/supabase/types";
 import { getOwnedProfilePhotoPath, PROFILE_PHOTO_BUCKET } from "@/lib/profilePhotoStorage";
 
 interface EditProfileScreenProps {
@@ -42,7 +40,7 @@ export default function EditProfileScreen({ userId, onClose, onSaved }: EditProf
     const loadProfile = async () => {
       const { data, error } = await supabase
         .from("profiles")
-        .select("full_name,avatar_url,title,company,location,linkedin_url,role_type,secondary_role_types,primary_function,additional_functions,seniority,primary_goal,matching_goal,secondary_goals,needs,offers,areas_of_expertise,who_to_meet,industry_preference,location_preference,career_level_preference,connection_preference,role_details")
+        .select("full_name,avatar_url,title,company,location,location_city,location_state_code,linkedin_url,role_type,secondary_role_types,primary_function,additional_functions,seniority,primary_goal,matching_goal,secondary_goals,needs,offers,areas_of_expertise,who_to_meet,industry_preference,location_preference,career_level_preference,connection_preference,role_details")
         .eq("id", userId)
         .maybeSingle();
 
@@ -59,6 +57,9 @@ export default function EditProfileScreen({ userId, onClose, onSaved }: EditProf
         jobTitle: data.title ?? "",
         company: data.company ?? "",
         location: data.location ?? "",
+        locationCity: data.location_city ?? "",
+        locationStateCode: data.location_state_code ?? "",
+        locationSelectionType: data.location?.trim() ? "existing" : "",
         linkedinUrl: data.linkedin_url ?? "",
         roleType: data.role_type ?? "",
         secondaryRoleTypes: asStringArray(data.secondary_role_types),
@@ -106,18 +107,10 @@ export default function EditProfileScreen({ userId, onClose, onSaved }: EditProf
     }
 
     setIsSaving(true);
-    const cleanedRoleDetails = cleanRoleDetailsForIdentities(
-      formData.roleDetails,
-      formData.roleType,
-      formData.secondaryRoleTypes,
-      formData.primaryGoal,
-      formData.secondaryGoals,
-    );
     const { error } = await supabase
       .from("profiles")
       .update({
         ...buildProfileUpdatePayload(formData),
-        role_details: cleanedRoleDetails as Json,
       })
       .eq("id", userId);
 

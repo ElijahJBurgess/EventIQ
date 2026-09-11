@@ -11,51 +11,7 @@ import SuccessScreen from "@/components/profile-setup/SuccessScreen";
 import { initialProfileSetupFormData, type ProfileSetupFormData } from "@/components/profile-setup/types";
 import { buildProfileUpdatePayload } from "@/components/profile-setup/profileUpdate";
 import { supabase } from "@/integrations/supabase/client";
-import type { Json } from "@/integrations/supabase/types";
 import { useAuth } from "@/v2/AuthProvider";
-
-// Page 3 (Page3RoleQuestions.tsx) only has real questions for these role
-// types -- everyone else sees a static "you're all set" message with no
-// fields at all, so role_details can never gain a key for them.
-const ROLE_TYPES_WITH_PAGE3_QUESTIONS = new Set([
-  "Founder / Co-founder",
-  "Investor",
-  "Recruiter",
-  "Hiring Manager",
-  "Creator / Influencer",
-]);
-
-function calculateCompletionScore(formData: ProfileSetupFormData): number {
-  let score = 0;
-
-  const mandatoryFilled =
-    formData.fullName.trim().length > 0 &&
-    formData.roleType.trim().length > 0 &&
-    formData.whoToMeet.length >= 1 &&
-    formData.primaryGoal.trim().length > 0;
-  if (mandatoryFilled) score += 50;
-
-  const optionalPage1Filled =
-    formData.avatarUrl.trim().length > 0 ||
-    formData.jobTitle.trim().length > 0 ||
-    formData.company.trim().length > 0 ||
-    formData.location.trim().length > 0 ||
-    formData.linkedinUrl.trim().length > 0;
-  if (optionalPage1Filled) score += 20;
-
-  // Role types with no Page 3 questions have nothing to fill in, so they
-  // get these 20 points automatically instead of it being permanently
-  // unreachable for them.
-  const hasPage3Questions = [formData.roleType, ...formData.secondaryRoleTypes].some((role) =>
-    ROLE_TYPES_WITH_PAGE3_QUESTIONS.has(role),
-  );
-  const roleDetailsFilled = Object.keys(formData.roleDetails).length > 0;
-  if (!hasPage3Questions || roleDetailsFilled) score += 20;
-
-  if (formData.offers.length >= 1) score += 10;
-
-  return Math.min(score, 100);
-}
 
 export default function ProfileSetup() {
   const { user } = useAuth();
@@ -79,13 +35,7 @@ export default function ProfileSetup() {
       .from("profiles")
       .update({
         ...buildProfileUpdatePayload(formData),
-        role_details: (
-          [formData.roleType, ...formData.secondaryRoleTypes].includes("Other") && formData.customRoleType.trim()
-            ? { ...formData.roleDetails, Other: { customTitle: formData.customRoleType.trim() } }
-            : formData.roleDetails
-        ) as Json,
         profile_completed: true,
-        profile_completion_score: calculateCompletionScore(formData),
       })
       .eq("id", user.id);
 

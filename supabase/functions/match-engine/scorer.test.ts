@@ -223,3 +223,25 @@ describe("Matching Rubric V2", () => {
     expect(result.matchEvidence.aToB.every((item) => result.scoreBreakdown.aToB[item.component].score !== null)).toBe(true);
   });
 });
+
+describe("state-aware location compatibility", () => {
+  const atlanta = { location: "Atlanta, GA", location_city: "Atlanta", location_state_code: "GA" };
+  it.each([
+    [atlanta, { location: " atlanta , ga " }, true],
+    [{ location: "Portland, OR", location_city: "Portland", location_state_code: "OR" }, { location: "Portland, ME", location_city: "Portland", location_state_code: "ME" }, false],
+    [atlanta, { location: "Atlanta" }, null],
+    [atlanta, { location: " " }, null],
+    [{ location: null }, { location: null }, null],
+    [{ location: "Paris, FR", location_city: "Paris", location_state_code: "FR" }, { location: "Paris, FR" }, true],
+    [{ location: " Paris, France " }, { location: "paris, france" }, true],
+    [{ location: "Paris, France" }, { location: "Paris" }, null],
+    [{ location: "Remote" }, { location: " remote " }, true],
+  ] as const)("compares %j with %j conservatively", (left, right, same) => {
+    for (const preference of ["prioritize_city", "prioritize_outside_city"]) {
+      const result = calculateMatchScore(profile({ id: "a", ...left, who_to_meet: ["Founders"], location_preference: preference }), profile({ id: "b", ...right }));
+      const match = same !== null && (preference === "prioritize_city" ? same : !same);
+      expect(result.scoreBreakdown.aToB.targetPersonFit.score).toBe(match ? 60 : 0);
+      expect(result.scoreBreakdown.aToB.contextFit.score).toBe(same === null ? null : match ? 100 : 0);
+    }
+  });
+});

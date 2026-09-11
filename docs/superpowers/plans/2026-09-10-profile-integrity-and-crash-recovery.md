@@ -1,6 +1,6 @@
 # Profile Integrity and Crash Recovery Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. This document is a proposed implementation; no application or database changes have been applied.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking. Tasks 1–3 are implemented and verified locally. Task 4 has not been started; no production data changes or deployments have been made.
 
 **Goal:** Remove unreachable completion requirements, persist selected locations correctly, and replace blank-screen failures with recovery screens.
 
@@ -46,7 +46,7 @@ Direct authenticated REST table reads work. The installed Supabase CLI account d
 
 **Interfaces:** Move the existing `QuestionBlock` type and `getQuestionBlocks(primaryRole: string, secondaryRoles: string[], primaryGoal: string, secondaryGoals: string[]): QuestionBlock[]` to the pure rules module, preserving its ordering and storage keys. Export `calculateCompletionScore(formData: ProfileSetupFormData): number` from the pure completion module. Both save paths consume it through the shared payload builder after cleaning role details.
 
-- [ ] Add regression fixtures for Founder and Creator with no eligible questions, including secondary identities/goals; assert the unchanged UI shows no fields and completion is 100 when the other weighted sections are filled.
+- [x] Add regression fixtures for Founder and Creator with no eligible questions, including secondary identities/goals; assert the unchanged UI shows no fields and completion is 100 when the other weighted sections are filled.
 
 ```ts
 it.each(["Founder / Co-founder", "Creator / Influencer"])(
@@ -62,8 +62,8 @@ it.each(["Founder / Co-founder", "Creator / Influencer"])(
 );
 ```
 
-- [ ] Run the new tests and confirm they expose the static-role mismatch before replacing it.
-- [ ] Move the current block-selection implementation unchanged into the shared module; make rendering and cleanup use it. Replace the static role-list decision with the actual block list:
+- [x] Run the new tests and confirm they expose the static-role mismatch before replacing it.
+- [x] Move the current block-selection implementation unchanged into the shared module; make rendering and cleanup use it. Replace the static role-list decision with the actual block list:
 
 ```ts
 const blocks = getQuestionBlocks(
@@ -72,10 +72,10 @@ const blocks = getQuestionBlocks(
 );
 ```
 
-- [ ] Keep the existing weights. Award question points when `blocks.length === 0`; otherwise inspect nonempty answers to fields currently shown in active blocks. Empty objects, inactive namespaces, hidden Founder fields, and `Other.customTitle` must not count. Retain the existing policy that answering visible optional questions can earn points and skipping them is allowed; do not make every optional field mandatory.
-- [ ] Clean role details before both saving and scoring, then include `profile_completion_score: calculateCompletionScore(formData)` in the common save payload. Keep `profile_completed` as the separate onboarding lifecycle flag.
-- [ ] Test required fundraising/hiring/career answers, optional skipping, empty nested objects, inactive answers, primary/secondary goal changes, and editor save followed by reload. Verify no-field cases earn the same score through signup and edit.
-- [ ] Run the profile test group and typecheck; review this change independently before proceeding to data repair.
+- [x] Keep the existing weights. Award question points when `blocks.length === 0`; otherwise inspect nonempty answers to fields currently shown in active blocks. Empty objects, inactive namespaces, hidden Founder fields, and `Other.customTitle` must not count. Retain the existing policy that answering visible optional questions can earn points and skipping them is allowed; do not make every optional field mandatory.
+- [x] Clean role details before both saving and scoring, then include `profile_completion_score: calculateCompletionScore(formData)` in the common save payload. Keep `profile_completed` as the separate onboarding lifecycle flag.
+- [x] Test required fundraising/hiring/career answers, optional skipping, empty nested objects, inactive answers, primary/secondary goal changes, and editor save followed by reload. Verify no-field cases earn the same score through signup and edit.
+- [x] Run the profile test group and typecheck; review this change independently before proceeding to data repair.
 
 **Meaning of “stuck”:** Repository consumers do not currently use `profile_completion_score` as the onboarding route gate. They use `profile_completed`. The numeric score is defective; an access-blocking claim is not established by this investigation. Matching confidence also uses its own inputs rather than this percentage.
 
@@ -91,7 +91,7 @@ const blocks = getQuestionBlocks(
 
 **Interfaces:** Keep `ProfileSetupFormData`'s existing `location`, `locationCity`, `locationStateCode`, and `locationSelectionType`. The common payload additionally returns `location_city: string | null` and `location_state_code: string | null`. Database-selected values are authoritative; custom unresolved values retain display text with null structured fields. Existing structured values survive unrelated edits. Legacy unresolved values can remain unresolved until explicitly selected or safely backfilled.
 
-- [ ] Add a payload regression test and confirm it fails:
+- [x] Add a payload regression test and confirm it fails:
 
 ```ts
 const payload = buildProfileUpdatePayload({
@@ -104,13 +104,15 @@ expect(payload).toMatchObject({
 });
 ```
 
-- [ ] Include both structured fields in editor selection/hydration; remove comma-splitting as an authority for state data. On explicit custom selection, clear the structured pair. On a new database selection, save the selected city and state. On a typed but unconfirmed replacement, block save rather than silently preserving the old city. Existing untouched legacy display text remains editable without forcing a new location.
-- [ ] Write the normalized pair into the shared payload, while retaining `location`. Distinguish city-search request failure from successful zero results; allow retry/custom entry and catch rejected requests.
-- [ ] Add round-trip tests for signup, editor, unrelated edits, database-to-custom changes, search failure, and cleared/changed input. Verify reloaded city/state equal the selection.
-- [ ] Fix both scorer comparisons to compare city **and state** when available. Normalize compatible legacy `City, ST` values for mixed old/new profiles; compare unresolved legacy/custom text conservatively, without declaring a city-only match to a structured city/state pair. Test Atlanta structured versus Atlanta legacy; equal city names in different states; blank values; case/whitespace; custom non-US locations.
-- [ ] Run both scoring and copy-consistency tests. Inspect whether the persisted scorer version needs advancing with changed comparison semantics; include the decision in deployment notes. Deploy both active scorer copies before structured writes/backfill. Do not invoke historical one-off admin matching functions.
+- [x] Include both structured fields in editor selection/hydration; remove comma-splitting as an authority for state data. On explicit custom selection, clear the structured pair. On a new database selection, save the selected city and state. On a typed but unconfirmed replacement, block save rather than silently preserving the old city. Existing untouched legacy display text remains editable without forcing a new location.
+- [x] Write the normalized pair into the shared payload, while retaining `location`. Distinguish city-search request failure from successful zero results; allow retry/custom entry and catch rejected requests.
+- [x] Add round-trip tests for signup, editor, unrelated edits, database-to-custom changes, search failure, and cleared/changed input. Verify reloaded city/state equal the selection.
+- [x] Fix both scorer comparisons to compare city **and state** when available. Normalize compatible legacy `City, ST` values for mixed old/new profiles; compare unresolved legacy/custom text conservatively, without declaring a city-only match to a structured city/state pair. Test Atlanta structured versus Atlanta legacy; equal city names in different states; blank values; case/whitespace; custom non-US locations.
+- [x] Run both scoring and copy-consistency tests. Inspect whether the persisted scorer version needs advancing with changed comparison semantics; include the decision in deployment notes. Deployment remains pending per the code/tests-only instruction. Do not invoke historical one-off admin matching functions.
 
 The columns and city-search RPC already exist; a schema expansion or city database rebuild is unnecessary. Populating cities without fixing comparisons would introduce false matches across states.
+
+**Local verification / pending deployment:** Payload regression failed on both missing structured fields before implementation. Scorer regressions failed for mixed structured/legacy values, same-name cities in different states, and unresolved comparisons before implementation. Profile, signup, scorer, and copy-consistency group: 119 tests passed; TypeScript app check passed. Both byte-identical scorer copies advance the persisted score version from v2.1 to v2.2 because location compatibility and unavailable-evidence semantics change stored scores. No functions were deployed and no production writes/backfill were performed. A future authorized rollout must deploy both scorer copies before frontend structured writes or data backfill.
 
 ## Task 3: Recover from render and startup failures
 
@@ -122,20 +124,25 @@ The columns and city-search RPC already exist; a schema expansion or city databa
 
 **Interfaces:** `mountApp(root: HTMLElement): void` is exported by bootstrap and imports React, App, and the boundary. `validatePublicEnv(env: Record<string, unknown>): void` checks the URL and nonblank publishable key and throws messages containing variable names, never values. `startApp(root: HTMLElement, load: () => Promise<{mountApp(root: HTMLElement): void}>): Promise<void>` validates config, awaits the loader, mounts, and catches startup failures with a plain DOM fallback.
 
-- [ ] Add a render-crash test using `function Broken(): never { throw new Error("test crash"); }`; render it under the boundary and assert a visible recovery message and Reload control instead of a blank root.
-- [ ] Add startup tests for missing URL, missing key, malformed URL, rejected module import, synchronous mount failure, and success. Assert the app loader is never called when configuration is invalid.
-- [ ] Move React/App imports into bootstrap. Keep main dependency-light and call:
+- [x] Add a render-crash test using `function Broken(): never { throw new Error("test crash"); }`; render it under the boundary and assert a visible recovery message and Reload control instead of a blank root.
+- [x] Add startup tests for missing URL, missing key, malformed URL, rejected module import, synchronous mount failure, and success. Assert the app loader is never called when configuration is invalid.
+- [x] Move React/App imports into bootstrap. Keep main dependency-light and call:
 
 ```ts
 void startApp(document.getElementById("root")!, () => import("./bootstrap"));
 ```
 
-- [ ] Implement a React 18 class boundary with `getDerivedStateFromError`, safe error reporting in `componentDidCatch`, and a fallback using ordinary HTML controls. Place it above App, auth, and router providers. A synchronous try/catch around `root.render()` does not replace this boundary.
-- [ ] Render startup failure using DOM APIs/textContent, independent of React and the failed providers. Provide Reload and a safe home link. Seed `index.html` with a minimal loading/recovery message and a noscript message so failure to fetch the entry module does not leave an empty root.
-- [ ] Use the same public-env validator in Vite's build path, loading the selected mode with process-env precedence. Fail invalid builds with variable names only. Validate missing configuration in an isolated environment/fixture, without deleting the real `.env`.
-- [ ] Verify provider render failure and rejected lazy-route import under the boundary; verify missing configuration and module-evaluation failure under startup recovery. Exercise the production bundle in a browser, including reload recovery after correcting the failure. Preserve the existing login session.
+- [x] Implement a React 18 class boundary with `getDerivedStateFromError`, safe error reporting in `componentDidCatch`, and a fallback using ordinary HTML controls. Place it above App, auth, and router providers. A synchronous try/catch around `root.render()` does not replace this boundary.
+- [x] Render startup failure using DOM APIs/textContent, independent of React and the failed providers. Provide Reload and a safe home link. Seed `index.html` with a minimal loading/recovery message and a noscript message so failure to fetch the entry module does not leave an empty root.
+- [x] Use the same public-env validator in Vite's build path, loading the selected mode with process-env precedence. Fail invalid builds with variable names only. Validate missing configuration in an isolated environment/fixture, without deleting the real `.env`.
+- [x] Verify provider render failure and rejected lazy-route import under the boundary; verify missing configuration and module-evaluation failure under startup recovery. Exercise the production bundle in a browser, including reload recovery after correcting the failure. Preserve the existing login session.
 
 React boundaries catch descendant render/lifecycle failures, not arbitrary event-handler or asynchronous callback errors. Failed actions still need their own error handling. Reference: [React error boundaries](https://react.dev/reference/react/Component#catching-rendering-errors-with-an-error-boundary). Vite public environment variables are embedded at build time; runtime messaging cannot repair a misconfigured bundle. Reference: [Vite env and modes](https://vite.dev/guide/env-and-mode).
+
+
+**Local verification:** 475/475 Vitest tests passed (394 baseline + 81 added), production build passed, root/app/node TypeScript checks passed, and lint retained its baseline of zero errors/eight warnings. The additional Node Concierge suite passed 47/47. Browser checks at 1280×800 and 390×844 verified startup-import, render, and lazy-import failure recovery, Reload/home actions, retained localStorage, and nonblank JavaScript-disabled output; all external requests were intercepted. Child-process builds rejected missing URL/key and malformed URL without exposing their values.
+
+**Implementation adjustment:** Global CSS loads through a Vite-processed stylesheet link in `index.html`, outside the deferred bootstrap. Browser testing showed that an unavailable external font stylesheet otherwise rejected Vite's dynamic app preload. Static loading preserves startup when fonts fail. Added `ProfileSetup.test.tsx` and `bootstrap.test.tsx` to verify the actual submission and root-mount wiring, alongside the planned unit/editor tests. No deployment or data-repair steps were executed.
 
 ## Task 4: Targeted data repair and rollout verification
 
