@@ -34,9 +34,9 @@ describe("findMissingRequiredProfileFields", () => {
     expect(findings).toEqual([{ field: "avatarUrl", message: "Profile photo is required", page: 1 }]);
   });
 
-  it("flags a missing LinkedIn URL", () => {
+  it("does not flag a missing LinkedIn URL", () => {
     const findings = findMissingRequiredProfileFields({ ...complete, linkedinUrl: "" });
-    expect(findings).toEqual([{ field: "linkedinUrl", message: "LinkedIn URL is required", page: 1 }]);
+    expect(findings).toEqual([]);
   });
 
   it("flags a blank identity with the signup wording", () => {

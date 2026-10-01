@@ -3,7 +3,6 @@ import type { ProfileSetupFormData } from "./types";
 type TextFieldName =
   | "location"
   | "avatarUrl"
-  | "linkedinUrl"
   | "roleType"
   | "primaryFunction"
   | "seniority"
@@ -44,7 +43,6 @@ interface ArrayFieldEntry extends MissingRequiredProfileField {
 // Messages are the exact strings the owning page shows.
 const REQUIRED_TEXT_FIELDS: TextFieldEntry[] = [
   { field: "avatarUrl", message: "Profile photo is required", page: 1 },
-  { field: "linkedinUrl", message: "LinkedIn URL is required", page: 1 },
   { field: "roleType", message: "Select at least 1 identity", page: 1 },
   { field: "primaryFunction", message: "Select at least 1 function", page: 1 },
   { field: "seniority", message: "Select your current level of seniority", page: 1 },

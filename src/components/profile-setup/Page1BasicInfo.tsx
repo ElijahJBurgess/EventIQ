@@ -313,9 +313,7 @@ export default function Page1BasicInfo({
     next.location = getLocationValidationError(formData);
     if (!next.location) delete next.location;
 
-    if (!formData.linkedinUrl.trim()) {
-      next.linkedinUrl = "LinkedIn URL is required";
-    } else if (!LINKEDIN_PATTERN.test(formData.linkedinUrl.trim())) {
+    if (formData.linkedinUrl.trim() && !LINKEDIN_PATTERN.test(formData.linkedinUrl.trim())) {
       next.linkedinUrl = "Enter a valid LinkedIn URL (e.g. linkedin.com/in/yourname)";
     }
 
@@ -510,7 +508,7 @@ export default function Page1BasicInfo({
 
         <div>
           <label className={labelClass}>
-            LinkedIn URL <span className="text-destructive">*</span>
+            LinkedIn URL
           </label>
           <input
             className={inputClass}
