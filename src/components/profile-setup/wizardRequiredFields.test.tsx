@@ -87,11 +87,10 @@ describe("wizard blocks Next when a now-required multi-select is empty", () => {
     expect(screen.getByText("Profile photo is required")).toBeInTheDocument();
   });
 
-  it("Page 1 — no LinkedIn URL", () => {
+  it("Page 1 — LinkedIn URL is optional", () => {
     render(<Harness page={1} formData={{ ...complete, linkedinUrl: "" }} />);
     clickContinue();
-    expect(harnessOnNext).not.toHaveBeenCalled();
-    expect(screen.getByText("LinkedIn URL is required")).toBeInTheDocument();
+    expect(harnessOnNext).toHaveBeenCalled();
   });
 
   it("Page 1 — LinkedIn URL still format-checked once present", () => {
